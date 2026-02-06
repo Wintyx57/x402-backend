@@ -1,0 +1,21 @@
+{
+  "name": "x402-bazaar",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@coinbase/coinbase-sdk": "^0.25.0",
+    "@supabase/supabase-js": "^2.95.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.4",
+    "express": "^5.2.1"
+  }
+}

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>x402 Bazaar - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0a0e17;
+            color: #e0e6ed;
+            min-height: 100vh;
+        }
+
+        /* --- HEADER --- */
+        .header {
+            background: linear-gradient(135deg, #0d1321 0%, #1a1f35 100%);
+            border-bottom: 1px solid #1e2a45;
+            padding: 20px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .header-left h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .header-left h1 span {
+            color: #3b82f6;
+        }
+
+        .header-left p {
+            font-size: 13px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+
+        .header-right {
+            text-align: right;
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .header-right .wallet {
+            font-family: monospace;
+            color: #3b82f6;
+            font-size: 13px;
+            text-decoration: none;
+        }
+
+        .header-right .wallet:hover {
+            text-decoration: underline;
+        }
+
+        .header-right .wallet-balance {
+            font-size: 13px;
+            color: #4ade80;
+            font-weight: 600;
+            margin-top: 2px;
+        }
+
+        .header-right .network {
+            display: inline-block;
+            background: #16a34a22;
+            color: #4ade80;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-top: 4px;
+        }
+
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* --- LAYOUT --- */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* --- STATS CARDS --- */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: #111827;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            padding: 20px;
+            transition: border-color 0.3s;
+        }
+
+        .stat-card:hover {
+            border-color: #3b82f6;
+        }
+
+        .stat-card .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-card .value.blue { color: #3b82f6; }
+        .stat-card .value.green { color: #4ade80; }
+        .stat-card .value.purple { color: #a78bfa; }
+
+        /* --- MAIN GRID --- */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 24px;
+        }
+
+        /* --- PANELS --- */
+        .panel {
+            background: #111827;
+            border: 1px solid #1e2a45;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #1e2a45;
+            font-size: 14px;
+            font-weight: 600;
+            color: #94a3b8;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-header .count {
+            background: #3b82f622;
+            color: #60a5fa;
+            padding: 2px 10px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        /* --- SERVICES TABLE --- */
+        .services-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .services-table th {
+            text-align: left;
+            padding: 10px 16px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #475569;
+            border-bottom: 1px solid #1e2a45;
+        }
+
+        .services-table td {
+            padding: 12px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid #1e2a4522;
+            vertical-align: top;
+        }
+
+        .services-table tr {
+            transition: background 0.2s;
+        }
+
+        .services-table tr:hover {
+            background: #1e293b;
+        }
+
+        .service-name {
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+
+        .service-desc {
+            color: #64748b;
+            font-size: 12px;
+            margin-top: 2px;
+        }
+
+        .service-price {
+            color: #4ade80;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .service-owner {
+            font-family: monospace;
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .tag {
+            display: inline-block;
+            background: #1e293b;
+            color: #94a3b8;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            margin: 1px 2px;
+        }
+
+        /* --- ACTIVITY LOG --- */
+        .activity-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .activity-item {
+            padding: 12px 20px;
+            border-bottom: 1px solid #1e2a4533;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .activity-item .activity-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-right: 8px;
+        }
+
+        .activity-type.payment { background: #16a34a22; color: #4ade80; }
+        .activity-type.search { background: #3b82f622; color: #60a5fa; }
+        .activity-type.register { background: #a78bfa22; color: #a78bfa; }
+        .activity-type.t402 { background: #f5920022; color: #fb923c; }
+
+        .activity-item .activity-detail {
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+
+        .activity-item .activity-time {
+            font-size: 11px;
+            color: #475569;
+            margin-top: 4px;
+        }
+
+        .tx-link {
+            display: inline-block;
+            margin-top: 4px;
+            font-size: 11px;
+            color: #3b82f6;
+            text-decoration: none;
+            font-family: monospace;
+        }
+
+        .tx-link:hover {
+            text-decoration: underline;
+            color: #60a5fa;
+        }
+
+        .tx-link::before {
+            content: "\\27a1 ";
+        }
+
+        .service-tx {
+            font-size: 11px;
+        }
+
+        .service-tx a {
+            color: #3b82f6;
+            text-decoration: none;
+            font-family: monospace;
+        }
+
+        .service-tx a:hover {
+            text-decoration: underline;
+        }
+
+        /* --- ENDPOINTS --- */
+        .endpoints {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .endpoint-card {
+            background: #111827;
+            border: 1px solid #1e2a45;
+            border-radius: 10px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .endpoint-card .method {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .method.get { color: #4ade80; }
+        .method.post { color: #fb923c; }
+
+        .endpoint-card .path {
+            font-family: monospace;
+            font-size: 14px;
+            color: #f1f5f9;
+            margin-bottom: 6px;
+        }
+
+        .endpoint-card .cost {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .cost .amount { color: #fbbf24; font-weight: 600; }
+
+        /* --- EMPTY STATE --- */
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #475569;
+            font-size: 14px;
+        }
+
+        /* --- SCROLLBAR --- */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #1e2a45; border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-left">
+            <h1><span>x402</span> Bazaar</h1>
+            <p>Place de marche autonome de services IA</p>
+        </div>
+        <div class="header-right">
+            <div><span class="live-dot"></span>LIVE</div>
+            <a class="wallet" id="wallet" href="#" target="_blank">...</a>
+            <div class="wallet-balance" id="wallet-balance"></div>
+            <div><span class="network">Base Sepolia</span></div>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <!-- STATS -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="label">Services enregistres</div>
+                <div class="value blue" id="stat-services">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Paiements verifies</div>
+                <div class="value green" id="stat-payments">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Revenus (USDC)</div>
+                <div class="value purple" id="stat-revenue">-</div>
+            </div>
+        </div>
+
+        <!-- MAIN GRID -->
+        <div class="main-grid">
+
+            <!-- SERVICES TABLE -->
+            <div class="panel">
+                <div class="panel-header">
+                    Services enregistres
+                    <span class="count" id="services-count">0</span>
+                </div>
+                <div id="services-body">
+                    <div class="empty">Chargement...</div>
+                </div>
+            </div>
+
+            <!-- ACTIVITY LOG -->
+            <div class="panel">
+                <div class="panel-header">
+                    Activite en temps reel
+                    <span class="count" id="activity-count">0</span>
+                </div>
+                <div class="activity-list" id="activity-body">
+                    <div class="empty">En attente d'activite...</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ENDPOINTS -->
+        <div class="endpoints">
+            <div class="endpoint-card">
+                <div class="method get">GET</div>
+                <div class="path">/</div>
+                <div class="cost"><span class="amount">Gratuit</span></div>
+            </div>
+            <div class="endpoint-card">
+                <div class="method get">GET</div>
+                <div class="path">/services</div>
+                <div class="cost"><span class="amount">0.05 USDC</span></div>
+            </div>
+            <div class="endpoint-card">
+                <div class="method get">GET</div>
+                <div class="path">/search?q=</div>
+                <div class="cost"><span class="amount">0.05 USDC</span></div>
+            </div>
+            <div class="endpoint-card">
+                <div class="method post">POST</div>
+                <div class="path">/register</div>
+                <div class="cost"><span class="amount">1 USDC</span></div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let lastActivityCount = 0;
+        let lastServicesCount = 0;
+
+        function timeAgo(isoStr) {
+            const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+            if (diff < 5) return "a l'instant";
+            if (diff < 60) return `il y a ${diff}s`;
+            if (diff < 3600) return `il y a ${Math.floor(diff / 60)}min`;
+            return `il y a ${Math.floor(diff / 3600)}h`;
+        }
+
+        const BASESCAN = 'https://sepolia.basescan.org';
+
+        async function refreshStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const stats = await res.json();
+
+                document.getElementById('stat-services').textContent = stats.totalServices;
+                document.getElementById('stat-payments').textContent = stats.totalPayments;
+                document.getElementById('stat-revenue').textContent = stats.totalRevenue.toFixed(2);
+
+                const walletEl = document.getElementById('wallet');
+                walletEl.textContent = stats.wallet;
+                walletEl.href = `${BASESCAN}/address/${stats.wallet}`;
+
+                const balEl = document.getElementById('wallet-balance');
+                if (stats.walletBalance !== null) {
+                    balEl.textContent = `${stats.walletBalance} USDC`;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        async function refreshServices() {
+            try {
+                const res = await fetch('/api/services');
+                const services = await res.json();
+
+                document.getElementById('services-count').textContent = services.length;
+
+                if (services.length === 0) {
+                    document.getElementById('services-body').innerHTML =
+                        '<div class="empty">Aucun service enregistre. Un agent doit payer 1 USDC pour s\'enregistrer.</div>';
+                    return;
+                }
+
+                const rows = services.map(s => {
+                    const txCell = s.tx_hash
+                        ? `<a href="${BASESCAN}/tx/${s.tx_hash}" target="_blank" style="color:#3b82f6;text-decoration:none;font-family:monospace;font-size:11px">${s.tx_hash.slice(0, 10)}...</a>`
+                        : '<span style="color:#475569;font-size:11px">-</span>';
+                    return `
+                    <tr>
+                        <td>
+                            <div class="service-name">${esc(s.name)}</div>
+                            <div class="service-desc">${esc(s.description || '')}</div>
+                        </td>
+                        <td class="service-price">${s.price_usdc} USDC</td>
+                        <td>${(s.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</td>
+                        <td class="service-owner"><a href="${BASESCAN}/address/${s.owner_address}" target="_blank" style="color:#64748b;text-decoration:none;font-family:monospace;font-size:11px">${esc((s.owner_address || '').slice(0, 10))}...</a></td>
+                        <td>${txCell}</td>
+                        <td style="font-size:12px;color:#64748b">${timeAgo(s.created_at)}</td>
+                    </tr>
+                `}).join('');
+
+                document.getElementById('services-body').innerHTML = `
+                    <table class="services-table">
+                        <thead><tr>
+                            <th>Service</th><th>Prix</th><th>Tags</th><th>Owner</th><th>Preuve</th><th>Date</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+
+                if (services.length !== lastServicesCount) {
+                    lastServicesCount = services.length;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        async function refreshActivity() {
+            try {
+                const res = await fetch('/api/activity');
+                const activity = await res.json();
+
+                document.getElementById('activity-count').textContent = activity.length;
+
+                if (activity.length === 0) {
+                    document.getElementById('activity-body').innerHTML =
+                        '<div class="empty">En attente d\'activite...<br>Lancez agent-client.js pour voir la magie.</div>';
+                    return;
+                }
+
+                const typeMap = {
+                    'payment': 'payment',
+                    'search': 'search',
+                    'register': 'register',
+                    '402': 't402'
+                };
+
+                const items = activity.map(a => {
+                    const txLink = a.txHash
+                        ? `<a class="tx-link" href="${BASESCAN}/tx/${a.txHash}" target="_blank">Voir sur BaseScan (${a.txHash.slice(0, 14)}...)</a>`
+                        : '';
+                    return `
+                    <div class="activity-item">
+                        <span class="activity-type ${typeMap[a.type] || 'search'}">${a.type}</span>
+                        <span class="activity-detail">${esc(a.detail)}</span>
+                        ${txLink ? `<div>${txLink}</div>` : ''}
+                        <div class="activity-time">${timeAgo(a.time)}</div>
+                    </div>
+                `}).join('');
+
+                document.getElementById('activity-body').innerHTML = items;
+            } catch (e) { /* ignore */ }
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // Refresh loop
+        async function refresh() {
+            await Promise.all([refreshStats(), refreshServices(), refreshActivity()]);
+        }
+
+        refresh();
+        setInterval(refresh, 3000);
+    </script>
+
+</body>
+</html>

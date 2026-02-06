@@ -1,0 +1,58 @@
+[
+    {
+        "id": 1,
+        "name": "WeatherAgent API",
+        "description": "API météo alimentée par IA",
+        "url": "https://api.weather.com/ai",
+        "price": "0.05 USDC",
+        "tags": [
+            "weather",
+            "meteo",
+            "forecast",
+            "ai"
+        ],
+        "registeredAt": "2026-02-06T00:00:00.000Z"
+    },
+    {
+        "id": 2,
+        "name": "WasteRecycle Check",
+        "description": "Vérification de recyclabilité par scan IA",
+        "url": "https://waste-scan.io/v1",
+        "price": "0.10 USDC",
+        "tags": [
+            "waste",
+            "recycle",
+            "scan",
+            "environment"
+        ],
+        "registeredAt": "2026-02-06T00:00:00.000Z"
+    },
+    {
+        "id": 3,
+        "name": "LinkedIn Scraper",
+        "description": "Extraction de profils LinkedIn par IA",
+        "url": "https://scrape.it/pro",
+        "price": "0.20 USDC",
+        "tags": [
+            "linkedin",
+            "scraper",
+            "profile",
+            "data"
+        ],
+        "registeredAt": "2026-02-06T00:00:00.000Z"
+    },
+    {
+        "id": 4,
+        "name": "PDF Summarizer AI",
+        "description": "Résumé automatique de documents PDF par IA",
+        "url": "https://pdf-ai.example.com/v1",
+        "price": "0.15 USDC",
+        "tags": [
+            "pdf",
+            "summarizer",
+            "document",
+            "ai"
+        ],
+        "registeredAt": "2026-02-06T14:03:59.368Z"
+    }
+]
