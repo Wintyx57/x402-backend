@@ -9,6 +9,16 @@ const { Coinbase, Wallet } = require('@coinbase/coinbase-sdk');
 
 // ─── Config ──────────────────────────────────────────────────────────
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
+const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
+const NETWORK = process.env.NETWORK || 'mainnet';
+const explorerBase = NETWORK === 'testnet'
+    ? 'https://sepolia.basescan.org'
+    : 'https://basescan.org';
+const networkLabel = NETWORK === 'testnet' ? 'Base Sepolia' : 'Base Mainnet';
+
+// ─── Budget Tracking ─────────────────────────────────────────────────
+let sessionSpending = 0;
+const sessionPayments = [];
 
 // ─── Wallet ──────────────────────────────────────────────────────────
 let wallet = null;
@@ -42,9 +52,19 @@ async function payAndRequest(url, options = {}) {
     }
 
     // HTTP 402 — Payment Required
+    const details = body.payment_details;
+    const cost = parseFloat(details.amount);
+
+    // Budget check
+    if (sessionSpending + cost > MAX_BUDGET) {
+        throw new Error(
+            `Budget limit reached. Spent: ${sessionSpending.toFixed(2)} USDC / ${MAX_BUDGET.toFixed(2)} USDC limit. ` +
+            `This call costs ${cost} USDC. Increase MAX_BUDGET_USDC env var to allow more spending.`
+        );
+    }
+
     await initWallet();
 
-    const details = body.payment_details;
     const transfer = await wallet.createTransfer({
         amount: details.amount,
         assetId: Coinbase.assets.Usdc,
@@ -52,6 +72,15 @@ async function payAndRequest(url, options = {}) {
     });
     const confirmed = await transfer.wait({ timeoutSeconds: 120 });
     const txHash = confirmed.getTransactionHash();
+
+    // Track spending
+    sessionSpending += cost;
+    sessionPayments.push({
+        amount: cost,
+        txHash,
+        timestamp: new Date().toISOString(),
+        endpoint: url.replace(SERVER_URL, ''),
+    });
 
     // Retry with payment proof
     const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash };
@@ -63,7 +92,9 @@ async function payAndRequest(url, options = {}) {
         amount: details.amount,
         currency: 'USDC',
         txHash,
-        explorer: `https://basescan.org/tx/${txHash}`,
+        explorer: `${explorerBase}/tx/${txHash}`,
+        session_spent: sessionSpending.toFixed(2),
+        session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
     };
 
     return result;
@@ -72,7 +103,7 @@ async function payAndRequest(url, options = {}) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '1.0.0',
+    version: '1.1.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
@@ -99,7 +130,7 @@ server.tool(
 // --- Tool: search_services (0.05 USDC) ---
 server.tool(
     'search_services',
-    'Search for API services on x402 Bazaar by keyword. Returns matching services with name, description, URL, price, and tags. Costs 0.05 USDC (paid automatically via x402 protocol).',
+    `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     { query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")') },
     async ({ query }) => {
         try {
@@ -121,7 +152,7 @@ server.tool(
 // --- Tool: list_services (0.05 USDC) ---
 server.tool(
     'list_services',
-    'List all API services available on x402 Bazaar. Returns the full catalog with names, descriptions, URLs, prices, and tags. Costs 0.05 USDC (paid automatically via x402 protocol).',
+    `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {},
     async () => {
         try {
@@ -165,10 +196,10 @@ server.tool(
     }
 );
 
-// --- Tool: get_wallet_balance (FREE — check agent balance) ---
+// --- Tool: get_wallet_balance (FREE) ---
 server.tool(
     'get_wallet_balance',
-    'Check the USDC balance of the agent wallet. Free — useful to know how much budget is left before making paid requests.',
+    'Check the USDC balance of the agent wallet on-chain. Free.',
     {},
     async () => {
         try {
@@ -181,8 +212,8 @@ server.tool(
                     text: JSON.stringify({
                         address,
                         balance_usdc: balance.toString(),
-                        network: 'Base Mainnet',
-                        explorer: `https://basescan.org/address/${address}`,
+                        network: networkLabel,
+                        explorer: `${explorerBase}/address/${address}`,
                     }, null, 2),
                 }],
             };
@@ -192,6 +223,28 @@ server.tool(
                 isError: true,
             };
         }
+    }
+);
+
+// --- Tool: get_budget_status (FREE) ---
+server.tool(
+    'get_budget_status',
+    'Check the session spending budget. Shows how much USDC has been spent, remaining budget, and a list of all payments made this session. Free — call this before paid requests to verify budget.',
+    {},
+    async () => {
+        return {
+            content: [{
+                type: 'text',
+                text: JSON.stringify({
+                    budget_limit: MAX_BUDGET.toFixed(2) + ' USDC',
+                    spent: sessionSpending.toFixed(2) + ' USDC',
+                    remaining: (MAX_BUDGET - sessionSpending).toFixed(2) + ' USDC',
+                    payments_count: sessionPayments.length,
+                    payments: sessionPayments,
+                    network: networkLabel,
+                }, null, 2),
+            }],
+        };
     }
 );
 

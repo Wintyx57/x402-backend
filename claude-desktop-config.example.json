@@ -7,7 +7,9 @@
         "COINBASE_API_KEY": "your-cdp-api-key",
         "COINBASE_API_SECRET": "your-cdp-api-secret",
         "AGENT_SEED_PATH": "C:\\Users\\robin\\OneDrive\\Bureau\\HACKATHON\\x402-bazaar\\agent-seed.json",
-        "X402_SERVER_URL": "https://x402-api.onrender.com"
+        "X402_SERVER_URL": "https://x402-api.onrender.com",
+        "MAX_BUDGET_USDC": "1.00",
+        "NETWORK": "mainnet"
       }
     }
   }
