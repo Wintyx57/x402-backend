@@ -30,15 +30,22 @@ app.use(helmet({
     crossOriginEmbedderPolicy: false,
 }));
 
-// --- CORS (whitelist strict) ---
-const ALLOWED_ORIGINS = [
+// --- CORS (whitelist strict — localhost only in dev) ---
+const PROD_ORIGINS = [
     process.env.FRONTEND_URL,
     'https://x402bazaar.org',
     'https://www.x402bazaar.org',
     'https://x402-frontend-one.vercel.app',
+].filter(Boolean);
+
+const DEV_ORIGINS = [
     'http://localhost:5173',
     'http://localhost:3000',
-].filter(Boolean);
+];
+
+const ALLOWED_ORIGINS = process.env.NODE_ENV === 'production'
+    ? PROD_ORIGINS
+    : [...PROD_ORIGINS, ...DEV_ORIGINS];
 
 app.use(cors({
     origin: (origin, callback) => {
@@ -60,8 +67,16 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path.startsWith('/api/') || req.path === '/health',
+    skip: (req) => req.path === '/health',
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
+});
+
+const dashboardApiLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests', message: 'Dashboard API rate limit exceeded.' }
 });
 
 const paidEndpointLimiter = rateLimit({
@@ -151,6 +166,12 @@ function fetchWithTimeout(url, options, timeout = RPC_TIMEOUT) {
 }
 
 async function verifyPayment(txHash, minAmount) {
+    // Normalize tx hash
+    const normalizedTxHash = txHash.toLowerCase().trim();
+    if (normalizedTxHash.length !== 66) {
+        throw new Error('Invalid transaction hash length');
+    }
+
     const serverAddress = process.env.WALLET_ADDRESS.toLowerCase();
 
     // 1. Récupérer le reçu de transaction
@@ -159,13 +180,13 @@ async function verifyPayment(txHash, minAmount) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             jsonrpc: '2.0', method: 'eth_getTransactionReceipt',
-            params: [txHash], id: 1
+            params: [normalizedTxHash], id: 1
         })
     });
     const { result: receipt } = await receiptRes.json();
 
     if (!receipt || receipt.status !== '0x1') {
-        console.log(`[x402] Tx ${txHash} : échouée ou introuvable`);
+        console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... : échouée ou introuvable`);
         return false;
     }
 
@@ -191,7 +212,7 @@ async function verifyPayment(txHash, minAmount) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             jsonrpc: '2.0', method: 'eth_getTransactionByHash',
-            params: [txHash], id: 2
+            params: [normalizedTxHash], id: 2
         })
     });
     const { result: tx } = await txRes.json();
@@ -204,7 +225,7 @@ async function verifyPayment(txHash, minAmount) {
         }
     }
 
-    console.log(`[x402] Tx ${txHash} : paiement non reconnu ou insuffisant`);
+    console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... : paiement non reconnu ou insuffisant`);
     return false;
 }
 
@@ -303,7 +324,10 @@ app.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Lister
         .select('*')
         .order('created_at', { ascending: true });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        console.error('[Supabase] /services error:', error.message);
+        return res.status(500).json({ error: 'Failed to fetch services' });
+    }
 
     res.json({
         success: true,
@@ -320,6 +344,11 @@ app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Recherch
         return res.status(400).json({ error: "Paramètre 'q' requis. Ex: /search?q=weather" });
     }
 
+    // Reject control characters and null bytes
+    if (/[\x00-\x1F\x7F]/.test(query)) {
+        return res.status(400).json({ error: 'Invalid characters in query' });
+    }
+
     // Sanitize: escape special Postgres LIKE characters
     const sanitized = query.replace(/[%_\\]/g, '\\$&');
 
@@ -329,7 +358,10 @@ app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Recherch
         .select('*')
         .or(`name.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        console.error('[Supabase] /search error:', error.message);
+        return res.status(500).json({ error: 'Search failed' });
+    }
 
     logActivity('search', `Recherche "${query}" → ${data.length} résultat(s)`);
 
@@ -394,8 +426,8 @@ app.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistre
         .select();
 
     if (error) {
-        console.error('[Supabase] Erreur insert :', error.message);
-        return res.status(500).json({ error: error.message });
+        console.error('[Supabase] /register error:', error.message);
+        return res.status(500).json({ error: 'Registration failed' });
     }
 
     console.log(`[Bazaar] Nouveau service enregistré : "${name}" (${data[0].id})`);
@@ -420,7 +452,7 @@ app.get('/dashboard', (req, res) => {
 });
 
 // API stats (gratuit, pour le dashboard)
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', dashboardApiLimiter, async (req, res) => {
     const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
 
     // Paiements et revenus depuis Supabase
@@ -460,32 +492,37 @@ app.get('/api/stats', async (req, res) => {
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         walletBalance,
         wallet: walletAddr ? `${walletAddr.slice(0, 6)}...${walletAddr.slice(-4)}` : null,
-        walletFull: walletAddr,
         network: NETWORK_LABEL,
         explorer: EXPLORER_URL
     });
 });
 
 // API services (gratuit, pour le dashboard)
-app.get('/api/services', async (req, res) => {
+app.get('/api/services', dashboardApiLimiter, async (req, res) => {
     const { data, error } = await supabase
         .from('services')
         .select('*')
         .order('created_at', { ascending: false });
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        console.error('[Supabase] /api/services error:', error.message);
+        return res.status(500).json({ error: 'Failed to fetch services' });
+    }
     res.json(data);
 });
 
 // API activity log (gratuit, pour le dashboard — persisté Supabase)
-app.get('/api/activity', async (req, res) => {
+app.get('/api/activity', dashboardApiLimiter, async (req, res) => {
     const { data, error } = await supabase
         .from('activity')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+        console.error('[Supabase] /api/activity error:', error.message);
+        return res.status(500).json({ error: 'Failed to fetch activity' });
+    }
 
     // Mapper pour compatibilité dashboard (time, txHash)
     const activity = (data || []).map(a => ({
@@ -503,10 +540,10 @@ app.get('/api/activity', async (req, res) => {
 app.use((err, req, res, next) => {
     console.error(`[ERROR] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
     console.error(err.stack || err.message || err);
-    logActivity('error', `${req.method} ${req.originalUrl} → ${err.message || 'Internal error'}`);
+    logActivity('error', `${req.method} ${req.originalUrl} → Internal error`);
     res.status(err.status || 500).json({
         error: 'Internal Server Error',
-        message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message
+        message: 'Something went wrong'
     });
 });
 

@@ -1,5 +1,9 @@
 node_modules/
 .env
+.env.local
+.env.*.local
 server-seed.json
 agent-seed.json
 *.seed.json
+nul
+dist/
