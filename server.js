@@ -33,6 +33,8 @@ app.use(helmet({
 // --- CORS (whitelist strict) ---
 const ALLOWED_ORIGINS = [
     process.env.FRONTEND_URL,
+    'https://x402bazaar.org',
+    'https://www.x402bazaar.org',
     'https://x402-frontend-one.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
