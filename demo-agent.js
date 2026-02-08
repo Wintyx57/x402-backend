@@ -3,7 +3,10 @@ const { Coinbase, Wallet } = require('@coinbase/coinbase-sdk');
 const OpenAI = require('openai');
 
 // ─── Config ──────────────────────────────────────────────────────────
-const SERVER_URL = process.env.DEMO_SERVER_URL || 'http://localhost:3000';
+const NETWORK_MODE = process.env.DEMO_NETWORK || 'testnet';
+const SERVER_URL = NETWORK_MODE === 'mainnet'
+    ? 'https://x402-api.onrender.com'
+    : (process.env.DEMO_SERVER_URL || 'http://localhost:3000');
 const MISSION = process.argv[2] || 'Find the current weather in Paris and the price of Bitcoin in USD';
 const MAX_TURNS = 10;
 
@@ -192,37 +195,50 @@ async function main() {
     });
     success('Coinbase SDK configured');
 
-    // Step 2: Create ephemeral wallet
-    step(2, 'Creating ephemeral agent wallet on Base Sepolia...');
-    wallet = await Wallet.create({ networkId: Coinbase.networks.BaseSepolia });
-    const address = await wallet.getDefaultAddress();
-    success(`Wallet: ${address.toString()}`);
-
-    // Step 3: Fund from faucet
-    step(3, 'Requesting testnet funds from faucet...');
+    // Step 2: Load or create agent wallet
     const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
-    const faucetEth = await wallet.faucet(Coinbase.assets.Eth);
-    await faucetEth.wait({ timeoutSeconds: 60 });
-    success('ETH received');
+    if (NETWORK_MODE === 'mainnet') {
+        step(2, 'Loading agent wallet on Base Mainnet...');
+        const seedData = require('./agent-seed.json');
+        const seedWalletId = Object.keys(seedData)[0];
+        wallet = await Wallet.fetch(seedWalletId);
+        await wallet.loadSeed('agent-seed.json');
+        const address = await wallet.getDefaultAddress();
+        success(`Wallet: ${address.getId()}`);
 
-    await delay(3000);
+        // Step 3: Check balance
+        step(3, 'Checking wallet balance...');
+    } else {
+        step(2, 'Creating ephemeral agent wallet on Base Sepolia...');
+        wallet = await Wallet.create({ networkId: Coinbase.networks.BaseSepolia });
+        const address = await wallet.getDefaultAddress();
+        success(`Wallet: ${address.toString()}`);
 
-    try {
-        const faucetUsdc = await wallet.faucet(Coinbase.assets.Usdc);
-        await faucetUsdc.wait({ timeoutSeconds: 60 });
-        success('USDC received from faucet');
-    } catch {
-        payment('Faucet rate-limited, funding from server wallet...');
-        const serverWallet = await Wallet.fetch(process.env.WALLET_ID);
-        const agentAddr = (await wallet.getDefaultAddress()).getId();
-        const fundTransfer = await serverWallet.createTransfer({
-            amount: 1.0,
-            assetId: Coinbase.assets.Usdc,
-            destination: agentAddr,
-        });
-        await fundTransfer.wait({ timeoutSeconds: 120 });
-        success('1.0 USDC received from server wallet');
+        // Step 3: Fund from faucet
+        step(3, 'Requesting testnet funds from faucet...');
+        const faucetEth = await wallet.faucet(Coinbase.assets.Eth);
+        await faucetEth.wait({ timeoutSeconds: 60 });
+        success('ETH received');
+
+        await delay(3000);
+
+        try {
+            const faucetUsdc = await wallet.faucet(Coinbase.assets.Usdc);
+            await faucetUsdc.wait({ timeoutSeconds: 60 });
+            success('USDC received from faucet');
+        } catch {
+            payment('Faucet rate-limited, funding from server wallet...');
+            const serverWallet = await Wallet.fetch(process.env.WALLET_ID);
+            const agentAddr = (await wallet.getDefaultAddress()).getId();
+            const fundTransfer = await serverWallet.createTransfer({
+                amount: 1.0,
+                assetId: Coinbase.assets.Usdc,
+                destination: agentAddr,
+            });
+            await fundTransfer.wait({ timeoutSeconds: 120 });
+            success('1.0 USDC received from server wallet');
+        }
     }
 
     const balance = await wallet.getBalance(Coinbase.assets.Usdc);

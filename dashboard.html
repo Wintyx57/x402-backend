@@ -374,7 +374,7 @@
             <div><span class="live-dot"></span>LIVE</div>
             <a class="wallet" id="wallet" href="#" target="_blank">...</a>
             <div class="wallet-balance" id="wallet-balance"></div>
-            <div><span class="network">Base Sepolia</span></div>
+            <div><span class="network" id="network-badge">Base</span></div>
         </div>
     </div>
 
@@ -461,7 +461,7 @@
             return `il y a ${Math.floor(diff / 3600)}h`;
         }
 
-        const BASESCAN = 'https://sepolia.basescan.org';
+        const BASESCAN = 'https://basescan.org';
 
         async function refreshStats() {
             try {
