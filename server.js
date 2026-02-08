@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -28,6 +29,50 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'X-Payment-TxHash']
 }));
 app.use(express.json());
+
+// --- RATE LIMITING ---
+const generalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 min
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
+});
+
+const paidEndpointLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 min
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
+});
+
+const registerLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests', message: 'Registration rate limit exceeded. Try again in 1 hour.' }
+});
+
+app.use(generalLimiter);
+
+// --- REQUEST LOGGING ---
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        const log = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl} → ${res.statusCode} (${duration}ms)`;
+        if (res.statusCode >= 500) {
+            console.error(log);
+        } else if (res.statusCode >= 400) {
+            console.warn(log);
+        } else {
+            console.log(log);
+        }
+    });
+    next();
+});
 
 // --- Cache des paiements vérifiés (en prod → base de données) ---
 const verifiedPayments = new Set();
@@ -188,7 +233,7 @@ app.get('/', async (req, res) => {
 });
 
 // --- LISTE DES SERVICES (0.05 USDC) ---
-app.get('/services', paymentMiddleware(50000, 0.05, "Lister les services"), async (req, res) => {
+app.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Lister les services"), async (req, res) => {
     const { data, error } = await supabase
         .from('services')
         .select('*')
@@ -204,7 +249,7 @@ app.get('/services', paymentMiddleware(50000, 0.05, "Lister les services"), asyn
 });
 
 // --- RECHERCHE DE SERVICES (0.05 USDC) ---
-app.get('/search', paymentMiddleware(50000, 0.05, "Rechercher un service"), async (req, res) => {
+app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Rechercher un service"), async (req, res) => {
     const query = (req.query.q || '').trim();
 
     if (!query) {
@@ -230,7 +275,7 @@ app.get('/search', paymentMiddleware(50000, 0.05, "Rechercher un service"), asyn
 });
 
 // --- ENREGISTREMENT D'UN SERVICE (1 USDC) ---
-app.post('/register', paymentMiddleware(1000000, 1, "Enregistrer un service"), async (req, res) => {
+app.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistrer un service"), async (req, res) => {
     const { name, description, url, price, tags, ownerAddress } = req.body;
     const txHash = req.headers['x-payment-txhash'] || null;
 
@@ -329,6 +374,17 @@ app.get('/api/services', async (req, res) => {
 // API activity log (gratuit, pour le dashboard)
 app.get('/api/activity', (req, res) => {
     res.json(activityLog);
+});
+
+// --- GLOBAL ERROR HANDLER ---
+app.use((err, req, res, next) => {
+    console.error(`[ERROR] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+    console.error(err.stack || err.message || err);
+    logActivity('error', `${req.method} ${req.originalUrl} → ${err.message || 'Internal error'}`);
+    res.status(err.status || 500).json({
+        error: 'Internal Server Error',
+        message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message
+    });
 });
 
 // --- LANCEMENT ---
