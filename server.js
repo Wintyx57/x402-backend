@@ -74,27 +74,22 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Cache des paiements vérifiés (en prod → base de données) ---
+// --- Cache des paiements vérifiés (mémoire + Supabase) ---
 const verifiedPayments = new Set();
 
-// --- Activity log (pour le dashboard temps réel) ---
-const activityLog = [];
-let totalPayments = 0;
-let totalRevenue = 0;
-
-function logActivity(type, detail, amount = 0, txHash = null) {
+// --- Activity log (persisté dans Supabase) ---
+async function logActivity(type, detail, amount = 0, txHash = null) {
     const entry = {
         type,
         detail,
         amount,
-        time: new Date().toISOString()
     };
-    if (txHash) entry.txHash = txHash;
-    activityLog.unshift(entry);
-    if (activityLog.length > 50) activityLog.pop();
-    if (amount > 0) {
-        totalPayments++;
-        totalRevenue += amount;
+    if (txHash) entry.tx_hash = txHash;
+
+    try {
+        await supabase.from('activity').insert([entry]);
+    } catch (err) {
+        console.error('[Activity] Erreur insert:', err.message);
     }
 }
 
@@ -333,6 +328,20 @@ app.get('/dashboard', (req, res) => {
 app.get('/api/stats', async (req, res) => {
     const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
 
+    // Paiements et revenus depuis Supabase
+    let totalPayments = 0;
+    let totalRevenue = 0;
+    try {
+        const { data: payments } = await supabase
+            .from('activity')
+            .select('amount')
+            .eq('type', 'payment');
+        if (payments) {
+            totalPayments = payments.length;
+            totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        }
+    } catch { /* ignore */ }
+
     // Solde USDC du wallet serveur (on-chain)
     let walletBalance = null;
     try {
@@ -371,9 +380,26 @@ app.get('/api/services', async (req, res) => {
     res.json(data);
 });
 
-// API activity log (gratuit, pour le dashboard)
-app.get('/api/activity', (req, res) => {
-    res.json(activityLog);
+// API activity log (gratuit, pour le dashboard — persisté Supabase)
+app.get('/api/activity', async (req, res) => {
+    const { data, error } = await supabase
+        .from('activity')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    // Mapper pour compatibilité dashboard (time, txHash)
+    const activity = (data || []).map(a => ({
+        type: a.type,
+        detail: a.detail,
+        amount: Number(a.amount),
+        time: a.created_at,
+        txHash: a.tx_hash,
+    }));
+
+    res.json(activity);
 });
 
 // --- GLOBAL ERROR HANDLER ---
