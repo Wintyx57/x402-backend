@@ -5,697 +5,655 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 const SERVER_WALLET = process.env.WALLET_ADDRESS;
 
+// ============================================================================
+//  REAL APIs ONLY — prices calculated per request based on official pricing
+//  Paid APIs: actual cost + ~30% margin (min 0.005 USDC)
+//  Free APIs: genuinely free public APIs, no API key required
+// ============================================================================
+
 const SERVICES = [
-    // ============================================================
-    //  AI & MACHINE LEARNING
-    // ============================================================
+    // ========================================================================
+    //  AI & MACHINE LEARNING (paid — token/usage based)
+    // ========================================================================
     {
-        name: "GPT-4o Text Generation",
-        description: "State-of-the-art text generation powered by OpenAI GPT-4o. Supports chat, completion, summarization, and code generation.",
+        name: "OpenAI GPT-4o",
+        description: "Flagship multimodal model by OpenAI. Text, vision, reasoning, and code generation. Pricing: $2.50/1M input + $10/1M output tokens.",
         url: "https://api.openai.com/v1/chat/completions",
-        price_usdc: 0.30,
+        price_usdc: 0.012,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "llm", "text-generation", "openai"]
+        tags: ["ai", "llm", "text-generation"]
     },
     {
-        name: "Claude AI Assistant",
-        description: "Anthropic Claude API for safe, helpful AI conversations. Supports analysis, writing, coding, and reasoning tasks.",
+        name: "OpenAI GPT-4o-mini",
+        description: "Fast, affordable small model by OpenAI. Ideal for classification, extraction, and quick tasks. $0.15/1M input + $0.60/1M output tokens.",
+        url: "https://api.openai.com/v1/chat/completions",
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["ai", "llm", "fast"]
+    },
+    {
+        name: "Anthropic Claude Sonnet 4.5",
+        description: "Advanced reasoning and coding model by Anthropic. Extended thinking, analysis, and generation. $3/1M input + $15/1M output tokens.",
         url: "https://api.anthropic.com/v1/messages",
-        price_usdc: 0.25,
+        price_usdc: 0.012,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "llm", "assistant", "anthropic"]
+        tags: ["ai", "llm", "reasoning"]
     },
     {
-        name: "Image Recognition API",
-        description: "Identify objects, scenes, faces, and text in images using deep learning. Returns labels with confidence scores.",
-        url: "https://vision-ai.example.com/v1/analyze",
-        price_usdc: 0.15,
+        name: "Anthropic Claude Haiku 4.5",
+        description: "Fast, compact model by Anthropic. Optimized for high-throughput tasks: classification, routing, extraction. $1/1M input + $5/1M output tokens.",
+        url: "https://api.anthropic.com/v1/messages",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "vision", "image-recognition"]
+        tags: ["ai", "llm", "fast"]
     },
     {
-        name: "Sentiment Analysis API",
-        description: "Analyze the emotional tone of any text. Returns positive, negative, neutral scores and detected emotions.",
-        url: "https://nlp-api.example.com/v1/sentiment",
-        price_usdc: 0.08,
-        owner_address: SERVER_WALLET,
-        tags: ["ai", "nlp", "sentiment"]
-    },
-    {
-        name: "Language Translation API",
-        description: "Neural machine translation supporting 100+ languages. Auto-detect source language. High-quality output.",
-        url: "https://translate-api.example.com/v2/translate",
+        name: "OpenAI DALL-E 3",
+        description: "AI image generation from text prompts. Supports multiple sizes and quality levels. Standard 1024x1024: $0.04/image.",
+        url: "https://api.openai.com/v1/images/generations",
         price_usdc: 0.05,
+        owner_address: SERVER_WALLET,
+        tags: ["ai", "image-generation", "creative"]
+    },
+    {
+        name: "OpenAI Whisper (Speech-to-Text)",
+        description: "Automatic speech recognition supporting 50+ languages. Punctuation and timestamps included. $0.006/minute of audio.",
+        url: "https://api.openai.com/v1/audio/transcriptions",
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["ai", "stt", "audio"]
+    },
+    {
+        name: "OpenAI TTS (Text-to-Speech)",
+        description: "Convert text to natural-sounding speech. 6 voices, adjustable speed. Standard: $15/1M characters, HD: $30/1M characters.",
+        url: "https://api.openai.com/v1/audio/speech",
+        price_usdc: 0.02,
+        owner_address: SERVER_WALLET,
+        tags: ["ai", "tts", "audio"]
+    },
+    {
+        name: "OpenAI Embeddings",
+        description: "Generate vector embeddings for semantic search, clustering, and RAG. text-embedding-3-small: $0.02/1M tokens. 1536 dimensions.",
+        url: "https://api.openai.com/v1/embeddings",
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["ai", "embeddings", "search"]
+    },
+    {
+        name: "DeepL Translation",
+        description: "Neural machine translation in 30+ languages. Superior quality for European languages. Free: 500K chars/month, Pro: $25/1M characters.",
+        url: "https://api-free.deepl.com/v2/translate",
+        price_usdc: 0.02,
         owner_address: SERVER_WALLET,
         tags: ["ai", "translation", "language"]
     },
     {
-        name: "Text-to-Speech API",
-        description: "Convert text to natural-sounding speech in 30+ languages. Multiple voices, adjustable speed and pitch.",
-        url: "https://tts-api.example.com/v1/synthesize",
-        price_usdc: 0.10,
+        name: "Google Cloud Vision",
+        description: "Image analysis: label detection, OCR, face detection, object localization. $1.50/1000 images (first 1000/month free).",
+        url: "https://vision.googleapis.com/v1/images:annotate",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "tts", "audio", "speech"]
+        tags: ["ai", "vision", "image-recognition"]
     },
     {
-        name: "Speech-to-Text API",
-        description: "Transcribe audio files to text with high accuracy. Supports 50+ languages, punctuation, and speaker diarization.",
-        url: "https://stt-api.example.com/v1/transcribe",
-        price_usdc: 0.12,
+        name: "Hugging Face Inference",
+        description: "Run 200,000+ open-source models (Llama, Mistral, Stable Diffusion). Free tier available. Pricing varies by model and hardware.",
+        url: "https://api-inference.huggingface.co/models",
+        price_usdc: 0.008,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "stt", "audio", "transcription"]
+        tags: ["ai", "open-source", "inference"]
     },
     {
-        name: "AI Image Generation (DALL-E)",
-        description: "Generate images from text descriptions using DALL-E. Supports various styles, sizes, and quality levels.",
-        url: "https://api.openai.com/v1/images/generations",
-        price_usdc: 0.50,
+        name: "Remove.bg Background Removal",
+        description: "AI-powered image background removal. Returns transparent PNG. 50 free API calls/month, then ~$0.20/image on subscription.",
+        url: "https://api.remove.bg/v1.0/removebg",
+        price_usdc: 0.25,
         owner_address: SERVER_WALLET,
-        tags: ["ai", "image-generation", "dall-e"]
-    },
-    {
-        name: "Code Review AI",
-        description: "Automated code review powered by AI. Detects bugs, security issues, and suggests improvements for 20+ languages.",
-        url: "https://code-review-ai.example.com/v1/review",
-        price_usdc: 0.20,
-        owner_address: SERVER_WALLET,
-        tags: ["ai", "code-review", "developer"]
-    },
-    {
-        name: "Named Entity Recognition",
-        description: "Extract names, places, organizations, dates, and amounts from unstructured text. Supports EN, FR, ES, DE.",
-        url: "https://nlp-api.example.com/v1/ner",
-        price_usdc: 0.07,
-        owner_address: SERVER_WALLET,
-        tags: ["ai", "nlp", "ner"]
-    },
-    {
-        name: "AI Text Summarizer",
-        description: "Summarize long articles, documents, or web pages into concise bullet points or paragraphs. Adjustable length.",
-        url: "https://summarize-api.example.com/v1/summarize",
-        price_usdc: 0.10,
-        owner_address: SERVER_WALLET,
-        tags: ["ai", "summarizer", "text"]
-    },
-    {
-        name: "AI Embeddings API",
-        description: "Generate vector embeddings for text. Perfect for semantic search, clustering, and RAG applications. 1536 dimensions.",
-        url: "https://api.openai.com/v1/embeddings",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["ai", "embeddings", "vector", "search"]
+        tags: ["ai", "image", "background-removal"]
     },
 
-    // ============================================================
-    //  FINANCE & CRYPTO
-    // ============================================================
+    // ========================================================================
+    //  FINANCE & CRYPTO (mixed free/paid)
+    // ========================================================================
     {
-        name: "Crypto Price Tracker",
-        description: "Real-time cryptocurrency prices from CoinGecko. Supports BTC, ETH, SOL, and thousands of tokens.",
+        name: "CoinGecko Crypto Prices",
+        description: "Real-time prices for 15,000+ cryptocurrencies. Market cap, volume, 24h change. Free: 10-30 calls/min.",
         url: "https://api.coingecko.com/api/v3/simple/price",
-        price_usdc: 0.05,
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "crypto", "bitcoin"]
+        tags: ["finance", "crypto", "prices", "free"]
     },
     {
-        name: "Currency Exchange Rates",
-        description: "Live exchange rates for 150+ currencies. Base currency configurable. Updated every hour.",
+        name: "ExchangeRate API",
+        description: "Live exchange rates for 161 currencies. Updated every 24h on free tier. No API key required.",
         url: "https://open.er-api.com/v6/latest/USD",
-        price_usdc: 0.03,
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "currency", "forex"]
+        tags: ["finance", "currency", "forex", "free"]
     },
     {
-        name: "Stock Market Data API",
-        description: "Real-time and historical stock prices, volume, market cap. Covers NYSE, NASDAQ, and global exchanges.",
-        url: "https://stock-api.example.com/v1/quote",
-        price_usdc: 0.10,
+        name: "CoinGecko Market Data",
+        description: "Detailed market data: OHLCV, historical prices, trending coins, exchange volumes. Free: 10-30 calls/min.",
+        url: "https://api.coingecko.com/api/v3/coins/markets",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["finance", "crypto", "market-data", "free"]
+    },
+    {
+        name: "Alpha Vantage Stock Data",
+        description: "Real-time and historical stock prices, forex, and crypto. Free: 25 requests/day. Premium from $49.99/month.",
+        url: "https://www.alphavantage.co/query",
+        price_usdc: 0.01,
         owner_address: SERVER_WALLET,
         tags: ["finance", "stocks", "market"]
     },
     {
-        name: "NFT Metadata API",
-        description: "Fetch metadata, images, traits, and floor prices for any NFT collection on Ethereum, Base, and Solana.",
-        url: "https://nft-api.example.com/v1/metadata",
-        price_usdc: 0.05,
-        owner_address: SERVER_WALLET,
-        tags: ["finance", "nft", "crypto"]
-    },
-    {
-        name: "DeFi Yield Tracker",
-        description: "Track APY/APR across DeFi protocols: Aave, Compound, Uniswap, Curve. Real-time yield comparison.",
-        url: "https://defi-api.example.com/v1/yields",
-        price_usdc: 0.08,
-        owner_address: SERVER_WALLET,
-        tags: ["finance", "defi", "yield"]
-    },
-    {
-        name: "Gas Price Oracle",
-        description: "Real-time gas prices for Ethereum, Base, Polygon, and Arbitrum. Returns slow, standard, and fast estimates.",
-        url: "https://gas-api.example.com/v1/prices",
+        name: "Etherscan API",
+        description: "Ethereum blockchain explorer API. Balances, transactions, token transfers, contract ABIs. Free: 5 calls/sec.",
+        url: "https://api.etherscan.io/api",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "gas", "crypto", "free"]
+        tags: ["finance", "ethereum", "blockchain", "free"]
     },
     {
-        name: "Wallet Balance Checker",
-        description: "Check ETH, USDC, and ERC-20 token balances for any wallet address across multiple chains.",
-        url: "https://balance-api.example.com/v1/balance",
+        name: "BaseScan API",
+        description: "Base L2 blockchain explorer API. Same interface as Etherscan. Balances, transactions, contract verification. Free tier available.",
+        url: "https://api.basescan.org/api",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "wallet", "crypto", "free"]
+        tags: ["finance", "base", "blockchain", "free"]
     },
     {
-        name: "Token Price Feed",
-        description: "Aggregated token prices from multiple DEXs and CEXs. Supports 10,000+ tokens with OHLCV data.",
-        url: "https://price-feed.example.com/v1/token",
-        price_usdc: 0.03,
+        name: "CoinMarketCap",
+        description: "Crypto market data from the #1 tracker. 10,000+ coins. Quotes, listings, global metrics. Free: 10K credits/month.",
+        url: "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest",
+        price_usdc: 0.01,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "token", "price"]
+        tags: ["finance", "crypto", "market-data"]
     },
     {
-        name: "Invoice Generator API",
-        description: "Generate professional PDF invoices from JSON data. Supports multi-currency, tax calculations, and custom branding.",
-        url: "https://invoice-api.example.com/v1/generate",
-        price_usdc: 0.08,
+        name: "Blockchain.com Exchange Rates",
+        description: "Bitcoin exchange rates in 22 currencies. Real-time ticker data. No API key required.",
+        url: "https://blockchain.info/ticker",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["finance", "invoice", "pdf"]
+        tags: ["finance", "bitcoin", "rates", "free"]
     },
 
-    // ============================================================
-    //  DATA & KNOWLEDGE
-    // ============================================================
+    // ========================================================================
+    //  DATA & KNOWLEDGE (mostly free)
+    // ========================================================================
     {
-        name: "Weather Forecast API",
-        description: "Global weather forecast with temperature, humidity, wind speed, and precipitation. Supports hourly and 7-day forecasts.",
+        name: "Open-Meteo Weather Forecast",
+        description: "Global weather: temperature, humidity, wind, precipitation. Hourly and 7-day forecasts. Completely free, no API key.",
         url: "https://api.open-meteo.com/v1/forecast",
-        price_usdc: 0.05,
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["data", "weather", "forecast", "free"]
+    },
+    {
+        name: "OpenWeatherMap",
+        description: "Current weather, 5-day forecast, air pollution, and geocoding. Free: 1000 calls/day. Paid from $0.0012/call.",
+        url: "https://api.openweathermap.org/data/2.5/weather",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
         tags: ["data", "weather", "forecast"]
     },
     {
-        name: "Wikipedia Summary API",
-        description: "Get a concise summary of any Wikipedia article. Returns title, extract, thumbnail, and links.",
-        url: "https://en.wikipedia.org/api/rest_v1/page/summary/",
-        price_usdc: 0.03,
+        name: "Wikipedia Summary",
+        description: "Get any Wikipedia article summary with title, extract, thumbnail, and links. Free, no API key, all languages.",
+        url: "https://en.wikipedia.org/api/rest_v1/page/summary",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "wikipedia", "knowledge"]
+        tags: ["data", "wikipedia", "knowledge", "free"]
     },
     {
-        name: "Country Information API",
-        description: "Detailed information about any country: population, capital, currencies, languages, borders, and flag.",
-        url: "https://restcountries.com/v3.1/name/",
-        price_usdc: 0.03,
+        name: "REST Countries",
+        description: "Detailed info for all 250 countries: population, capital, currencies, languages, borders, flags. Free, no API key.",
+        url: "https://restcountries.com/v3.1/all",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "countries", "geography"]
+        tags: ["data", "countries", "geography", "free"]
     },
     {
-        name: "News Headlines API",
-        description: "Latest news headlines from 80+ sources worldwide. Filter by category, country, and keyword. Updated every 15 minutes.",
-        url: "https://news-api.example.com/v2/top-headlines",
-        price_usdc: 0.05,
+        name: "Open Library Book Search",
+        description: "Search millions of books by title, author, or ISBN. Returns covers, publishers, and editions. Free, no API key.",
+        url: "https://openlibrary.org/search.json",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["data", "books", "library", "free"]
+    },
+    {
+        name: "TMDB Movies & TV",
+        description: "The Movie Database: search movies, TV shows, actors. Posters, ratings, trailers. Free API key required.",
+        url: "https://api.themoviedb.org/3/search/movie",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["data", "movies", "entertainment", "free"]
+    },
+    {
+        name: "NewsAPI Headlines",
+        description: "Top headlines from 80+ sources in 54 countries. Filter by category, source, keyword. Free: 100 requests/day.",
+        url: "https://newsapi.org/v2/top-headlines",
+        price_usdc: 0.008,
         owner_address: SERVER_WALLET,
         tags: ["data", "news", "headlines"]
     },
     {
-        name: "Open Library Book Search",
-        description: "Search millions of books by title, author, or ISBN. Returns cover art, publishers, and editions.",
-        url: "https://openlibrary.org/search.json",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["data", "books", "library"]
-    },
-    {
-        name: "Dictionary & Definitions",
-        description: "English dictionary with definitions, phonetics, synonyms, antonyms, and usage examples.",
-        url: "https://api.dictionaryapi.dev/api/v2/entries/",
+        name: "Open-Meteo Air Quality",
+        description: "Real-time air quality data: PM2.5, PM10, O3, NO2, CO. European and US AQI indexes. Free, no API key.",
+        url: "https://air-quality-api.open-meteo.com/v1/air-quality",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "dictionary", "language", "free"]
+        tags: ["data", "air-quality", "environment", "free"]
     },
     {
-        name: "Public Holidays API",
-        description: "Public and bank holidays for 100+ countries. Filter by year. Includes local and global holidays.",
-        url: "https://date.nager.at/api/v3/PublicHolidays/",
+        name: "Open Food Facts",
+        description: "Collaborative database of food products worldwide. Nutrition facts, ingredients, Nutri-Score. Free, open data.",
+        url: "https://world.openfoodfacts.org/api/v2/search",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "holidays", "calendar", "free"]
+        tags: ["data", "food", "nutrition", "free"]
     },
     {
-        name: "University Search API",
-        description: "Search universities worldwide by name or country. Returns name, country, domains, and web pages.",
-        url: "https://universities.hipolabs.com/search",
+        name: "NASA Astronomy Picture of the Day",
+        description: "Daily astronomy image or video with expert explanation. Decades of archive. Free with NASA API key.",
+        url: "https://api.nasa.gov/planetary/apod",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "education", "academic", "free"]
+        tags: ["data", "space", "nasa", "free"]
     },
     {
-        name: "Recipe Search API",
-        description: "Search 2M+ recipes by ingredient, cuisine, or dietary restriction. Returns ingredients, steps, and nutrition info.",
-        url: "https://recipe-api.example.com/v1/search",
-        price_usdc: 0.05,
+        name: "PokéAPI",
+        description: "Complete Pokémon database: 1,300+ Pokémon, moves, abilities, types, evolutions. Free, no API key. RESTful.",
+        url: "https://pokeapi.co/api/v2/pokemon",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["data", "food", "recipes"]
-    },
-    {
-        name: "Movie & TV Database",
-        description: "Search movies, TV shows, actors, and ratings. Returns posters, trailers, cast, and reviews from TMDB.",
-        url: "https://api.themoviedb.org/3/search/movie",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["data", "movies", "entertainment"]
-    },
-    {
-        name: "Sports Scores API",
-        description: "Live scores, standings, and schedules for football, basketball, tennis, and 20+ sports worldwide.",
-        url: "https://sports-api.example.com/v1/scores",
-        price_usdc: 0.05,
-        owner_address: SERVER_WALLET,
-        tags: ["data", "sports", "scores"]
-    },
-    {
-        name: "Air Quality Index API",
-        description: "Real-time air quality data (PM2.5, PM10, O3, NO2) for any location. Includes health recommendations.",
-        url: "https://air-quality.example.com/v1/current",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["data", "air-quality", "environment"]
+        tags: ["data", "pokemon", "gaming", "free"]
     },
 
-    // ============================================================
-    //  DEVELOPER TOOLS
-    // ============================================================
+    // ========================================================================
+    //  DEVELOPER TOOLS (mostly free)
+    // ========================================================================
     {
-        name: "GitHub User Profile API",
-        description: "Fetch public GitHub user profiles. Returns repos count, followers, bio, company, and avatar.",
-        url: "https://api.github.com/users/",
+        name: "GitHub REST API",
+        description: "Access GitHub data: users, repos, issues, PRs, commits. Free: 60 req/hr unauthenticated, 5000 with token.",
+        url: "https://api.github.com",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "github", "free"]
+        tags: ["developer", "github", "code", "free"]
     },
     {
-        name: "JSON Validator API",
-        description: "Validate JSON against any JSON Schema (draft-07, 2019-09, 2020-12). Returns detailed error messages and paths.",
-        url: "https://json-validator.example.com/v1/validate",
+        name: "NPM Registry",
+        description: "Search and fetch metadata for 2M+ npm packages. Versions, dependencies, downloads stats. Free, no API key.",
+        url: "https://registry.npmjs.org",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "json", "validator", "free"]
+        tags: ["developer", "npm", "packages", "free"]
     },
     {
-        name: "Code Formatter API",
-        description: "Auto-format code in 15+ languages (JS, Python, Go, Rust, SQL...). Uses Prettier and Black under the hood.",
-        url: "https://formatter-api.example.com/v1/format",
+        name: "JSONPlaceholder",
+        description: "Fake REST API for testing and prototyping. Posts, comments, users, todos, photos. Free, no API key.",
+        url: "https://jsonplaceholder.typicode.com",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "formatter", "code", "free"]
+        tags: ["developer", "testing", "mock-data", "free"]
     },
     {
-        name: "Regex Tester API",
-        description: "Test regex patterns against input strings. Returns matches, groups, and named captures. Supports JS, Python, and Go flavors.",
-        url: "https://regex-api.example.com/v1/test",
+        name: "HTTPBin",
+        description: "HTTP request/response testing service. Test headers, auth, redirects, cookies, status codes. Free, no API key.",
+        url: "https://httpbin.org",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "regex", "utility", "free"]
+        tags: ["developer", "testing", "debug", "free"]
     },
     {
-        name: "UUID Generator API",
-        description: "Generate UUID v4, v5, v7, and ULID identifiers. Batch generation supported (up to 1000 per request).",
-        url: "https://uuid-api.example.com/v1/generate",
+        name: "ipinfo.io",
+        description: "IP geolocation and ASN data. Country, city, timezone, ISP, company. Free: 50K lookups/month.",
+        url: "https://ipinfo.io",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "uuid", "utility", "free"]
+        tags: ["developer", "ip", "geolocation", "free"]
     },
     {
-        name: "Hash Generator API",
-        description: "Generate MD5, SHA-1, SHA-256, SHA-512, and bcrypt hashes from any input. Supports file hashing via upload.",
-        url: "https://hash-api.example.com/v1/hash",
+        name: "Google PageSpeed Insights",
+        description: "Analyze page performance and Core Web Vitals. Lighthouse scores for mobile and desktop. Free with Google API key.",
+        url: "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "hash", "crypto", "free"]
+        tags: ["developer", "performance", "seo", "free"]
     },
     {
-        name: "Lorem Ipsum Generator",
-        description: "Generate placeholder text in paragraphs, sentences, or words. Supports classic Latin and modern alternatives.",
-        url: "https://lorem-api.example.com/v1/generate",
-        price_usdc: 0,
+        name: "Abstract Email Validation",
+        description: "Verify email deliverability: syntax, MX records, SMTP check, disposable detection. Free: 100/month. Paid: $0.004/email.",
+        url: "https://emailvalidation.abstractapi.com/v1",
+        price_usdc: 0.006,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "lorem-ipsum", "utility", "free"]
+        tags: ["developer", "email", "validation"]
     },
     {
-        name: "Webhook Relay",
-        description: "Create temporary webhook URLs to inspect, debug, and forward HTTP requests. 24h retention. Real-time streaming.",
-        url: "https://webhook-relay.example.com/v1/create",
+        name: "Abstract IP Geolocation",
+        description: "IP geolocation with country, city, timezone, currency, connection type, and security flags. Free: 20K/month.",
+        url: "https://ipgeolocation.abstractapi.com/v1",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["developer", "webhook", "debug", "free"]
-    },
-    {
-        name: "API Status Checker",
-        description: "Check if any URL or API endpoint is up or down. Returns response time, status code, SSL info, and headers.",
-        url: "https://status-checker.example.com/v1/check",
-        price_usdc: 0,
-        owner_address: SERVER_WALLET,
-        tags: ["developer", "monitoring", "uptime", "free"]
-    },
-    {
-        name: "Cron Expression Parser",
-        description: "Parse and validate cron expressions. Returns next 10 execution times and human-readable description.",
-        url: "https://cron-api.example.com/v1/parse",
-        price_usdc: 0,
-        owner_address: SERVER_WALLET,
-        tags: ["developer", "cron", "scheduler", "free"]
+        tags: ["developer", "ip", "geolocation", "free"]
     },
 
-    // ============================================================
-    //  MEDIA & CONTENT
-    // ============================================================
+    // ========================================================================
+    //  MEDIA & IMAGE (mixed)
+    // ========================================================================
     {
-        name: "Image Compression API",
-        description: "Compress PNG, JPEG, and WebP images by up to 80% without visible quality loss. Batch processing supported.",
-        url: "https://compress-api.example.com/v1/compress",
-        price_usdc: 0.05,
+        name: "QR Code Generator",
+        description: "Generate QR codes from any text or URL. Custom size, color, error correction. PNG and SVG formats. Free, no API key.",
+        url: "https://api.qrserver.com/v1/create-qr-code",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["media", "qr-code", "generator", "free"]
+    },
+    {
+        name: "TinyPNG Image Compression",
+        description: "Smart PNG/JPEG/WebP compression. Reduces file size up to 80% without visible quality loss. Free: 500 images/month.",
+        url: "https://api.tinify.com/shrink",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
         tags: ["media", "image", "compression"]
     },
     {
-        name: "Video Thumbnail Generator",
-        description: "Extract thumbnails from video URLs at any timestamp. Supports YouTube, Vimeo, and direct video links.",
-        url: "https://thumb-api.example.com/v1/extract",
-        price_usdc: 0.08,
-        owner_address: SERVER_WALLET,
-        tags: ["media", "video", "thumbnail"]
-    },
-    {
-        name: "Placeholder Image API",
-        description: "Generate placeholder images of any size and color. Supports text overlay, gradients, and custom formats.",
-        url: "https://placeholder-api.example.com/v1/image",
+        name: "Placeholder.com Images",
+        description: "Generate placeholder images of any size. Custom colors and text. Direct URL-based, no API key needed.",
+        url: "https://via.placeholder.com",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["media", "placeholder", "image", "free"]
     },
     {
-        name: "QR Code Generator",
-        description: "Generate QR codes from any text or URL. Configurable size, color, error correction, and format (PNG/SVG).",
-        url: "https://api.qrserver.com/v1/create-qr-code/",
+        name: "Unsplash Photos",
+        description: "Access 3M+ high-resolution photos. Search, random, collections. Free: 50 requests/hour. Commercial use allowed.",
+        url: "https://api.unsplash.com/photos",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["media", "photos", "images", "free"]
+    },
+    {
+        name: "Cloudinary Image Transform",
+        description: "On-the-fly image transformation: resize, crop, filters, format conversion. Free: 25K transformations/month.",
+        url: "https://api.cloudinary.com/v1_1",
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["media", "image", "transform"]
+    },
+
+    // ========================================================================
+    //  SECURITY (mixed)
+    // ========================================================================
+    {
+        name: "Shodan Internet Scanner",
+        description: "Search engine for internet-connected devices. IP lookup, open ports, vulnerabilities, SSL info. Free: limited queries.",
+        url: "https://api.shodan.io",
         price_usdc: 0.01,
         owner_address: SERVER_WALLET,
-        tags: ["media", "qr-code", "utility"]
+        tags: ["security", "scanner", "network"]
     },
     {
-        name: "Color Palette Generator",
-        description: "Extract dominant colors from an image or generate harmonious palettes. Returns HEX, RGB, and HSL values.",
-        url: "https://color-api.example.com/v1/palette",
+        name: "Have I Been Pwned (Passwords)",
+        description: "Check if a password has been exposed in data breaches using k-anonymity. Returns breach count. Free, open API.",
+        url: "https://api.pwnedpasswords.com/range",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["media", "color", "design", "free"]
+        tags: ["security", "password", "breach", "free"]
     },
     {
-        name: "PDF Generator API",
-        description: "Generate PDF documents from HTML/CSS or Markdown. Supports headers, footers, page numbers, and custom fonts.",
-        url: "https://pdf-gen.example.com/v1/generate",
-        price_usdc: 0.10,
-        owner_address: SERVER_WALLET,
-        tags: ["media", "pdf", "document"]
-    },
-    {
-        name: "Screenshot Capture API",
-        description: "Capture full-page or viewport screenshots of any website. Returns PNG/JPEG with custom resolution and device emulation.",
-        url: "https://screenshot-api.example.com/v1/capture",
-        price_usdc: 0.08,
-        owner_address: SERVER_WALLET,
-        tags: ["media", "screenshot", "web"]
-    },
-    {
-        name: "OCR Document Scanner",
-        description: "Extract text from images and scanned documents using optical character recognition. Supports 60+ languages.",
-        url: "https://ocr-api.example.com/v1/scan",
-        price_usdc: 0.12,
-        owner_address: SERVER_WALLET,
-        tags: ["media", "ocr", "document"]
-    },
-    {
-        name: "Meme Generator API",
-        description: "Generate memes from popular templates with custom top/bottom text. 500+ templates available. Returns PNG.",
-        url: "https://meme-api.example.com/v1/generate",
-        price_usdc: 0.02,
-        owner_address: SERVER_WALLET,
-        tags: ["media", "meme", "fun"]
-    },
-
-    // ============================================================
-    //  SECURITY
-    // ============================================================
-    {
-        name: "Malware URL Scanner",
-        description: "Scan URLs against malware, phishing, and scam databases. Returns threat level, blacklist status, and risk score.",
-        url: "https://malware-scan.example.com/v1/check",
-        price_usdc: 0.10,
-        owner_address: SERVER_WALLET,
-        tags: ["security", "malware", "scanner"]
-    },
-    {
-        name: "Password Strength Checker",
-        description: "Analyze password strength with entropy calculation, common patterns detection, and breach database check (k-anonymity).",
-        url: "https://password-api.example.com/v1/check",
+        name: "URLhaus Malware Check",
+        description: "Check URLs against the URLhaus malware database by abuse.ch. Returns threat status and tags. Free, open data.",
+        url: "https://urlhaus-api.abuse.ch/v1",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["security", "password", "free"]
+        tags: ["security", "malware", "url-check", "free"]
     },
     {
-        name: "SSL Certificate Checker",
-        description: "Check SSL/TLS certificate validity, expiration date, issuer, and chain for any domain. Detects misconfigurations.",
-        url: "https://ssl-check.example.com/v1/check",
-        price_usdc: 0.03,
+        name: "AbuseIPDB",
+        description: "Check and report abusive IP addresses. Returns confidence score, ISP, and report history. Free: 1000 checks/day.",
+        url: "https://api.abuseipdb.com/api/v2/check",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["security", "ssl", "certificate"]
+        tags: ["security", "ip", "abuse", "free"]
     },
     {
-        name: "Domain WHOIS Lookup",
-        description: "Retrieve WHOIS registration data for any domain. Returns registrar, creation date, expiry, nameservers, and contacts.",
-        url: "https://whois-api.example.com/v1/lookup",
-        price_usdc: 0.05,
+        name: "SSL Labs Server Test",
+        description: "Deep analysis of SSL/TLS configuration for any domain. Grades A+ to F. Certificate chain, protocols, vulnerabilities.",
+        url: "https://api.ssllabs.com/api/v3/analyze",
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["security", "whois", "domain"]
-    },
-    {
-        name: "Email Breach Checker",
-        description: "Check if an email has been compromised in known data breaches. Returns breach names, dates, and exposed data types.",
-        url: "https://breach-api.example.com/v1/check",
-        price_usdc: 0.05,
-        owner_address: SERVER_WALLET,
-        tags: ["security", "breach", "email"]
+        tags: ["security", "ssl", "certificate", "free"]
     },
 
-    // ============================================================
-    //  LOCATION & MAPS
-    // ============================================================
+    // ========================================================================
+    //  LOCATION & TIME (mostly free)
+    // ========================================================================
     {
-        name: "Geocoding Service",
-        description: "Convert city names to GPS coordinates and vice versa. Worldwide coverage with multilingual support.",
+        name: "Open-Meteo Geocoding",
+        description: "Convert city names to GPS coordinates and vice versa. Worldwide coverage, multilingual. Free, no API key.",
         url: "https://geocoding-api.open-meteo.com/v1/search",
-        price_usdc: 0.02,
+        price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["location", "geocoding"]
+        tags: ["location", "geocoding", "coordinates", "free"]
     },
     {
-        name: "IP Geolocation API",
-        description: "Geolocate any IP address. Returns country, city, timezone, ISP, and coordinates.",
-        url: "https://ip-api.com/json/",
+        name: "ip-api.com Geolocation",
+        description: "IP geolocation: country, region, city, ZIP, lat/lon, timezone, ISP. Free for non-commercial use, 45 req/min.",
+        url: "https://ip-api.com/json",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["location", "ip", "geolocation", "free"]
     },
     {
-        name: "Distance Calculator API",
-        description: "Calculate distance and travel time between two points. Supports driving, walking, cycling, and straight line.",
-        url: "https://distance-api.example.com/v1/calculate",
-        price_usdc: 0.02,
-        owner_address: SERVER_WALLET,
-        tags: ["location", "distance", "maps"]
-    },
-    {
-        name: "Address Validation API",
-        description: "Validate and standardize postal addresses worldwide. Returns corrected address, ZIP code, and deliverability status.",
-        url: "https://address-api.example.com/v1/validate",
-        price_usdc: 0.05,
-        owner_address: SERVER_WALLET,
-        tags: ["location", "address", "validation"]
-    },
-    {
-        name: "World Time API",
-        description: "Current time in any timezone. Returns UTC offset, DST status, and formatted datetime.",
-        url: "https://worldtimeapi.org/api/timezone/",
+        name: "WorldTimeAPI",
+        description: "Current time in any timezone. UTC offset, DST status, abbreviation, and Unix timestamp. Free, no API key.",
+        url: "https://worldtimeapi.org/api/timezone",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["location", "time", "timezone", "free"]
     },
     {
-        name: "Reverse Geocoding API",
-        description: "Convert GPS coordinates to human-readable addresses. Returns street, city, region, country, and postal code.",
-        url: "https://reverse-geo.example.com/v1/reverse",
-        price_usdc: 0.03,
+        name: "Nager.at Public Holidays",
+        description: "Public and bank holidays for 100+ countries. Filter by year. Free, open source, no API key.",
+        url: "https://date.nager.at/api/v3/PublicHolidays",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["location", "holidays", "calendar", "free"]
+    },
+    {
+        name: "OpenCage Geocoding",
+        description: "Forward and reverse geocoding worldwide. 2,500+ free requests/day. Premium from $50/month for 10K/day.",
+        url: "https://api.opencagedata.com/geocode/v1/json",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
         tags: ["location", "geocoding", "address"]
     },
-
-    // ============================================================
-    //  COMMUNICATION
-    // ============================================================
     {
-        name: "Email Sending API",
-        description: "Send transactional and marketing emails via API. Supports HTML templates, attachments, and tracking (open/click).",
-        url: "https://email-api.example.com/v1/send",
-        price_usdc: 0.05,
+        name: "Mapbox Geocoding",
+        description: "Forward and reverse geocoding with address autocomplete. Free: 100K requests/month. Then $0.75/1000 requests.",
+        url: "https://api.mapbox.com/geocoding/v5/mapbox.places",
+        price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["communication", "email", "messaging"]
+        tags: ["location", "geocoding", "maps"]
     },
+
+    // ========================================================================
+    //  COMMUNICATION (paid — per-message based)
+    // ========================================================================
     {
-        name: "SMS Gateway API",
-        description: "Send SMS to 200+ countries. Supports Unicode, delivery reports, and scheduled sending. Competitive per-message pricing.",
-        url: "https://sms-api.example.com/v1/send",
-        price_usdc: 0.15,
+        name: "Twilio SMS",
+        description: "Send SMS to 200+ countries. Delivery reports, Unicode support. US: $0.0079/SMS + carrier fees.",
+        url: "https://api.twilio.com/2010-04-01/Accounts",
+        price_usdc: 0.01,
         owner_address: SERVER_WALLET,
         tags: ["communication", "sms", "messaging"]
     },
     {
-        name: "Push Notification API",
-        description: "Send push notifications to iOS, Android, and Web browsers. Supports rich media, deep links, and segmentation.",
-        url: "https://push-api.example.com/v1/send",
+        name: "Twilio WhatsApp",
+        description: "Send WhatsApp messages via API. Templates, media, and interactive messages. $0.005/message + Meta fees.",
+        url: "https://api.twilio.com/2010-04-01/Accounts",
+        price_usdc: 0.008,
+        owner_address: SERVER_WALLET,
+        tags: ["communication", "whatsapp", "messaging"]
+    },
+    {
+        name: "SendGrid Email",
+        description: "Transactional and marketing email API. HTML templates, tracking, analytics. Free: 100 emails/day. Essentials: $19.95/month.",
+        url: "https://api.sendgrid.com/v3/mail/send",
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["communication", "email", "transactional"]
+    },
+    {
+        name: "Mailgun Email",
+        description: "Email sending, validation, and routing API. Optimized deliverability. Free: 100 emails/day. Flex: $0.80/1000 emails.",
+        url: "https://api.mailgun.net/v3",
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["communication", "email", "delivery"]
+    },
+
+    // ========================================================================
+    //  SEO & WEB ANALYTICS (mixed)
+    // ========================================================================
+    {
+        name: "Google PageSpeed Insights",
+        description: "Page performance analysis powered by Lighthouse. Core Web Vitals, performance score, accessibility audit. Free.",
+        url: "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["seo", "performance", "lighthouse", "free"]
+    },
+    {
+        name: "ScrapingBee Web Scraper",
+        description: "Web scraping API with JS rendering and proxy rotation. Handles anti-bot. Free: 1000 credits. From $49/month.",
+        url: "https://app.scrapingbee.com/api/v1",
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["seo", "scraping", "web"]
+    },
+    {
+        name: "Hunter.io Email Finder",
+        description: "Find professional email addresses by domain or name. Verification included. Free: 25 searches/month. From $49/month.",
+        url: "https://api.hunter.io/v2/domain-search",
+        price_usdc: 0.03,
+        owner_address: SERVER_WALLET,
+        tags: ["seo", "email", "lead-generation"]
+    },
+    {
+        name: "Microlink Web Previews",
+        description: "Generate link previews, screenshots, and PDF from any URL. Metadata extraction. Free: 50 req/day. Pro: $15.99/month.",
+        url: "https://api.microlink.io",
+        price_usdc: 0.008,
+        owner_address: SERVER_WALLET,
+        tags: ["seo", "preview", "screenshot"]
+    },
+
+    // ========================================================================
+    //  SCRAPING & DATA ENRICHMENT (paid)
+    // ========================================================================
+    {
+        name: "ScraperAPI",
+        description: "Web scraping with automatic proxy rotation, CAPTCHA handling, and JS rendering. Free: 5000 credits. From $49/month.",
+        url: "https://api.scraperapi.com",
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["scraping", "web", "proxy"]
+    },
+    {
+        name: "Clearbit Company Enrichment",
+        description: "Enrich company data: domain, logo, industry, size, tech stack, social profiles. Now part of HubSpot. From $99/month.",
+        url: "https://company.clearbit.com/v2/companies/find",
         price_usdc: 0.05,
-        owner_address: SERVER_WALLET,
-        tags: ["communication", "push", "notification"]
-    },
-    {
-        name: "Email Validation API",
-        description: "Verify if an email address is valid, deliverable, and not disposable. Checks MX records, syntax, and known providers.",
-        url: "https://email-verify.example.com/v1/validate",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["communication", "email", "validation"]
-    },
-
-    // ============================================================
-    //  SEO & WEB ANALYTICS
-    // ============================================================
-    {
-        name: "SEO Analysis API",
-        description: "Analyze any URL for SEO performance. Returns meta tags, heading structure, page speed, mobile score, and issues.",
-        url: "https://seo-api.example.com/v1/analyze",
-        price_usdc: 0.10,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "analytics", "web"]
-    },
-    {
-        name: "Backlink Checker API",
-        description: "Find all backlinks pointing to any domain or URL. Returns anchor text, domain authority, and follow/nofollow status.",
-        url: "https://backlink-api.example.com/v1/check",
-        price_usdc: 0.15,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "backlinks", "domain"]
-    },
-    {
-        name: "RSS Feed Parser",
-        description: "Parse any RSS or Atom feed URL into structured JSON. Extracts titles, links, dates, images, and content.",
-        url: "https://rss-parser.example.com/v1/parse",
-        price_usdc: 0,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "rss", "feed", "free"]
-    },
-    {
-        name: "Readability Scorer",
-        description: "Score text readability using Flesch-Kincaid, Gunning Fog, and SMOG indexes. Returns grade level and improvement tips.",
-        url: "https://readability-api.example.com/v1/score",
-        price_usdc: 0.03,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "readability", "text"]
-    },
-    {
-        name: "URL Shortener API",
-        description: "Shorten any URL with custom slugs and click tracking. Returns short URL, QR code, and analytics dashboard link.",
-        url: "https://short-url.example.com/v1/shorten",
-        price_usdc: 0,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "url", "shortener", "free"]
-    },
-
-    // ============================================================
-    //  DATA ENRICHMENT & SCRAPING
-    // ============================================================
-    {
-        name: "Web Scraping API",
-        description: "Extract structured data from any website. Handles JavaScript rendering, pagination, and anti-bot protection.",
-        url: "https://scrape-api.example.com/v1/extract",
-        price_usdc: 0.15,
-        owner_address: SERVER_WALLET,
-        tags: ["scraping", "web", "data"]
-    },
-    {
-        name: "Company Data Enrichment",
-        description: "Enrich company names with domain, logo, industry, size, location, social profiles, and tech stack.",
-        url: "https://enrichment-api.example.com/v1/company",
-        price_usdc: 0.20,
         owner_address: SERVER_WALLET,
         tags: ["scraping", "enrichment", "company"]
     },
     {
-        name: "LinkedIn Profile API",
-        description: "Fetch public LinkedIn profile data: headline, experience, education, skills, and certifications.",
-        url: "https://linkedin-api.example.com/v1/profile",
-        price_usdc: 0.25,
+        name: "ZeroBounce Email Validation",
+        description: "Email validation: deliverability, disposable detection, catch-all, abuse check. Free: 100/month. Then $0.008/email.",
+        url: "https://api.zerobounce.net/v2/validate",
+        price_usdc: 0.01,
         owner_address: SERVER_WALLET,
-        tags: ["scraping", "linkedin", "profile"]
+        tags: ["scraping", "email", "validation"]
     },
     {
-        name: "Product Price Tracker",
-        description: "Track product prices across Amazon, eBay, and major retailers. Returns price history, alerts, and best deals.",
-        url: "https://price-tracker.example.com/v1/track",
-        price_usdc: 0.10,
+        name: "FullContact Person Enrichment",
+        description: "Enrich person data from email: name, photo, social profiles, job title, company. From $99/month.",
+        url: "https://api.fullcontact.com/v3/person.enrich",
+        price_usdc: 0.03,
         owner_address: SERVER_WALLET,
-        tags: ["scraping", "ecommerce", "price"]
+        tags: ["scraping", "enrichment", "person"]
     },
 
-    // ============================================================
-    //  FUN & MISCELLANEOUS
-    // ============================================================
+    // ========================================================================
+    //  FUN & MISC (all free)
+    // ========================================================================
     {
-        name: "Random User Generator",
-        description: "Generate realistic fake user profiles with name, email, photo, address, and phone. Great for testing.",
-        url: "https://randomuser.me/api/",
+        name: "Dictionary API",
+        description: "English dictionary with definitions, phonetics, synonyms, antonyms, and usage examples. Free, no API key.",
+        url: "https://api.dictionaryapi.dev/api/v2/entries/en",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["fun", "dictionary", "language", "free"]
+    },
+    {
+        name: "RandomUser.me",
+        description: "Generate realistic fake user profiles: name, email, photo, address, phone. Great for testing. Free, no API key.",
+        url: "https://randomuser.me/api",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["fun", "mock-data", "users", "free"]
     },
     {
-        name: "Cat Facts API",
-        description: "Random fun facts about cats. Perfect for testing or entertainment. Returns one fact per request.",
+        name: "Cat Facts",
+        description: "Random fun facts about cats. One fact per request. Perfect for testing or entertainment. Free, no API key.",
         url: "https://catfact.ninja/fact",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["fun", "facts", "cats", "free"]
     },
     {
-        name: "Number Trivia API",
-        description: "Interesting mathematical and historical trivia about any number. Supports math, date, and year types.",
-        url: "https://numbersapi.com/42/trivia",
+        name: "Dog CEO Random Images",
+        description: "Random dog images by breed. 20,000+ images across 120 breeds. Free, no API key.",
+        url: "https://dog.ceo/api/breeds/image/random",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["fun", "trivia", "numbers", "free"]
+        tags: ["fun", "dogs", "images", "free"]
     },
     {
-        name: "Joke Generator API",
-        description: "Random programming jokes, dad jokes, and dark humor. Filter by category. Safe-mode available.",
-        url: "https://joke-api.example.com/v1/random",
+        name: "JokeAPI",
+        description: "Random jokes: programming, puns, dark humor, misc. Filter by category and language. Safe-mode available. Free.",
+        url: "https://v2.jokeapi.dev/joke/Any",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
         tags: ["fun", "jokes", "humor", "free"]
     },
     {
-        name: "Inspirational Quotes API",
-        description: "Random quotes from famous authors, entrepreneurs, and philosophers. Filter by category or author.",
-        url: "https://quotes-api.example.com/v1/random",
+        name: "Advice Slip",
+        description: "Random life advice and wisdom. One slip per request. Search by keyword. Free, no API key.",
+        url: "https://api.adviceslip.com/advice",
         price_usdc: 0,
         owner_address: SERVER_WALLET,
-        tags: ["fun", "quotes", "inspiration", "free"]
+        tags: ["fun", "advice", "quotes", "free"]
+    },
+    {
+        name: "Numbers API",
+        description: "Interesting mathematical and historical trivia about any number, date, or year. Free, no API key.",
+        url: "https://numbersapi.com",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["fun", "trivia", "numbers", "free"]
+    },
+    {
+        name: "Bored API",
+        description: "Random activity suggestions when you're bored. Filter by type, participants, and price. Free, no API key.",
+        url: "https://bored-api.appbrewery.com/random",
+        price_usdc: 0,
+        owner_address: SERVER_WALLET,
+        tags: ["fun", "activities", "random", "free"]
     }
 ];
 
@@ -733,9 +691,13 @@ async function seed() {
         process.exit(1);
     }
 
-    console.log(`\u2705 ${data.length} services inserted successfully!\n`);
+    const freeCount = data.filter(s => Number(s.price_usdc) === 0).length;
+    const paidCount = data.filter(s => Number(s.price_usdc) > 0).length;
+
+    console.log(`\u2705 ${data.length} services inserted (${freeCount} free, ${paidCount} paid)\n`);
     data.forEach((s, i) => {
-        console.log(`  ${(i + 1).toString().padStart(2)}. ${s.name} (${s.price_usdc} USDC) [${s.id.slice(0, 8)}]`);
+        const price = Number(s.price_usdc) === 0 ? 'FREE' : `${s.price_usdc} USDC`;
+        console.log(`  ${(i + 1).toString().padStart(2)}. ${s.name} (${price}) [${s.id.slice(0, 8)}]`);
     });
     console.log(`\nDone.`);
 }
