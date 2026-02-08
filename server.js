@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -23,12 +24,33 @@ const NETWORK_LABEL = NETWORK === 'mainnet' ? 'Base' : 'Base Sepolia';
 // --- Supabase ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
+// --- SECURITY HEADERS (Helmet) ---
+app.use(helmet({
+    contentSecurityPolicy: false, // Dashboard uses inline scripts
+    crossOriginEmbedderPolicy: false,
+}));
+
+// --- CORS (whitelist strict) ---
+const ALLOWED_ORIGINS = [
+    process.env.FRONTEND_URL,
+    'https://x402-frontend-one.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+].filter(Boolean);
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || '*',
+    origin: (origin, callback) => {
+        // Allow requests with no origin (curl, agents, server-to-server)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+        callback(new Error('CORS not allowed'));
+    },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Content-Type', 'X-Payment-TxHash']
 }));
-app.use(express.json());
+
+// --- BODY LIMITS ---
+app.use(express.json({ limit: '10kb' }));
 
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
@@ -74,8 +96,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Cache des paiements vérifiés (mémoire + Supabase) ---
+// --- Cache des paiements vérifiés (mémoire + Supabase persisté) ---
 const verifiedPayments = new Set();
+
+async function isTxAlreadyUsed(txHash) {
+    // Check memory cache first
+    if (verifiedPayments.has(txHash)) return true;
+    // Check Supabase
+    const { data } = await supabase
+        .from('used_transactions')
+        .select('tx_hash')
+        .eq('tx_hash', txHash)
+        .limit(1);
+    if (data && data.length > 0) {
+        verifiedPayments.add(txHash); // warm cache
+        return true;
+    }
+    return false;
+}
+
+async function markTxUsed(txHash, action) {
+    verifiedPayments.add(txHash);
+    await supabase.from('used_transactions').insert([{ tx_hash: txHash, action }]).select();
+}
 
 // --- Activity log (persisté dans Supabase) ---
 async function logActivity(type, detail, amount = 0, txHash = null) {
@@ -94,11 +137,21 @@ async function logActivity(type, detail, amount = 0, txHash = null) {
 }
 
 // --- VÉRIFICATION ON-CHAIN ---
+const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+const RPC_TIMEOUT = 10000; // 10s
+
+function fetchWithTimeout(url, options, timeout = RPC_TIMEOUT) {
+    return Promise.race([
+        fetch(url, options),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC timeout')), timeout))
+    ]);
+}
+
 async function verifyPayment(txHash, minAmount) {
     const serverAddress = process.env.WALLET_ADDRESS.toLowerCase();
 
     // 1. Récupérer le reçu de transaction
-    const receiptRes = await fetch(RPC_URL, {
+    const receiptRes = await fetchWithTimeout(RPC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -130,7 +183,7 @@ async function verifyPayment(txHash, minAmount) {
     }
 
     // 3. Fallback : vérifier un transfert ETH natif
-    const txRes = await fetch(RPC_URL, {
+    const txRes = await fetchWithTimeout(RPC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -175,17 +228,30 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
             });
         }
 
-        // Déjà vérifié ? → accès direct
-        if (verifiedPayments.has(txHash)) {
-            console.log(`[x402] Accès autorisé (cache) pour tx ${txHash.slice(0, 10)}...`);
-            return next();
+        // Validate tx hash format
+        if (!TX_HASH_REGEX.test(txHash)) {
+            return res.status(400).json({ error: 'Invalid transaction hash format' });
+        }
+
+        // Anti-replay: check if tx already used (Supabase + memory)
+        try {
+            const alreadyUsed = await isTxAlreadyUsed(txHash);
+            if (alreadyUsed) {
+                console.log(`[x402] Replay blocked for tx ${txHash.slice(0, 10)}...`);
+                return res.status(402).json({
+                    error: "Payment Required",
+                    message: "This transaction has already been used. Please send a new payment."
+                });
+            }
+        } catch (err) {
+            console.error('[x402] Anti-replay check error:', err.message);
         }
 
         // Vérification on-chain
         try {
             const valid = await verifyPayment(txHash, minAmountRaw);
             if (valid) {
-                verifiedPayments.add(txHash);
+                await markTxUsed(txHash, displayLabel);
                 logActivity('payment', `${displayLabel} - ${displayAmount} USDC vérifié`, displayAmount, txHash);
                 return next();
             }
@@ -245,17 +311,20 @@ app.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Lister
 
 // --- RECHERCHE DE SERVICES (0.05 USDC) ---
 app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Rechercher un service"), async (req, res) => {
-    const query = (req.query.q || '').trim();
+    const query = (req.query.q || '').trim().slice(0, 100);
 
     if (!query) {
         return res.status(400).json({ error: "Paramètre 'q' requis. Ex: /search?q=weather" });
     }
 
+    // Sanitize: escape special Postgres LIKE characters
+    const sanitized = query.replace(/[%_\\]/g, '\\$&');
+
     // Recherche floue sur name et description
     const { data, error } = await supabase
         .from('services')
         .select('*')
-        .or(`name.ilike.%${query}%,description.ilike.%${query}%`);
+        .or(`name.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
 
     if (error) return res.status(500).json({ error: error.message });
 
@@ -270,6 +339,9 @@ app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Recherch
 });
 
 // --- ENREGISTREMENT D'UN SERVICE (1 USDC) ---
+const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const URL_REGEX = /^https?:\/\/.+/;
+
 app.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistrer un service"), async (req, res) => {
     const { name, description, url, price, tags, ownerAddress } = req.body;
     const txHash = req.headers['x-payment-txhash'] || null;
@@ -283,10 +355,30 @@ app.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistre
         });
     }
 
+    // Type & format validation
+    if (typeof name !== 'string' || name.length > 200) {
+        return res.status(400).json({ error: 'name must be a string (max 200 chars)' });
+    }
+    if (typeof url !== 'string' || !URL_REGEX.test(url) || url.length > 500) {
+        return res.status(400).json({ error: 'url must be a valid HTTP(S) URL (max 500 chars)' });
+    }
+    if (typeof price !== 'number' || price < 0 || price > 1000) {
+        return res.status(400).json({ error: 'price must be a number between 0 and 1000' });
+    }
+    if (typeof ownerAddress !== 'string' || !WALLET_REGEX.test(ownerAddress)) {
+        return res.status(400).json({ error: 'ownerAddress must be a valid Ethereum address (0x...)' });
+    }
+    if (description && (typeof description !== 'string' || description.length > 1000)) {
+        return res.status(400).json({ error: 'description must be a string (max 1000 chars)' });
+    }
+    if (tags && (!Array.isArray(tags) || tags.length > 10 || tags.some(t => typeof t !== 'string' || t.length > 50))) {
+        return res.status(400).json({ error: 'tags must be an array of strings (max 10 tags, 50 chars each)' });
+    }
+
     const insertData = {
-        name,
-        description: description || '',
-        url,
+        name: name.trim(),
+        description: (description || '').trim(),
+        url: url.trim(),
         price_usdc: price,
         owner_address: ownerAddress,
         tags: tags || []
@@ -346,7 +438,7 @@ app.get('/api/stats', async (req, res) => {
     let walletBalance = null;
     try {
         const balanceCall = '0x70a08231' + '000000000000000000000000' + process.env.WALLET_ADDRESS.slice(2).toLowerCase();
-        const balRes = await fetch(RPC_URL, {
+        const balRes = await fetchWithTimeout(RPC_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -358,12 +450,14 @@ app.get('/api/stats', async (req, res) => {
         if (result) walletBalance = Number(BigInt(result)) / 1e6;
     } catch { /* ignore */ }
 
+    const walletAddr = process.env.WALLET_ADDRESS;
     res.json({
         totalServices: count || 0,
         totalPayments,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         walletBalance,
-        wallet: process.env.WALLET_ADDRESS,
+        wallet: walletAddr ? `${walletAddr.slice(0, 6)}...${walletAddr.slice(-4)}` : null,
+        walletFull: walletAddr,
         network: NETWORK_LABEL,
         explorer: EXPLORER_URL
     });
@@ -416,8 +510,11 @@ app.use((err, req, res, next) => {
 // --- LANCEMENT ---
 app.listen(PORT, async () => {
     const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+    const maskedWallet = process.env.WALLET_ADDRESS
+        ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
+        : 'NOT SET';
     console.log(`\n🚀 x402 Bazaar actif sur http://localhost:${PORT}`);
-    console.log(`💰 Wallet : ${process.env.WALLET_ADDRESS}`);
+    console.log(`💰 Wallet : ${maskedWallet}`);
     console.log(`🔗 Réseau : ${NETWORK_LABEL} (${NETWORK})`);
     console.log(`🗄️  Base   : Supabase (PostgreSQL)`);
     console.log(`📦 Services enregistrés : ${count || 0}`);
