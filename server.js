@@ -57,9 +57,10 @@ app.use(express.json({ limit: '10kb' }));
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 min
-    max: 100,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.path.startsWith('/api/') || req.path === '/health',
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
