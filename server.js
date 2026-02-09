@@ -663,12 +663,13 @@ app.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web 
             const snippet = $el.find('.result__snippet').text().trim();
             const rawHref = $el.find('.result__a').attr('href') || '';
 
-            // DuckDuckGo wraps URLs in redirect links, extract the actual URL
+            // DuckDuckGo uses redirect links (uddg param) or protocol-relative URLs
             let url = rawHref;
             try {
                 const parsed = new URL(rawHref, 'https://duckduckgo.com');
                 url = parsed.searchParams.get('uddg') || rawHref;
             } catch {}
+            if (url.startsWith('//')) url = 'https:' + url;
 
             if (title && url) {
                 results.push({ title, url, snippet });
@@ -747,8 +748,18 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
         const turndown = new TurndownService({
             headingStyle: 'atx',
             codeBlockStyle: 'fenced',
+            linkStyle: 'inlined',
         });
         turndown.remove(['img', 'figure', 'picture']); // Remove images for clean text
+        // Fix protocol-relative URLs in links
+        turndown.addRule('fixProtocolRelativeUrls', {
+            filter: 'a',
+            replacement: (content, node) => {
+                let href = node.getAttribute('href') || '';
+                if (href.startsWith('//')) href = 'https:' + href;
+                return content ? `[${content}](${href})` : '';
+            }
+        });
 
         let markdown = turndown.turndown(contentHtml);
 
