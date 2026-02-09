@@ -4,6 +4,8 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
+const cheerio = require('cheerio');
+const TurndownService = require('turndown');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -372,6 +374,9 @@ app.get('/', async (req, res) => {
             "GET /services":  "Liste complète des services (0.05 USDC)",
             "GET /search?q=": "Recherche de services par mot-clé (0.05 USDC)",
             "POST /register": "Enregistrer un nouveau service (1 USDC)",
+            "GET /api/search?q=": "Clean web search results for LLMs (0.005 USDC)",
+            "GET /api/scrape?url=": "Universal URL scraper - returns clean Markdown (0.005 USDC)",
+            "GET /api/twitter?user=": "Twitter/X profile and tweet data (0.005 USDC)",
             "GET /api/weather?city=": "Weather data for any city (0.02 USDC)",
             "GET /api/crypto?coin=": "Cryptocurrency prices (0.02 USDC)",
             "GET /api/joke": "Random joke (0.01 USDC)"
@@ -627,6 +632,289 @@ app.get('/api/joke', paidEndpointLimiter, paymentMiddleware(10000, 0.01, "Random
     }
 });
 
+// --- WEB SEARCH API WRAPPER (0.005 USDC) ---
+app.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web Search API"), async (req, res) => {
+    const query = (req.query.q || '').trim().slice(0, 200);
+
+    if (!query) {
+        return res.status(400).json({ error: "Parameter 'q' required. Ex: /api/search?q=bitcoin+price" });
+    }
+
+    if (/[\x00-\x1F\x7F]/.test(query)) {
+        return res.status(400).json({ error: 'Invalid characters in query' });
+    }
+
+    const maxResults = Math.min(parseInt(req.query.max) || 10, 20);
+
+    try {
+        const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        const searchRes = await fetchWithTimeout(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
+        }, 8000);
+        const html = await searchRes.text();
+
+        const $ = cheerio.load(html);
+        const results = [];
+
+        $('.result').each((i, el) => {
+            if (results.length >= maxResults) return false;
+            const $el = $(el);
+            const title = $el.find('.result__a').text().trim();
+            const snippet = $el.find('.result__snippet').text().trim();
+            const rawHref = $el.find('.result__a').attr('href') || '';
+
+            // DuckDuckGo wraps URLs in redirect links, extract the actual URL
+            let url = rawHref;
+            try {
+                const parsed = new URL(rawHref, 'https://duckduckgo.com');
+                url = parsed.searchParams.get('uddg') || rawHref;
+            } catch {}
+
+            if (title && url) {
+                results.push({ title, url, snippet });
+            }
+        });
+
+        logActivity('api_call', `Web Search API: "${query}" -> ${results.length} results`);
+
+        res.json({
+            success: true,
+            query,
+            results_count: results.length,
+            results
+        });
+    } catch (err) {
+        console.error('[Search API] Error:', err.message);
+        return res.status(500).json({ error: 'Search API request failed', message: err.message });
+    }
+});
+
+// --- UNIVERSAL SCRAPER API WRAPPER (0.005 USDC) ---
+app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Universal Scraper API"), async (req, res) => {
+    const targetUrl = (req.query.url || '').trim();
+
+    if (!targetUrl) {
+        return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/scrape?url=https://example.com" });
+    }
+
+    // Validate URL
+    let parsed;
+    try {
+        parsed = new URL(targetUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+            return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
+        }
+    } catch {
+        return res.status(400).json({ error: 'Invalid URL format' });
+    }
+
+    // Block internal/private IPs
+    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0)/.test(parsed.hostname)) {
+        return res.status(400).json({ error: 'Internal URLs not allowed' });
+    }
+
+    try {
+        const pageRes = await fetchWithTimeout(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' },
+            redirect: 'follow',
+        }, 10000);
+
+        const contentType = pageRes.headers.get('content-type') || '';
+        if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
+            return res.status(400).json({ error: 'URL does not return HTML or text content', content_type: contentType });
+        }
+
+        const html = await pageRes.text();
+
+        // Limit input size (5MB max)
+        if (html.length > 5 * 1024 * 1024) {
+            return res.status(400).json({ error: 'Page too large (max 5MB)' });
+        }
+
+        const $ = cheerio.load(html);
+
+        // Remove noise elements
+        $('script, style, nav, footer, header, iframe, noscript, svg, [role="navigation"], [role="banner"], .sidebar, .menu, .nav, .footer, .header, .ad, .ads, .advertisement').remove();
+
+        // Extract metadata
+        const title = $('title').text().trim() || $('h1').first().text().trim() || '';
+        const metaDesc = $('meta[name="description"]').attr('content') || '';
+
+        // Get main content (prefer article/main, fallback to body)
+        let contentHtml = $('article').html() || $('main').html() || $('[role="main"]').html() || $('body').html() || '';
+
+        // Convert HTML to Markdown
+        const turndown = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+        });
+        turndown.remove(['img', 'figure', 'picture']); // Remove images for clean text
+
+        let markdown = turndown.turndown(contentHtml);
+
+        // Clean up: remove excessive whitespace
+        markdown = markdown.replace(/\n{3,}/g, '\n\n').trim();
+
+        // Truncate to reasonable size (50K chars max)
+        if (markdown.length > 50000) {
+            markdown = markdown.slice(0, 50000) + '\n\n[...truncated]';
+        }
+
+        logActivity('api_call', `Scraper API: ${parsed.hostname} -> ${markdown.length} chars`);
+
+        res.json({
+            success: true,
+            url: targetUrl,
+            title,
+            description: metaDesc,
+            content: markdown,
+            content_length: markdown.length
+        });
+    } catch (err) {
+        console.error('[Scraper API] Error:', err.message);
+        return res.status(500).json({ error: 'Scraper API request failed', message: err.message });
+    }
+});
+
+// --- TWITTER/X DATA API WRAPPER (0.005 USDC) ---
+app.get('/api/twitter', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Twitter/X Data API"), async (req, res) => {
+    const username = (req.query.user || '').trim().replace(/^@/, '').slice(0, 50);
+    const tweetUrl = (req.query.tweet || '').trim();
+
+    if (!username && !tweetUrl) {
+        return res.status(400).json({
+            error: "Parameter 'user' or 'tweet' required.",
+            examples: [
+                "/api/twitter?user=elonmusk",
+                "/api/twitter?tweet=https://x.com/user/status/123456789"
+            ]
+        });
+    }
+
+    // Sanitize
+    if (username && !/^[a-zA-Z0-9_]{1,15}$/.test(username)) {
+        return res.status(400).json({ error: 'Invalid Twitter username format' });
+    }
+
+    try {
+        if (tweetUrl) {
+            // Extract tweet ID from URL
+            const tweetMatch = tweetUrl.match(/status\/(\d+)/);
+            if (!tweetMatch) {
+                return res.status(400).json({ error: 'Invalid tweet URL. Expected format: https://x.com/user/status/123456789' });
+            }
+            const tweetId = tweetMatch[1];
+
+            // Use fxtwitter API for tweet data
+            const apiUrl = `https://api.fxtwitter.com/x/status/${tweetId}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                headers: { 'User-Agent': 'x402-bazaar/1.0' }
+            }, 8000);
+            const data = await apiRes.json();
+
+            if (!data.tweet) {
+                return res.status(404).json({ error: 'Tweet not found or unavailable' });
+            }
+
+            const tweet = data.tweet;
+            logActivity('api_call', `Twitter API: tweet ${tweetId}`);
+
+            res.json({
+                success: true,
+                type: 'tweet',
+                tweet: {
+                    id: tweet.id,
+                    text: tweet.text,
+                    created_at: tweet.created_at,
+                    likes: tweet.likes,
+                    retweets: tweet.retweets,
+                    replies: tweet.replies,
+                    views: tweet.views,
+                    author: {
+                        name: tweet.author?.name,
+                        username: tweet.author?.screen_name,
+                        followers: tweet.author?.followers,
+                        verified: tweet.author?.verified,
+                    },
+                    media: tweet.media?.photos?.map(p => p.url) || [],
+                    url: tweet.url
+                }
+            });
+        } else {
+            // Profile lookup via fxtwitter
+            const apiUrl = `https://api.fxtwitter.com/${username}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                headers: { 'User-Agent': 'x402-bazaar/1.0' }
+            }, 8000);
+            const data = await apiRes.json();
+
+            if (!data.user && !data.tweet) {
+                // fxtwitter might return last tweet instead of profile
+                // Try syndication API as fallback for profile data
+                const synUrl = `https://syndication.twitter.com/srv/timeline-profile/screen-name/${username}`;
+                const synRes = await fetchWithTimeout(synUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
+                }, 8000);
+                const synHtml = await synRes.text();
+
+                // Extract profile info from syndication HTML
+                const $s = cheerio.load(synHtml);
+                const profileName = $s('[data-testid="UserName"]').text().trim() || username;
+
+                // Extract recent tweets from timeline
+                const tweets = [];
+                $s('[data-testid="tweet"]').each((i, el) => {
+                    if (tweets.length >= 5) return false;
+                    const tweetText = $s(el).find('[data-testid="tweetText"]').text().trim();
+                    if (tweetText) tweets.push(tweetText);
+                });
+
+                logActivity('api_call', `Twitter API: profile @${username} (syndication)`);
+
+                return res.json({
+                    success: true,
+                    type: 'profile',
+                    user: {
+                        username,
+                        name: profileName,
+                        recent_tweets: tweets,
+                        source: 'syndication'
+                    }
+                });
+            }
+
+            // fxtwitter returned data (might be user's latest tweet)
+            const user = data.user || data.tweet?.author;
+            logActivity('api_call', `Twitter API: profile @${username}`);
+
+            res.json({
+                success: true,
+                type: 'profile',
+                user: {
+                    username: user?.screen_name || username,
+                    name: user?.name,
+                    description: user?.description,
+                    followers: user?.followers,
+                    following: user?.following,
+                    tweets_count: user?.tweets,
+                    verified: user?.verified,
+                    avatar: user?.avatar_url,
+                    banner: user?.banner_url,
+                },
+                latest_tweet: data.tweet ? {
+                    text: data.tweet.text,
+                    created_at: data.tweet.created_at,
+                    likes: data.tweet.likes,
+                    retweets: data.tweet.retweets,
+                } : null
+            });
+        }
+    } catch (err) {
+        console.error('[Twitter API] Error:', err.message);
+        return res.status(500).json({ error: 'Twitter API request failed', message: err.message });
+    }
+});
+
 // ============================================================
 // DASHBOARD
 // ============================================================
@@ -753,6 +1041,9 @@ app.listen(PORT, async () => {
     console.log(`   GET  /search?q=       → Recherche (0.05 USDC)`);
     console.log(`   POST /register        → Enregistrement (1 USDC)`);
     console.log(`\n   🌐 API Wrappers:`);
+    console.log(`   GET  /api/search?q=     → Clean web search (0.005 USDC)`);
+    console.log(`   GET  /api/scrape?url=   → URL to Markdown (0.005 USDC)`);
+    console.log(`   GET  /api/twitter?user= → Twitter/X data (0.005 USDC)`);
     console.log(`   GET  /api/weather?city= → Weather data (0.02 USDC)`);
     console.log(`   GET  /api/crypto?coin=  → Crypto prices (0.02 USDC)`);
     console.log(`   GET  /api/joke          → Random joke (0.01 USDC)`);

@@ -8,6 +8,32 @@ const BASE_URL = 'https://x402-api.onrender.com';
 
 // x402 Native wrapper APIs — real endpoints proxied via x402 payments
 const WRAPPER_SERVICES = [
+    // --- HIGH-VALUE SERVICES ---
+    {
+        name: "x402 Web Search",
+        description: "Clean web search results optimized for LLMs. Returns title, URL, and snippet for each result — no ads, no HTML, just structured data. Powered by DuckDuckGo. Usage: /api/search?q=bitcoin+price&max=10",
+        url: `${BASE_URL}/api/search`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "search", "web", "llm", "live"]
+    },
+    {
+        name: "x402 Universal Scraper",
+        description: "Give any URL, get clean Markdown back. Strips ads, nav, scripts — returns only the main content. Perfect for AI agents doing research. Usage: /api/scrape?url=https://example.com",
+        url: `${BASE_URL}/api/scrape`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "scraper", "markdown", "web", "live"]
+    },
+    {
+        name: "x402 Twitter/X Data",
+        description: "Read Twitter/X profiles and tweets without API keys. Get follower counts, recent tweets, engagement metrics. Usage: /api/twitter?user=elonmusk or /api/twitter?tweet=https://x.com/user/status/123",
+        url: `${BASE_URL}/api/twitter`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "twitter", "social", "data", "live"]
+    },
+    // --- UTILITY SERVICES ---
     {
         name: "x402 Weather API",
         description: "Real-time weather data for any city. Returns temperature, wind speed, and weather code. Powered by Open-Meteo via x402 payment. Usage: /api/weather?city=Paris",
