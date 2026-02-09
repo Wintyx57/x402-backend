@@ -169,6 +169,63 @@ server.tool(
     }
 );
 
+// --- Tool: find_tool_for_task (0.05 USDC — smart service lookup) ---
+server.tool(
+    'find_tool_for_task',
+    `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
+    { task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")') },
+    async ({ task }) => {
+        try {
+            // Extract keywords: remove stop words, keep meaningful terms
+            const stopWords = new Set(['i', 'need', 'want', 'to', 'a', 'an', 'the', 'for', 'of', 'and', 'or', 'in', 'on', 'with', 'that', 'this', 'get', 'find', 'me', 'my', 'some', 'can', 'you', 'do', 'is', 'it', 'be', 'have', 'use', 'please', 'should', 'would', 'could']);
+            const keywords = task.toLowerCase()
+                .replace(/[^a-z0-9\s]/g, '')
+                .split(/\s+/)
+                .filter(w => w.length > 2 && !stopWords.has(w));
+            const query = keywords.slice(0, 3).join(' ') || task.slice(0, 30);
+
+            const result = await payAndRequest(
+                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`
+            );
+
+            const services = result.data || result.services || [];
+            if (services.length === 0) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        found: false,
+                        query_used: query,
+                        message: `No services found matching "${task}". Try rephrasing or use search_services with different keywords.`,
+                        _payment: result._payment,
+                    }, null, 2) }],
+                };
+            }
+
+            const best = services[0];
+            return {
+                content: [{ type: 'text', text: JSON.stringify({
+                    found: true,
+                    query_used: query,
+                    service: {
+                        name: best.name,
+                        description: best.description,
+                        url: best.url,
+                        price_usdc: best.price_usdc,
+                        tags: best.tags,
+                    },
+                    action: `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call (paid directly to the API provider, not via x402).`}`,
+                    alternatives_count: services.length - 1,
+                    _payment: result._payment,
+                }, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
 // --- Tool: call_api (FREE — calls external APIs) ---
 server.tool(
     'call_api',
