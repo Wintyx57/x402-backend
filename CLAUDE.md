@@ -32,12 +32,15 @@ Phase 1: Developer Obsession (Mois 1-2)
 │     ├── [ ] 2.4 Bouton copier + detection OS automatique
 │     └── [ ] 2.5 Lien dans la navbar du site
 │
-├── [ ] Milestone 3: Wrappers API x402 (bootstrapper la marketplace)
+├── [x] Milestone 3: Wrappers API x402 (bootstrapper la marketplace)
 │     ├── [x] 3.1 Template de base pour wrapper x402
-│     ├── [ ] 3.2 Wrapper Brave Search (recherche web)
-│     ├── [ ] 3.3 Wrapper Twitter/X (lecture + ecriture)
-│     ├── [ ] 3.4 Enregistrer les wrappers sur la marketplace
-│     └── [x] 3.5 Doc: "Comment creer votre propre wrapper"
+│     ├── [x] 3.2 Wrapper Web Search (DuckDuckGo, /api/search)
+│     ├── [x] 3.3 Wrapper Twitter/X (fxtwitter, /api/twitter)
+│     ├── [x] 3.4 Enregistrer les wrappers sur la marketplace (seed-wrappers.js)
+│     ├── [x] 3.5 Doc: "Comment creer votre propre wrapper"
+│     ├── [x] 3.6 Wrapper Universal Scraper (/api/scrape)
+│     ├── [x] 3.7 Wrappers Weather, Crypto, Joke (/api/weather, /api/crypto, /api/joke)
+│     └── [x] 3.8 Badge "x402 Native" sur le frontend + compteur Live APIs
 │
 ├── [ ] Milestone 4: Refonte /docs et /mcp
 │     ├── [ ] 4.1 Page /docs avec navigation laterale
@@ -135,8 +138,11 @@ HACKATHON/
 │   ├── agent-seed.json   # Seed du wallet agent (NE PAS COMMIT)
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
+│   ├── seed-wrappers.js  # Script pour injecter les 6 wrappers natifs dans Supabase
+│   ├── API_WRAPPERS.md   # Documentation des 6 endpoints wrapper
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
-│                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai
+│                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
+│                          #       cheerio, turndown, zod
 │
 ├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init)
 │   ├── bin/cli.js         # Point d'entree CLI
@@ -214,7 +220,7 @@ HACKATHON/
    - USDC contract addresses correctes pour les 2 réseaux
    - CORS whitelist strict (x402bazaar.org, Vercel, localhost)
    - Vérification on-chain des paiements USDC sur Base mainnet
-   - 17 services en base Supabase (15 seed + 1 test + 1 ancien)
+   - 70+ services en base Supabase (63 seed + 6 wrappers natifs + utilisateurs)
 
 2. **Sécurité (audit 08/02/2026)** :
    - Helmet : headers de sécurité (X-Content-Type, HSTS, X-Frame-Options)
@@ -302,23 +308,15 @@ VITE_NETWORK=mainnet
 **FAIT:**
 - [x] Milestone 1: CLI publie sur npm (x402-bazaar@1.0.0)
 - [x] Milestone 1b: CLI reference sur toutes les pages du site (Home, MCP, Integrate, Developers)
+- [x] Milestone 3: 6 wrappers API natifs (search, scrape, twitter, weather, crypto, joke)
+- [x] Hackathon prep: UX polish + SKALE Europa integration + security audit
 
 **Prochain (Milestone 2):**
 1. Config Generator web — page /config sur x402bazaar.org
-   - Formulaire interactif (choix IDE, wallet, budget, network)
-   - Preview JSON temps reel
-   - Bouton copier + detection OS
-   - Lien dans la navbar
-
-**Ensuite (Milestone 3):**
-2. Premiers wrappers API x402 (Brave Search, Twitter/X)
-   - Template de base pour wrapper x402
-   - Enregistrer sur la marketplace
-   - Doc: "Comment creer votre propre wrapper"
 
 **Maintenance:**
-3. Soumettre le sitemap sur Google Search Console
-4. Creer une image OG pour le partage social
+2. Soumettre le sitemap sur Google Search Console
+3. Creer une image OG pour le partage social
 
 ### Commandes
 

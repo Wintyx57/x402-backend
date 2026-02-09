@@ -1,7 +1,7 @@
 {
   "name": "x402-bazaar",
   "version": "1.0.0",
-  "description": "",
+  "description": "x402 Bazaar - Autonomous AI marketplace with HTTP 402 micropayments on Base & SKALE",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,10 +9,11 @@
     "demo": "node demo-agent.js",
     "demo:live": "node demo-live.js",
     "mcp": "node mcp-server.mjs",
+    "seed:wrappers": "node seed-wrappers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["x402", "marketplace", "micropayments", "USDC", "ai-agents", "MCP", "base", "skale"],
+  "author": "Wintyx57",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {

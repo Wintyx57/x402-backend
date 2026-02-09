@@ -225,6 +225,10 @@ async function verifyPayment(txHash, minAmount, chainKey = DEFAULT_CHAIN_KEY) {
 
     for (const log of receipt.logs) {
         if (log.topics[0] === TRANSFER_TOPIC && log.topics.length >= 3) {
+            // SECURITY: Verify the log is from the correct USDC contract
+            if (log.address.toLowerCase() !== chain.usdcContract.toLowerCase()) {
+                continue; // Skip transfers from other tokens
+            }
             const toAddress = '0x' + log.topics[2].slice(26).toLowerCase();
             if (toAddress === serverAddress) {
                 const amount = BigInt(log.data);
@@ -236,7 +240,10 @@ async function verifyPayment(txHash, minAmount, chainKey = DEFAULT_CHAIN_KEY) {
         }
     }
 
-    // 3. Fallback : vérifier un transfert ETH natif
+    // 3. REMOVED: Native ETH fallback (SECURITY: System is USDC-only)
+    // The following code previously accepted ANY native ETH transfer (even 1 wei) as valid payment.
+    // This is a security vulnerability - the system is designed for USDC payments only.
+    /*
     const txRes = await fetchWithTimeout(chain.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -254,6 +261,7 @@ async function verifyPayment(txHash, minAmount, chainKey = DEFAULT_CHAIN_KEY) {
             return true;
         }
     }
+    */
 
     console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... on ${chain.label}: paiement non reconnu ou insuffisant`);
     return false;
@@ -326,6 +334,11 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
             }
         } catch (err) {
             console.error('[x402] Anti-replay check error:', err.message);
+            // SECURITY: Fail closed - reject request if anti-replay check fails
+            return res.status(503).json({
+                error: 'Service temporarily unavailable',
+                message: 'Payment verification system error. Please retry.'
+            });
         }
 
         // Vérification on-chain (chain-specific RPC)
@@ -562,7 +575,7 @@ app.get('/api/weather', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "Wea
         });
     } catch (err) {
         console.error('[Weather API] Error:', err.message);
-        return res.status(500).json({ error: 'Weather API request failed', message: err.message });
+        return res.status(500).json({ error: 'Weather API request failed' });
     }
 });
 
@@ -602,7 +615,7 @@ app.get('/api/crypto', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "Cryp
         });
     } catch (err) {
         console.error('[Crypto API] Error:', err.message);
-        return res.status(500).json({ error: 'Crypto API request failed', message: err.message });
+        return res.status(500).json({ error: 'Crypto API request failed' });
     }
 });
 
@@ -628,7 +641,7 @@ app.get('/api/joke', paidEndpointLimiter, paymentMiddleware(10000, 0.01, "Random
         });
     } catch (err) {
         console.error('[Joke API] Error:', err.message);
-        return res.status(500).json({ error: 'Joke API request failed', message: err.message });
+        return res.status(500).json({ error: 'Joke API request failed' });
     }
 });
 
@@ -644,7 +657,8 @@ app.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web 
         return res.status(400).json({ error: 'Invalid characters in query' });
     }
 
-    const maxResults = Math.min(parseInt(req.query.max) || 10, 20);
+    // SECURITY: Prevent negative values for max parameter
+    const maxResults = Math.min(Math.max(1, parseInt(req.query.max) || 10), 20);
 
     try {
         const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -686,7 +700,7 @@ app.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web 
         });
     } catch (err) {
         console.error('[Search API] Error:', err.message);
-        return res.status(500).json({ error: 'Search API request failed', message: err.message });
+        return res.status(500).json({ error: 'Search API request failed' });
     }
 });
 
@@ -709,8 +723,9 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
         return res.status(400).json({ error: 'Invalid URL format' });
     }
 
-    // Block internal/private IPs
-    if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0)/.test(parsed.hostname)) {
+    // SECURITY: Block internal/private IPs and cloud metadata endpoints
+    const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
+    if (blockedHostname.test(parsed.hostname)) {
         return res.status(400).json({ error: 'Internal URLs not allowed' });
     }
 
@@ -720,6 +735,12 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
             redirect: 'follow',
         }, 10000);
 
+        // SECURITY: Check Content-Length header before downloading
+        const contentLength = parseInt(pageRes.headers.get('content-length') || '0');
+        if (contentLength > 5 * 1024 * 1024) {
+            return res.status(400).json({ error: 'Page too large (max 5MB)' });
+        }
+
         const contentType = pageRes.headers.get('content-type') || '';
         if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
             return res.status(400).json({ error: 'URL does not return HTML or text content', content_type: contentType });
@@ -727,7 +748,7 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
 
         const html = await pageRes.text();
 
-        // Limit input size (5MB max)
+        // Limit input size (5MB max) - double check after download
         if (html.length > 5 * 1024 * 1024) {
             return res.status(400).json({ error: 'Page too large (max 5MB)' });
         }
@@ -783,7 +804,7 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
         });
     } catch (err) {
         console.error('[Scraper API] Error:', err.message);
-        return res.status(500).json({ error: 'Scraper API request failed', message: err.message });
+        return res.status(500).json({ error: 'Scraper API request failed' });
     }
 });
 
@@ -922,7 +943,7 @@ app.get('/api/twitter', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Twi
         }
     } catch (err) {
         console.error('[Twitter API] Error:', err.message);
-        return res.status(500).json({ error: 'Twitter API request failed', message: err.message });
+        return res.status(500).json({ error: 'Twitter API request failed' });
     }
 });
 

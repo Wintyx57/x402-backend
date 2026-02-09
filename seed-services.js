@@ -519,14 +519,7 @@ const SERVICES = [
     // ========================================================================
     //  SEO & WEB ANALYTICS (mixed)
     // ========================================================================
-    {
-        name: "Google PageSpeed Insights",
-        description: "Page performance analysis powered by Lighthouse. Core Web Vitals, performance score, accessibility audit. Free.",
-        url: "https://www.googleapis.com/pagespeedonline/v5/runPagespeed",
-        price_usdc: 0,
-        owner_address: SERVER_WALLET,
-        tags: ["seo", "performance", "lighthouse", "free"]
-    },
+    // Google PageSpeed Insights already listed in Developer Tools section
     {
         name: "ScrapingBee Web Scraper",
         description: "Web scraping API with JS rendering and proxy rotation. Handles anti-bot. Free: 1000 credits. From $49/month.",
