@@ -371,7 +371,10 @@ app.get('/', async (req, res) => {
         endpoints: {
             "GET /services":  "Liste complète des services (0.05 USDC)",
             "GET /search?q=": "Recherche de services par mot-clé (0.05 USDC)",
-            "POST /register": "Enregistrer un nouveau service (1 USDC)"
+            "POST /register": "Enregistrer un nouveau service (1 USDC)",
+            "GET /api/weather?city=": "Weather data for any city (0.02 USDC)",
+            "GET /api/crypto?coin=": "Cryptocurrency prices (0.02 USDC)",
+            "GET /api/joke": "Random joke (0.01 USDC)"
         },
         protocol: "x402 - HTTP 402 Payment Required"
     });
@@ -501,6 +504,130 @@ app.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistre
 });
 
 // ============================================================
+// API WRAPPERS (Real external APIs proxied via x402)
+// ============================================================
+
+// --- WEATHER API WRAPPER (0.02 USDC) ---
+app.get('/api/weather', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "Weather API"), async (req, res) => {
+    const city = (req.query.city || '').trim().slice(0, 100);
+
+    if (!city) {
+        return res.status(400).json({ error: "Parameter 'city' required. Ex: /api/weather?city=Paris" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(city)) {
+        return res.status(400).json({ error: 'Invalid characters in city name' });
+    }
+
+    try {
+        // Step 1: Geocode city name using Open-Meteo Geocoding API
+        const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+        const geocodeRes = await fetchWithTimeout(geocodeUrl, {}, 5000);
+        const geocodeData = await geocodeRes.json();
+
+        if (!geocodeData.results || geocodeData.results.length === 0) {
+            return res.status(404).json({ error: 'City not found', city });
+        }
+
+        const location = geocodeData.results[0];
+        const { latitude, longitude, name, country } = location;
+
+        // Step 2: Get current weather using Open-Meteo Weather API
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&timezone=auto`;
+        const weatherRes = await fetchWithTimeout(weatherUrl, {}, 5000);
+        const weatherData = await weatherRes.json();
+
+        if (!weatherData.current_weather) {
+            return res.status(500).json({ error: 'Failed to fetch weather data' });
+        }
+
+        const current = weatherData.current_weather;
+
+        logActivity('api_call', `Weather API: ${city} -> ${name}, ${country}`);
+
+        res.json({
+            success: true,
+            city: name,
+            country: country || 'Unknown',
+            temperature: current.temperature,
+            wind_speed: current.windspeed,
+            weather_code: current.weathercode,
+            time: current.time
+        });
+    } catch (err) {
+        console.error('[Weather API] Error:', err.message);
+        return res.status(500).json({ error: 'Weather API request failed', message: err.message });
+    }
+});
+
+// --- CRYPTO PRICE API WRAPPER (0.02 USDC) ---
+app.get('/api/crypto', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "Crypto Price API"), async (req, res) => {
+    const coin = (req.query.coin || '').trim().toLowerCase().slice(0, 50);
+
+    if (!coin) {
+        return res.status(400).json({ error: "Parameter 'coin' required. Ex: /api/crypto?coin=bitcoin" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(coin)) {
+        return res.status(400).json({ error: 'Invalid characters in coin name' });
+    }
+
+    try {
+        // CoinGecko free API (no key needed)
+        const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd,eur&include_24hr_change=true`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!data[coin]) {
+            return res.status(404).json({ error: 'Cryptocurrency not found', coin });
+        }
+
+        const prices = data[coin];
+
+        logActivity('api_call', `Crypto Price API: ${coin}`);
+
+        res.json({
+            success: true,
+            coin,
+            usd: prices.usd,
+            eur: prices.eur,
+            usd_24h_change: prices.usd_24h_change || 0
+        });
+    } catch (err) {
+        console.error('[Crypto API] Error:', err.message);
+        return res.status(500).json({ error: 'Crypto API request failed', message: err.message });
+    }
+});
+
+// --- RANDOM JOKE API WRAPPER (0.01 USDC) ---
+app.get('/api/joke', paidEndpointLimiter, paymentMiddleware(10000, 0.01, "Random Joke API"), async (req, res) => {
+    try {
+        // Official Joke API (free, no key needed)
+        const apiUrl = 'https://official-joke-api.appspot.com/random_joke';
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!data.setup || !data.punchline) {
+            return res.status(500).json({ error: 'Invalid joke data received' });
+        }
+
+        logActivity('api_call', `Random Joke API: ${data.type || 'general'}`);
+
+        res.json({
+            success: true,
+            setup: data.setup,
+            punchline: data.punchline,
+            type: data.type || 'general'
+        });
+    } catch (err) {
+        console.error('[Joke API] Error:', err.message);
+        return res.status(500).json({ error: 'Joke API request failed', message: err.message });
+    }
+});
+
+// ============================================================
 // DASHBOARD
 // ============================================================
 
@@ -621,9 +748,13 @@ app.listen(PORT, async () => {
     console.log(`🔗 Réseaux : ${activeNetworks} (${NETWORK})`);
     console.log(`🗄️  Base   : Supabase (PostgreSQL)`);
     console.log(`📦 Services enregistrés : ${count || 0}`);
-    console.log(`\n   GET  /           → Infos (gratuit)`);
-    console.log(`   GET  /services   → Liste (0.05 USDC)`);
-    console.log(`   GET  /search?q=  → Recherche (0.05 USDC)`);
-    console.log(`   POST /register   → Enregistrement (1 USDC)`);
+    console.log(`\n   GET  /                → Infos (gratuit)`);
+    console.log(`   GET  /services        → Liste (0.05 USDC)`);
+    console.log(`   GET  /search?q=       → Recherche (0.05 USDC)`);
+    console.log(`   POST /register        → Enregistrement (1 USDC)`);
+    console.log(`\n   🌐 API Wrappers:`);
+    console.log(`   GET  /api/weather?city= → Weather data (0.02 USDC)`);
+    console.log(`   GET  /api/crypto?coin=  → Crypto prices (0.02 USDC)`);
+    console.log(`   GET  /api/joke          → Random joke (0.01 USDC)`);
     console.log(`\n   📊 Dashboard : http://localhost:${PORT}/dashboard\n`);
 });
