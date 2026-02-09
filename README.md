@@ -120,6 +120,28 @@ npm run mcp      # Start the MCP server
 - **AI:** OpenAI GPT-4o-mini (demo agent)
 - **Protocol:** MCP (Model Context Protocol)
 
+## Create Your Own x402 API
+
+Want to monetize your own Python functions? Use our template:
+
+```bash
+git clone https://github.com/Wintyx57/x402-fast-monetization-template
+cd x402-fast-monetization-template
+pip install -r requirements.txt
+cp .env.example .env  # Set your WALLET_ADDRESS
+python main.py        # Your API is live!
+```
+
+The `@x402_paywall` decorator turns any function into a paid endpoint:
+
+```python
+@x402_paywall(price=0.05, description="My API", tags=["cool"])
+def my_function(text: str) -> dict:
+    return {"result": "something"}
+```
+
+See the [template repo](https://github.com/Wintyx57/x402-fast-monetization-template) for full documentation.
+
 ## License
 
 ISC

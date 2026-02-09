@@ -1,6 +1,123 @@
 # x402 Bazaar - Contexte pour Claude
 
-## Etat actuel du projet (08/02/2026 - session Security + Domain)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 09/02/2026 - 22h)
+
+### Vue d'ensemble
+
+```
+Phase 1: Developer Obsession (Mois 1-2)
+├── [x] Milestone 1: CLI "One-Line Install" (npx x402-bazaar init)
+│     ├── [x] 1.1 Structure du package CLI (x402-bazaar-cli/)
+│     ├── [x] 1.2 Detection d'environnement (Claude Desktop, Cursor, VS Code, generic)
+│     ├── [x] 1.3 Flow interactif (prompts wallet, network, budget)
+│     ├── [x] 1.4 Generateur de config MCP (merge avec config existante)
+│     ├── [x] 1.5 Verification de connexion (status command)
+│     ├── [x] 1.6 Mode "wallet existant" vs "read-only"
+│     ├── [x] 1.7 Tests Windows (status, help, version, init --help, npm pack)
+│     ├── [x] 1.8 .gitignore, README.md, LICENSE, package.json pour npm
+│     └── [x] 1.9 Publication npm — PUBLIE: x402-bazaar@1.0.0 sur npmjs.com (09/02/2026)
+│
+├── [x] Milestone 1b: Integration CLI sur le site web (x402bazaar.org)
+│     ├── [x] 1b.1 Home: one-liner `npx x402-bazaar init` dans le hero (click to copy)
+│     ├── [x] 1b.2 MCP: refonte Installation (Quick Install CLI + manual en accordion)
+│     ├── [x] 1b.3 Integrate: Get Started restructure (CLI primary + manual fallback)
+│     ├── [x] 1b.4 Developers: bandeau CLI quick start en haut de page
+│     ├── [x] 1b.5 Traductions EN+FR pour toutes les nouvelles cles
+│     └── [x] 1b.6 Push + deploy Vercel (commit bd67cc0, 09/02/2026)
+│
+├── [ ] Milestone 2: Config Generator (Web + CLI)
+│     ├── [x] 2.1 CLI: commande `npx x402-bazaar config` (FAIT dans Milestone 1)
+│     ├── [ ] 2.2 Web: page /config dans le frontend React
+│     ├── [ ] 2.3 Formulaire interactif + preview JSON temps reel
+│     ├── [ ] 2.4 Bouton copier + detection OS automatique
+│     └── [ ] 2.5 Lien dans la navbar du site
+│
+├── [ ] Milestone 3: Wrappers API x402 (bootstrapper la marketplace)
+│     ├── [x] 3.1 Template de base pour wrapper x402
+│     ├── [ ] 3.2 Wrapper Brave Search (recherche web)
+│     ├── [ ] 3.3 Wrapper Twitter/X (lecture + ecriture)
+│     ├── [ ] 3.4 Enregistrer les wrappers sur la marketplace
+│     └── [x] 3.5 Doc: "Comment creer votre propre wrapper"
+│
+├── [ ] Milestone 4: Refonte /docs et /mcp
+│     ├── [ ] 4.1 Page /docs avec navigation laterale
+│     ├── [ ] 4.2 Page /mcp avec instructions CLI
+│     ├── [ ] 4.3 Code examples avec copier en 1 clic
+│     ├── [ ] 4.4 Section Quickstart (5 min to first call)
+│     └── [ ] 4.5 API Reference auto-generee
+│
+└── [ ] Milestone 5: Marketing
+      ├── [ ] 5.1 Landing page "Carte de credit illimitee pour agents"
+      ├── [ ] 5.2 Video demo (agent autonome)
+      ├── [ ] 5.3 Thread Twitter/X de lancement
+      ├── [ ] 5.4 Post Hacker News / Reddit
+      └── [ ] 5.5 Article blog
+```
+
+### CLI x402-bazaar (Milestone 1 - COMPLET, PUBLIE sur npm)
+
+**Localisation:** `HACKATHON/x402-bazaar-cli/`
+**npm package size:** 13.4 KB (11 fichiers)
+
+```
+x402-bazaar-cli/
+├── package.json            # name: "x402-bazaar", type: "module", engines: node>=18
+├── bin/cli.js              # Point d'entree CLI + global error handler + help par defaut
+├── src/
+│   ├── commands/
+│   │   ├── init.js         # npx x402-bazaar init (5 etapes: detect, install, wallet, config, verify)
+│   │   ├── config.js       # npx x402-bazaar config (generateur interactif)
+│   │   └── status.js       # npx x402-bazaar status (health + stats + marketplace info)
+│   ├── detectors/
+│   │   └── environment.js  # Detection: Claude Desktop, Cursor, VS Code+Continue, Claude Code
+│   ├── generators/
+│   │   ├── mcp-config.js   # Generateur JSON MCP (merge avec config existante)
+│   │   └── env-file.js     # Generateur .env
+│   └── utils/
+│       └── logger.js       # Output colore (chalk) + banner + box
+├── README.md               # Documentation npm avec Quick Start
+├── LICENSE                  # MIT
+└── .gitignore              # node_modules, .env, *.seed.json
+```
+
+**Commandes:**
+- `npx x402-bazaar` — Affiche l'aide rapide
+- `npx x402-bazaar init` — Setup complet (detect env, install MCP, config wallet, verify)
+- `npx x402-bazaar init --no-wallet` — Setup en mode lecture seule
+- `npx x402-bazaar init --env claude-desktop` — Forcer l'environnement
+- `npx x402-bazaar config` — Generer la config MCP interactivement
+- `npx x402-bazaar config --output mcp.json` — Sauvegarder dans un fichier
+- `npx x402-bazaar status` — Verifier la connexion au serveur live
+
+**Fonctionnalites:**
+- Detection automatique de l'environnement AI (Claude Desktop, Cursor, Claude Code, VS Code)
+- Installation du serveur MCP + npm install automatique
+- Merge intelligent avec la config existante (ne casse pas les autres MCP servers)
+- Fallback: genere le mcp-server.mjs complet si pas de source locale
+- Check Node >= 18, global error handler, AbortSignal timeout sur les fetches
+- Banner colore + spinners + output structure
+
+**Tests effectues (Windows):**
+- `node bin/cli.js` — Help par defaut OK
+- `node bin/cli.js --help` — Commander help OK
+- `node bin/cli.js --version` — 1.0.0 OK
+- `node bin/cli.js status` — Connexion au serveur live OK (70 services, 9.35 USDC)
+- `node bin/cli.js init --help` — Options OK
+- `npm pack --dry-run` — 11 fichiers, 13.4 KB OK
+
+**Publie sur npm:** x402-bazaar@1.0.0 (09/02/2026) — https://www.npmjs.com/package/x402-bazaar
+**Compte npm:** wintyx
+
+### Pour reprendre le travail
+
+1. **Lire ce fichier** pour savoir ou on en est
+2. **Regarder les [ ] non coches** dans le plan ci-dessus
+3. **Commencer par le premier milestone non termine**
+4. **Cocher [x] chaque tache terminee** dans ce fichier
+
+---
+
+## Etat actuel du projet (09/02/2026 - session CLI + Roadmap)
 
 ### Architecture
 
@@ -8,6 +125,7 @@
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
+│   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow)
 │   ├── dashboard.html    # Dashboard admin (stats, services, activity log)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
@@ -19,6 +137,21 @@ HACKATHON/
 │   ├── .env.example      # Template des env vars
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai
+│
+├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init)
+│   ├── bin/cli.js         # Point d'entree CLI
+│   ├── src/commands/      # init, config, status
+│   ├── src/detectors/     # Detection environnement (Claude, Cursor, VS Code)
+│   ├── src/generators/    # Generateur config MCP + .env
+│   └── package.json       # deps: chalk, commander, inquirer, ora
+│
+├── x402-fast-monetization-template/  # Template Python pour creer un wrapper x402 (FastAPI)
+│   ├── main.py            # Serveur FastAPI avec decorateur @x402_paywall
+│   ├── x402_middleware.py # Middleware x402 (verification paiements, 402 response)
+│   ├── requirements.txt   # deps: fastapi, uvicorn, httpx, pydantic
+│   └── .env.example       # WALLET_ADDRESS, NETWORK, etc.
+│
+├── ROADMAP.md            # Plan de route detaille Phase 1
 │
 └── x402-frontend/        # Frontend (React + Vite)
     ├── index.html        # SEO: meta tags, Open Graph, Twitter Card, canonical x402bazaar.org
@@ -164,30 +297,51 @@ VITE_NETWORK=mainnet
 | Agent wallet | Seed dans agent-seed.json (addr 0xA986...) | Utilisé pour la démo agent mainnet |
 | Server seed wallet | Seed dans server-seed.json (wallet df759258) | Wallet vide, non utilisé |
 
-### Prochaines étapes possibles
+### Prochaines etapes (voir PLAN DE ROUTE en haut de ce fichier)
 
-1. Soumettre le sitemap sur Google Search Console pour indexation rapide
-2. Créer une image OG (1200x630 PNG) pour le partage social (Canva ou og-image.vercel.app)
-3. Tester le wallet connect + register flow en production
-4. Ajouter un sous-domaine api.x402bazaar.org pour le backend (optionnel)
-5. Monitorer les paiements via le dashboard
+**FAIT:**
+- [x] Milestone 1: CLI publie sur npm (x402-bazaar@1.0.0)
+- [x] Milestone 1b: CLI reference sur toutes les pages du site (Home, MCP, Integrate, Developers)
+
+**Prochain (Milestone 2):**
+1. Config Generator web — page /config sur x402bazaar.org
+   - Formulaire interactif (choix IDE, wallet, budget, network)
+   - Preview JSON temps reel
+   - Bouton copier + detection OS
+   - Lien dans la navbar
+
+**Ensuite (Milestone 3):**
+2. Premiers wrappers API x402 (Brave Search, Twitter/X)
+   - Template de base pour wrapper x402
+   - Enregistrer sur la marketplace
+   - Doc: "Comment creer votre propre wrapper"
+
+**Maintenance:**
+3. Soumettre le sitemap sur Google Search Console
+4. Creer une image OG pour le partage social
 
 ### Commandes
 
 ```bash
+# CLI (One-Line Install)
+cd x402-bazaar-cli && node bin/cli.js init     # Setup complet
+cd x402-bazaar-cli && node bin/cli.js config   # Generer config MCP
+cd x402-bazaar-cli && node bin/cli.js status   # Verifier connexion
+cd x402-bazaar-cli && npm publish              # Publier sur npm
+
 # Backend
-cd x402-bazaar && node server.js          # Démarrer le backend local
+cd x402-bazaar && node server.js          # Demarrer le backend local
 cd x402-bazaar && node seed-services.js   # Re-seeder la base
-cd x402-bazaar && node demo-agent.js      # Lancer l'agent démo
-cd x402-bazaar && node setup-activity.js  # Vérifier la table activity
+cd x402-bazaar && node demo-agent.js      # Lancer l'agent demo
+cd x402-bazaar && node setup-activity.js  # Verifier la table activity
 
 # Frontend
 cd x402-frontend && npm run dev           # Dev server (localhost:5173)
 cd x402-frontend && npm run build         # Build production
 
 # Git (auto-deploy sur push)
-cd x402-frontend && git push origin main  # Push → Vercel auto-deploy
-cd x402-bazaar && git push origin main    # Push → Render auto-deploy
+cd x402-frontend && git push origin main  # Push -> Vercel auto-deploy
+cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 ```
 
 ### Historique des commits récents
@@ -200,7 +354,14 @@ cd x402-bazaar && git push origin main    # Push → Render auto-deploy
 - `ff4b71b` Add rate limiting, error monitoring, request logging and demo agent
 
 **Frontend (x402-frontend)** :
+- `bd67cc0` Add npx x402-bazaar init CLI references across all pages
+- `7b54fb3` Add 'Use with AI' button on service cards + find_tool_for_task in MCP docs
+- `40ecd7c` Fix search bar: sync navbar with Services page via URL params
 - `f66be81` Update SEO URLs to x402bazaar.org domain
 - `5c5e5ae` Add SEO: meta tags, Open Graph, sitemap, robots.txt
 - `9227b16` Add /integrate page — agent integration guide with code examples
 - `b07295e` Add mobile burger menu, responsive improvements, ScrollToTop
+
+**CLI (x402-bazaar-cli)** :
+- Publie sur npm: x402-bazaar@1.0.0 (09/02/2026)
+- https://www.npmjs.com/package/x402-bazaar
