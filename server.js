@@ -8,18 +8,45 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Réseau configurable (testnet / mainnet) ---
+// --- Réseau configurable (testnet / mainnet) + Multi-chain ---
 const NETWORK = process.env.NETWORK || 'testnet';
-const RPC_URL = NETWORK === 'mainnet'
-    ? 'https://mainnet.base.org'
-    : 'https://sepolia.base.org';
-const USDC_CONTRACT = NETWORK === 'mainnet'
-    ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // USDC on Base Mainnet
-    : '0x036CbD53842c5426634e7929541eC2318f3dCF7e'; // USDC on Base Sepolia
-const EXPLORER_URL = NETWORK === 'mainnet'
-    ? 'https://basescan.org'
-    : 'https://sepolia.basescan.org';
-const NETWORK_LABEL = NETWORK === 'mainnet' ? 'Base' : 'Base Sepolia';
+
+const CHAINS = {
+    base: {
+        rpcUrl: 'https://mainnet.base.org',
+        usdcContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        chainId: 8453,
+        explorer: 'https://basescan.org',
+        label: 'Base',
+    },
+    'base-sepolia': {
+        rpcUrl: 'https://sepolia.base.org',
+        usdcContract: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        chainId: 84532,
+        explorer: 'https://sepolia.basescan.org',
+        label: 'Base Sepolia',
+    },
+    skale: {
+        rpcUrl: 'https://mainnet.skalenodes.com/v1/elated-tan-skat',
+        usdcContract: '0x5F795bb52dAc3085f578f4877D450e2929D2F13d',
+        chainId: 2046399126,
+        explorer: 'https://elated-tan-skat.explorer.mainnet.skalenodes.com',
+        label: 'SKALE Europa',
+    },
+};
+
+const DEFAULT_CHAIN_KEY = NETWORK === 'mainnet' ? 'base' : 'base-sepolia';
+const DEFAULT_CHAIN = CHAINS[DEFAULT_CHAIN_KEY];
+
+function getChainConfig(chainKey) {
+    return CHAINS[chainKey] || CHAINS[DEFAULT_CHAIN_KEY];
+}
+
+// Backward-compat aliases
+const RPC_URL = DEFAULT_CHAIN.rpcUrl;
+const USDC_CONTRACT = DEFAULT_CHAIN.usdcContract;
+const EXPLORER_URL = DEFAULT_CHAIN.explorer;
+const NETWORK_LABEL = DEFAULT_CHAIN.label;
 
 // --- Supabase ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
@@ -55,7 +82,7 @@ app.use(cors({
         callback(new Error('CORS not allowed'));
     },
     methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'X-Payment-TxHash']
+    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain']
 }));
 
 // --- BODY LIMITS ---
@@ -165,7 +192,8 @@ function fetchWithTimeout(url, options, timeout = RPC_TIMEOUT) {
     ]);
 }
 
-async function verifyPayment(txHash, minAmount) {
+async function verifyPayment(txHash, minAmount, chainKey = DEFAULT_CHAIN_KEY) {
+    const chain = getChainConfig(chainKey);
     // Normalize tx hash
     const normalizedTxHash = txHash.toLowerCase().trim();
     if (normalizedTxHash.length !== 66) {
@@ -175,7 +203,7 @@ async function verifyPayment(txHash, minAmount) {
     const serverAddress = process.env.WALLET_ADDRESS.toLowerCase();
 
     // 1. Récupérer le reçu de transaction
-    const receiptRes = await fetchWithTimeout(RPC_URL, {
+    const receiptRes = await fetchWithTimeout(chain.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -186,7 +214,7 @@ async function verifyPayment(txHash, minAmount) {
     const { result: receipt } = await receiptRes.json();
 
     if (!receipt || receipt.status !== '0x1') {
-        console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... : échouée ou introuvable`);
+        console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... on ${chain.label}: échouée ou introuvable`);
         return false;
     }
 
@@ -199,7 +227,7 @@ async function verifyPayment(txHash, minAmount) {
             if (toAddress === serverAddress) {
                 const amount = BigInt(log.data);
                 if (amount >= BigInt(minAmount)) {
-                    console.log(`[x402] Paiement USDC vérifié : ${Number(amount) / 1e6} USDC`);
+                    console.log(`[x402] Paiement USDC vérifié on ${chain.label}: ${Number(amount) / 1e6} USDC`);
                     return true;
                 }
             }
@@ -207,7 +235,7 @@ async function verifyPayment(txHash, minAmount) {
     }
 
     // 3. Fallback : vérifier un transfert ETH natif
-    const txRes = await fetchWithTimeout(RPC_URL, {
+    const txRes = await fetchWithTimeout(chain.rpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -220,12 +248,12 @@ async function verifyPayment(txHash, minAmount) {
     if (tx && tx.to && tx.to.toLowerCase() === serverAddress) {
         const value = BigInt(tx.value);
         if (value > 0n) {
-            console.log(`[x402] Paiement ETH vérifié : ${Number(value) / 1e18} ETH`);
+            console.log(`[x402] Paiement natif vérifié on ${chain.label}: ${Number(value) / 1e18}`);
             return true;
         }
     }
 
-    console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... : paiement non reconnu ou insuffisant`);
+    console.log(`[x402] Tx ${normalizedTxHash.slice(0, 18)}... on ${chain.label}: paiement non reconnu ou insuffisant`);
     return false;
 }
 
@@ -233,18 +261,43 @@ async function verifyPayment(txHash, minAmount) {
 function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
     return async (req, res, next) => {
         const txHash = req.headers['x-payment-txhash'];
+        const chainKey = req.headers['x-payment-chain'] || DEFAULT_CHAIN_KEY;
+
+        // Validate chain key
+        if (!CHAINS[chainKey]) {
+            return res.status(400).json({
+                error: 'Invalid chain',
+                message: `Unsupported chain: ${chainKey}. Accepted: ${Object.keys(CHAINS).join(', ')}`
+            });
+        }
 
         if (!txHash) {
             console.log(`[x402] 402 → ${req.method} ${req.path} (${displayLabel})`);
             logActivity('402', `${displayLabel} - paiement demandé`);
+
+            // Build available networks list based on environment
+            const availableNetworks = Object.entries(CHAINS)
+                .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
+                .map(([key, cfg]) => ({
+                    network: key,
+                    chainId: cfg.chainId,
+                    label: cfg.label,
+                    usdc_contract: cfg.usdcContract,
+                    explorer: cfg.explorer,
+                    gas: key === 'skale' ? 'FREE (sFUEL)' : '~$0.001',
+                }));
+
             return res.status(402).json({
                 error: "Payment Required",
                 message: `Cette action coûte ${displayAmount} USDC. Envoyez le paiement puis fournissez le hash dans le header X-Payment-TxHash.`,
                 payment_details: {
                     amount: displayAmount,
                     currency: "USDC",
-                    network: NETWORK === 'mainnet' ? 'base' : 'base-sepolia',
-                    chainId: NETWORK === 'mainnet' ? 8453 : 84532,
+                    // Backward compat: default network fields
+                    network: DEFAULT_CHAIN_KEY,
+                    chainId: DEFAULT_CHAIN.chainId,
+                    // Multi-chain: all accepted networks
+                    networks: availableNetworks,
                     recipient: process.env.WALLET_ADDRESS,
                     accepted: ["USDC", "ETH"],
                     action: displayLabel
@@ -257,11 +310,13 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
             return res.status(400).json({ error: 'Invalid transaction hash format' });
         }
 
-        // Anti-replay: check if tx already used (Supabase + memory)
+        // Anti-replay: check if tx already used (prefix with chain for disambiguation)
+        const replayKey = `${chainKey}:${txHash}`;
         try {
-            const alreadyUsed = await isTxAlreadyUsed(txHash);
+            // Check both prefixed and unprefixed forms for backward compat
+            const alreadyUsed = await isTxAlreadyUsed(txHash) || await isTxAlreadyUsed(replayKey);
             if (alreadyUsed) {
-                console.log(`[x402] Replay blocked for tx ${txHash.slice(0, 10)}...`);
+                console.log(`[x402] Replay blocked for tx ${txHash.slice(0, 10)}... on ${chainKey}`);
                 return res.status(402).json({
                     error: "Payment Required",
                     message: "This transaction has already been used. Please send a new payment."
@@ -271,22 +326,24 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
             console.error('[x402] Anti-replay check error:', err.message);
         }
 
-        // Vérification on-chain
+        // Vérification on-chain (chain-specific RPC)
         try {
-            const valid = await verifyPayment(txHash, minAmountRaw);
+            const valid = await verifyPayment(txHash, minAmountRaw, chainKey);
             if (valid) {
-                await markTxUsed(txHash, displayLabel);
-                logActivity('payment', `${displayLabel} - ${displayAmount} USDC vérifié`, displayAmount, txHash);
+                await markTxUsed(replayKey, displayLabel);
+                const chainLabel = getChainConfig(chainKey).label;
+                logActivity('payment', `${displayLabel} - ${displayAmount} USDC vérifié on ${chainLabel}`, displayAmount, txHash);
                 return next();
             }
         } catch (err) {
-            console.error(`[x402] Erreur de vérification :`, err.message);
+            console.error(`[x402] Erreur de vérification on ${chainKey}:`, err.message);
         }
 
         return res.status(402).json({
             error: "Payment Required",
             message: "Transaction invalide ou paiement insuffisant.",
-            tx_provided: txHash
+            tx_provided: txHash,
+            chain: chainKey
         });
     };
 }
@@ -297,7 +354,10 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
 
 // --- HEALTH CHECK ---
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', network: NETWORK_LABEL, timestamp: new Date().toISOString() });
+    const supportedNetworks = Object.entries(CHAINS)
+        .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
+        .map(([key, cfg]) => ({ network: key, label: cfg.label, chainId: cfg.chainId }));
+    res.json({ status: 'ok', network: NETWORK_LABEL, networks: supportedNetworks, timestamp: new Date().toISOString() });
 });
 
 // --- ROUTE PUBLIQUE (Gratuite) ---
@@ -553,9 +613,12 @@ app.listen(PORT, async () => {
     const maskedWallet = process.env.WALLET_ADDRESS
         ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
         : 'NOT SET';
+    const activeNetworks = Object.entries(CHAINS)
+        .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
+        .map(([, cfg]) => cfg.label).join(', ');
     console.log(`\n🚀 x402 Bazaar actif sur http://localhost:${PORT}`);
     console.log(`💰 Wallet : ${maskedWallet}`);
-    console.log(`🔗 Réseau : ${NETWORK_LABEL} (${NETWORK})`);
+    console.log(`🔗 Réseaux : ${activeNetworks} (${NETWORK})`);
     console.log(`🗄️  Base   : Supabase (PostgreSQL)`);
     console.log(`📦 Services enregistrés : ${count || 0}`);
     console.log(`\n   GET  /           → Infos (gratuit)`);

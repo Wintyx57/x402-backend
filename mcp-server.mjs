@@ -82,8 +82,8 @@ async function payAndRequest(url, options = {}) {
         endpoint: url.replace(SERVER_URL, ''),
     });
 
-    // Retry with payment proof
-    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash };
+    // Retry with payment proof (MCP always pays on Base)
+    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': 'base' };
     const retryRes = await fetch(url, { ...options, headers: retryHeaders });
     const result = await retryRes.json();
 
@@ -109,7 +109,7 @@ const server = new McpServer({
 // --- Tool: discover_marketplace (FREE) ---
 server.tool(
     'discover_marketplace',
-    'Discover the x402 Bazaar marketplace. Returns available endpoints, total services, and protocol info. Free — no payment needed.',
+    'Discover the x402 Bazaar marketplace. Returns available endpoints, total services, and protocol info. Free — no payment needed. Supports payments on Base and SKALE Europa (zero gas fees).',
     {},
     async () => {
         try {
