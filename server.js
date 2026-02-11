@@ -6,6 +6,9 @@ const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
+const OpenAI = require('openai');
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -389,10 +392,11 @@ app.get('/', async (req, res) => {
             "POST /register": "Enregistrer un nouveau service (1 USDC)",
             "GET /api/search?q=": "Clean web search results for LLMs (0.005 USDC)",
             "GET /api/scrape?url=": "Universal URL scraper - returns clean Markdown (0.005 USDC)",
-            "GET /api/twitter?user=": "Twitter/X profile and tweet data (0.005 USDC)",
+            "GET /api/twitter?user=|tweet=|search=": "Twitter/X profiles, tweets, and search (0.005 USDC)",
             "GET /api/weather?city=": "Weather data for any city (0.02 USDC)",
             "GET /api/crypto?coin=": "Cryptocurrency prices (0.02 USDC)",
-            "GET /api/joke": "Random joke (0.01 USDC)"
+            "GET /api/joke": "Random joke (0.01 USDC)",
+            "GET /api/image?prompt=": "AI image generation via DALL-E 3 (0.05 USDC)"
         },
         protocol: "x402 - HTTP 402 Payment Required"
     });
@@ -812,13 +816,16 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
 app.get('/api/twitter', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Twitter/X Data API"), async (req, res) => {
     const username = (req.query.user || '').trim().replace(/^@/, '').slice(0, 50);
     const tweetUrl = (req.query.tweet || '').trim();
+    const searchQuery = (req.query.search || '').trim().slice(0, 200);
+    const maxResults = Math.min(Math.max(parseInt(req.query.max) || 10, 1), 20);
 
-    if (!username && !tweetUrl) {
+    if (!username && !tweetUrl && !searchQuery) {
         return res.status(400).json({
-            error: "Parameter 'user' or 'tweet' required.",
+            error: "Parameter 'user', 'tweet', or 'search' required.",
             examples: [
                 "/api/twitter?user=elonmusk",
-                "/api/twitter?tweet=https://x.com/user/status/123456789"
+                "/api/twitter?tweet=https://x.com/user/status/123456789",
+                "/api/twitter?search=bitcoin&max=10"
             ]
         });
     }
@@ -827,8 +834,57 @@ app.get('/api/twitter', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Twi
     if (username && !/^[a-zA-Z0-9_]{1,15}$/.test(username)) {
         return res.status(400).json({ error: 'Invalid Twitter username format' });
     }
+    if (searchQuery && /[\x00-\x1F\x7F]/.test(searchQuery)) {
+        return res.status(400).json({ error: 'Invalid characters in search query' });
+    }
 
     try {
+        // Tweet search via DuckDuckGo site:twitter.com
+        if (searchQuery) {
+            const ddgUrl = `https://html.duckduckgo.com/html/?q=site%3Atwitter.com+${encodeURIComponent(searchQuery)}`;
+            const ddgRes = await fetchWithTimeout(ddgUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
+            }, 10000);
+            const ddgHtml = await ddgRes.text();
+
+            const $ = cheerio.load(ddgHtml);
+            const results = [];
+
+            $('.result').each((i, el) => {
+                if (results.length >= maxResults) return false;
+
+                const linkEl = $(el).find('.result__a');
+                const snippetEl = $(el).find('.result__snippet');
+                const url = linkEl.attr('href') || '';
+                const title = linkEl.text().trim();
+                const snippet = snippetEl.text().trim();
+
+                // Only keep results that are actual twitter/x.com URLs
+                if (url && (url.includes('twitter.com') || url.includes('x.com'))) {
+                    // Try to extract author from URL pattern (/username/status/...)
+                    const authorMatch = url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+                    const author = authorMatch ? authorMatch[1] : null;
+
+                    results.push({
+                        title,
+                        text: snippet,
+                        url,
+                        author: author !== 'search' && author !== 'hashtag' ? author : null,
+                    });
+                }
+            });
+
+            logActivity('api_call', `Twitter API: search "${searchQuery}" -> ${results.length} results`);
+
+            return res.json({
+                success: true,
+                type: 'search',
+                query: searchQuery,
+                results_count: results.length,
+                results,
+            });
+        }
+
         if (tweetUrl) {
             // Extract tweet ID from URL
             const tweetMatch = tweetUrl.match(/status\/(\d+)/);
@@ -944,6 +1000,84 @@ app.get('/api/twitter', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Twi
     } catch (err) {
         console.error('[Twitter API] Error:', err.message);
         return res.status(500).json({ error: 'Twitter API request failed' });
+    }
+});
+
+// --- IMAGE GENERATION API (DALL-E 3) - 0.05 USDC ---
+const IMAGE_SIZES = ['1024x1024', '1024x1792', '1792x1024'];
+const IMAGE_QUALITIES = ['standard', 'hd'];
+
+app.get('/api/image', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Image Generation API"), async (req, res) => {
+    try {
+        const prompt = (req.query.prompt || '').trim();
+        const size = (req.query.size || '1024x1024').trim();
+        const quality = (req.query.quality || 'standard').trim();
+
+        // Validate prompt
+        if (!prompt) {
+            return res.status(400).json({ error: "Parameter 'prompt' is required. Ex: /api/image?prompt=a+cat+in+space" });
+        }
+        if (prompt.length > 1000) {
+            return res.status(400).json({ error: 'Prompt too long (max 1000 characters)' });
+        }
+        // Reject control characters
+        if (/[\x00-\x1F\x7F]/.test(prompt)) {
+            return res.status(400).json({ error: 'Invalid characters in prompt' });
+        }
+
+        // Validate size
+        if (!IMAGE_SIZES.includes(size)) {
+            return res.status(400).json({
+                error: `Invalid size. Accepted: ${IMAGE_SIZES.join(', ')}`,
+            });
+        }
+
+        // Validate quality
+        if (!IMAGE_QUALITIES.includes(quality)) {
+            return res.status(400).json({
+                error: `Invalid quality. Accepted: ${IMAGE_QUALITIES.join(', ')}`,
+            });
+        }
+
+        // Call DALL-E 3
+        const response = await openai.images.generate({
+            model: 'dall-e-3',
+            prompt,
+            size,
+            quality,
+            n: 1,
+        });
+
+        const image = response.data[0];
+
+        logActivity('api_call', `Image API: "${prompt.slice(0, 80)}..." (${size}, ${quality})`);
+
+        res.json({
+            success: true,
+            prompt,
+            revised_prompt: image.revised_prompt,
+            image_url: image.url,
+            size,
+            quality,
+        });
+    } catch (err) {
+        console.error('[Image API] Error:', err.message);
+
+        // Handle specific OpenAI errors
+        if (err.status === 400 || err.code === 'content_policy_violation') {
+            return res.status(400).json({
+                error: 'Content policy violation',
+                message: 'Your prompt was rejected by the content safety system. Please modify your prompt.',
+            });
+        }
+        if (err.status === 429) {
+            return res.status(429).json({
+                error: 'Rate limit exceeded',
+                message: 'OpenAI rate limit reached. Please try again in a few seconds.',
+            });
+        }
+
+        return res.status(500).json({ error: 'Image generation failed' });
     }
 });
 
@@ -1075,9 +1209,10 @@ app.listen(PORT, async () => {
     console.log(`\n   🌐 API Wrappers:`);
     console.log(`   GET  /api/search?q=     → Clean web search (0.005 USDC)`);
     console.log(`   GET  /api/scrape?url=   → URL to Markdown (0.005 USDC)`);
-    console.log(`   GET  /api/twitter?user= → Twitter/X data (0.005 USDC)`);
+    console.log(`   GET  /api/twitter       → Twitter/X data+search (0.005 USDC)`);
     console.log(`   GET  /api/weather?city= → Weather data (0.02 USDC)`);
     console.log(`   GET  /api/crypto?coin=  → Crypto prices (0.02 USDC)`);
     console.log(`   GET  /api/joke          → Random joke (0.01 USDC)`);
+    console.log(`   GET  /api/image?prompt= → AI image generation (0.05 USDC)`);
     console.log(`\n   📊 Dashboard : http://localhost:${PORT}/dashboard\n`);
 });

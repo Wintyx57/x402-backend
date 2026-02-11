@@ -58,6 +58,15 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "fun", "jokes", "live"]
     },
+    // --- PREMIUM SERVICES ---
+    {
+        name: "x402 AI Image Generation",
+        description: "Generate images with DALL-E 3. Provide a text prompt, get a high-quality AI-generated image URL back. Supports 1024x1024, 1024x1792, 1792x1024 sizes and standard/hd quality. Usage: /api/image?prompt=a+cat+in+space&size=1024x1024&quality=standard",
+        url: `${BASE_URL}/api/image`,
+        price_usdc: 0.05,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "image", "ai", "dall-e", "generation", "live"]
+    },
 ];
 
 async function seedWrappers() {

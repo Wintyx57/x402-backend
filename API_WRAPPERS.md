@@ -2,7 +2,7 @@
 
 ## Overview
 
-x402 Bazaar includes **6 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
+x402 Bazaar includes **7 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
 
 ## High-Value Endpoints
 
@@ -65,15 +65,17 @@ Give any URL, get clean Markdown back. Strips ads, nav, scripts -- returns only 
 
 ### 3. Twitter/X Data API
 
-**Endpoint:** `GET /api/twitter?user={username}` or `GET /api/twitter?tweet={tweet_url}`
+**Endpoint:** `GET /api/twitter?user={username}` or `GET /api/twitter?tweet={tweet_url}` or `GET /api/twitter?search={query}`
 **Price:** 0.005 USDC
-**Source:** fxtwitter.com + Twitter Syndication API
+**Source:** fxtwitter.com + Twitter Syndication API + DuckDuckGo
 
-Read Twitter/X profiles and tweets without API keys.
+Read Twitter/X profiles, tweets, and search tweets by keyword -- all without API keys.
 
 **Parameters (one required):**
 - `user`: Twitter username (without @, e.g., "elonmusk")
 - `tweet`: Full tweet URL (e.g., "https://x.com/user/status/123456789")
+- `search`: Search tweets by keyword (max 200 chars, e.g., "bitcoin")
+- `max` (optional, search only): Max results (1-20, default 10)
 
 **Profile response:**
 ```json
@@ -114,11 +116,61 @@ Read Twitter/X profiles and tweets without API keys.
 }
 ```
 
+**Search response:**
+```json
+{
+  "success": true,
+  "type": "search",
+  "query": "bitcoin",
+  "results_count": 10,
+  "results": [
+    {
+      "title": "Bitcoin hits new all-time high...",
+      "text": "Snippet from tweet...",
+      "url": "https://twitter.com/user/status/123",
+      "author": "username"
+    }
+  ]
+}
+```
+
+---
+
+### 4. AI Image Generation (DALL-E 3)
+
+**Endpoint:** `GET /api/image?prompt={description}`
+**Price:** 0.05 USDC
+**Source:** OpenAI DALL-E 3
+
+Generate high-quality images from text descriptions using DALL-E 3. Returns a temporary image URL (valid ~1 hour).
+
+**Parameters:**
+- `prompt` (required): Image description (max 1000 chars)
+- `size` (optional): Image dimensions -- `1024x1024` (default), `1024x1792` (portrait), `1792x1024` (landscape)
+- `quality` (optional): `standard` (default) or `hd` (more detail, slower)
+
+**Response:**
+```json
+{
+  "success": true,
+  "prompt": "a cat floating in space with stars",
+  "revised_prompt": "A whimsical orange tabby cat floating gracefully in outer space...",
+  "image_url": "https://oaidalleapiprodscus.blob.core.windows.net/...",
+  "size": "1024x1024",
+  "quality": "standard"
+}
+```
+
+**Notes:**
+- `revised_prompt` is DALL-E 3's expanded version of your prompt (always returned)
+- Image URLs are temporary (~1 hour) -- download promptly
+- Content policy: prompts violating OpenAI's content policy will be rejected (400 error)
+
 ---
 
 ## Utility Endpoints
 
-### 4. Weather API
+### 5. Weather API
 
 **Endpoint:** `GET /api/weather?city={city_name}`
 **Price:** 0.02 USDC
@@ -137,7 +189,7 @@ Read Twitter/X profiles and tweets without API keys.
 }
 ```
 
-### 5. Crypto Price API
+### 6. Crypto Price API
 
 **Endpoint:** `GET /api/crypto?coin={coin_id}`
 **Price:** 0.02 USDC
@@ -154,7 +206,7 @@ Read Twitter/X profiles and tweets without API keys.
 }
 ```
 
-### 6. Random Joke API
+### 7. Random Joke API
 
 **Endpoint:** `GET /api/joke`
 **Price:** 0.01 USDC
@@ -196,6 +248,7 @@ Read Twitter/X profiles and tweets without API keys.
 | `/api/search` | 0.005 USDC | DuckDuckGo | 30/min |
 | `/api/scrape` | 0.005 USDC | Direct fetch | 30/min |
 | `/api/twitter` | 0.005 USDC | fxtwitter | 30/min |
+| `/api/image` | 0.05 USDC | OpenAI DALL-E 3 | 30/min |
 | `/api/weather` | 0.02 USDC | Open-Meteo | 30/min |
 | `/api/crypto` | 0.02 USDC | CoinGecko | 30/min |
 | `/api/joke` | 0.01 USDC | Official Joke API | 30/min |

@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 09/02/2026 - 22h)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 11/02/2026 — Sprint P0 complete)
 
 ### Vue d'ensemble
 
@@ -42,6 +42,13 @@ Phase 1: Developer Obsession (Mois 1-2)
 │     ├── [x] 3.7 Wrappers Weather, Crypto, Joke (/api/weather, /api/crypto, /api/joke)
 │     └── [x] 3.8 Badge "x402 Native" sur le frontend + compteur Live APIs
 │
+├── [x] Milestone 3b: Holy Trinity + Wrappers avances (COMPLET 11/02/2026)
+│     ├── [x] 3b.1 Twitter Search: /api/twitter?search=keyword (DuckDuckGo site:twitter.com)
+│     ├── [x] 3b.2 Image Generation: /api/image?prompt=... via DALL-E 3 reel (0.05 USDC)
+│     ├── [x] 3b.3 Enregistrer nouveaux wrappers dans Supabase (seed-wrappers.js)
+│     ├── [x] 3b.4 Mettre a jour API_WRAPPERS.md
+│     └── [x] 3b.5 Mettre a jour route GET / avec nouveaux endpoints
+│
 ├── [ ] Milestone 4: Refonte /docs et /mcp
 │     ├── [ ] 4.1 Page /docs avec navigation laterale
 │     ├── [ ] 4.2 Page /mcp avec instructions CLI
@@ -49,12 +56,26 @@ Phase 1: Developer Obsession (Mois 1-2)
 │     ├── [ ] 4.4 Section Quickstart (5 min to first call)
 │     └── [ ] 4.5 API Reference auto-generee
 │
-└── [ ] Milestone 5: Marketing
-      ├── [ ] 5.1 Landing page "Carte de credit illimitee pour agents"
-      ├── [ ] 5.2 Video demo (agent autonome)
-      ├── [ ] 5.3 Thread Twitter/X de lancement
-      ├── [ ] 5.4 Post Hacker News / Reddit
-      └── [ ] 5.5 Article blog
+├── [ ] Milestone 4b: UX/UI & Trust Layer (NOUVEAU 11/02/2026)
+│     ├── [ ] 4b.1 Badges enrichis: "x402 Native", "Last active: Xh ago" sur ServiceCard
+│     ├── [ ] 4b.2 Health check services: ping URLs, badge Online/Offline
+│     ├── [ ] 4b.3 Filtres avances: filtre chain (Base/SKALE), slider prix max
+│     ├── [ ] 4b.4 Dashboard charts: Chart.js (tx volume, top services, revenus cumules)
+│     ├── [ ] 4b.5 Galerie demos agents: page /demos (code + video embed)
+│     └── [ ] 4b.6 Page FAQ: section FAQ couvrant tx fail, listing, testnet, gas
+│
+├── [ ] Milestone 5: Marketing
+│     ├── [ ] 5.1 Landing page "Carte de credit illimitee pour agents"
+│     ├── [ ] 5.2 Video demo (agent autonome)
+│     ├── [ ] 5.3 Thread Twitter/X de lancement
+│     ├── [ ] 5.4 Post Hacker News / Reddit
+│     └── [ ] 5.5 Article blog
+│
+└── [ ] Milestone 6: Ecosysteme & Integrations (NOUVEAU 11/02/2026)
+      ├── [ ] 6.1 Package LangChain: tool X402BazaarTool (Python, handle 402/pay/retry auto)
+      ├── [ ] 6.2 Guide LangChain dans Integrate.jsx (tutoriel Python complet)
+      ├── [ ] 6.3 Section securite visible sur About (helmet, anti-replay, CORS, rate limiting)
+      └── [ ] 6.4 (Optionnel) Auto-GPT plugin
 ```
 
 ### CLI x402-bazaar (Milestone 1 - COMPLET, PUBLIE sur npm)
@@ -309,14 +330,38 @@ VITE_NETWORK=mainnet
 - [x] Milestone 1: CLI publie sur npm (x402-bazaar@1.0.0)
 - [x] Milestone 1b: CLI reference sur toutes les pages du site (Home, MCP, Integrate, Developers)
 - [x] Milestone 3: 6 wrappers API natifs (search, scrape, twitter, weather, crypto, joke)
+- [x] Milestone 3b: 2 wrappers avances (image DALL-E 3, twitter search) — total: 8 endpoints natifs
 - [x] Hackathon prep: UX polish + SKALE Europa integration + security audit
 
-**Prochain (Milestone 2):**
-1. Config Generator web — page /config sur x402bazaar.org
+**FAIT (11/02/2026 — Sprint P0):**
+- [x] Milestone 3b.2: Image Generation `/api/image` via DALL-E 3 reel (0.05 USDC)
+- [x] Milestone 3b.1: Twitter Search `/api/twitter?search=keyword` via DuckDuckGo
+- [x] Design P0: glass-card visibility, focus-visible rings, text-[10px] elimination, CTA mobile, spinner Register
+
+**Prochain — Priorite P0:**
+1. Milestone 2: Config Generator web — page /config sur x402bazaar.org
+
+**Prochain — Priorite P1 (haute valeur):**
+4. Milestone 6.1: Package LangChain (adoption organique via ecosysteme Python)
+5. Milestone 4b.1: Badges enrichis sur ServiceCard (trust layer)
+6. Milestone 4b.4: Dashboard avec charts Chart.js (appeal jury/investisseurs)
+7. Milestone 4b.2: Health check services + badge Online/Offline
+8. Milestone 4b.5: Galerie demos agents (page /demos)
+
+**Prochain — Priorite P2 (nice to have):**
+9. Milestone 4b.3: Filtres avances (chain, prix max)
+10. Milestone 6.2: Guide LangChain dans Integrate.jsx
+11. Milestone 4b.6: Page FAQ
+12. Milestone 6.3: Section securite visible
 
 **Maintenance:**
-2. Soumettre le sitemap sur Google Search Console
-3. Creer une image OG pour le partage social
+- Soumettre le sitemap sur Google Search Console
+- Creer une image OG pour le partage social
+
+**Idees evaluees et rejetees (11/02/2026):**
+- Recherche semantique (embeddings) : overkill pour 70 services, effort L, impact 2/5
+- Mode "agent view" JSON-only : deja fait via /api/services
+- Upgrade Web Search vers Brave/Tavily : DuckDuckGo suffit pour le hackathon
 
 ### Commandes
 
