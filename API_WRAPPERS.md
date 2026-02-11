@@ -2,7 +2,7 @@
 
 ## Overview
 
-x402 Bazaar includes **7 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
+x402 Bazaar includes **22 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
 
 ## High-Value Endpoints
 
@@ -224,6 +224,414 @@ Generate high-quality images from text descriptions using DALL-E 3. Returns a te
 
 ---
 
+## Knowledge & Data Endpoints
+
+### 8. Wikipedia Summary
+
+**Endpoint:** `GET /api/wikipedia?q={query}`
+**Price:** 0.005 USDC
+**Source:** Wikipedia REST API
+
+Get clean summaries of Wikipedia articles without the full HTML page.
+
+**Parameters:**
+- `q` (required): Search query (max 200 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "title": "Bitcoin",
+  "extract": "Bitcoin is a decentralized digital currency...",
+  "description": "Decentralized digital currency",
+  "thumbnail": "https://upload.wikimedia.org/...",
+  "url": "https://en.wikipedia.org/wiki/Bitcoin"
+}
+```
+
+---
+
+### 9. Dictionary API
+
+**Endpoint:** `GET /api/dictionary?word={word}`
+**Price:** 0.005 USDC
+**Source:** Free Dictionary API
+
+Get English word definitions, phonetics, and examples.
+
+**Parameters:**
+- `word` (required): English word (max 100 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "word": "hello",
+  "phonetic": "/həˈloʊ/",
+  "meanings": [
+    {
+      "partOfSpeech": "exclamation",
+      "definitions": [
+        "used as a greeting or to begin a phone conversation",
+        "used to attract attention",
+        "expressing surprise"
+      ]
+    }
+  ],
+  "sourceUrl": "https://en.wiktionary.org/wiki/hello"
+}
+```
+
+---
+
+### 10. Countries API
+
+**Endpoint:** `GET /api/countries?name={country_name}`
+**Price:** 0.005 USDC
+**Source:** REST Countries API
+
+Get comprehensive country data (population, capital, languages, etc.).
+
+**Parameters:**
+- `name` (required): Country name (max 100 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "name": "France",
+  "official": "French Republic",
+  "capital": "Paris",
+  "population": 67391582,
+  "region": "Europe",
+  "subregion": "Western Europe",
+  "currencies": ["Euro"],
+  "languages": ["French"],
+  "flag": "https://flagcdn.com/fr.svg",
+  "timezones": ["UTC+01:00"]
+}
+```
+
+---
+
+## Developer Tools
+
+### 11. GitHub API
+
+**Endpoint:** `GET /api/github?user={username}` or `GET /api/github?repo={owner/repo}`
+**Price:** 0.005 USDC
+**Source:** GitHub API (no auth required for public data)
+
+Get GitHub user profiles or repository stats.
+
+**Parameters (one required):**
+- `user`: GitHub username (e.g., "torvalds")
+- `repo`: Repository path (e.g., "facebook/react")
+
+**User response:**
+```json
+{
+  "success": true,
+  "type": "user",
+  "login": "torvalds",
+  "name": "Linus Torvalds",
+  "bio": "Creator of Linux",
+  "public_repos": 8,
+  "followers": 180000,
+  "following": 0,
+  "avatar": "https://avatars.githubusercontent.com/u/1024025",
+  "url": "https://github.com/torvalds",
+  "created_at": "2011-09-03T15:26:22Z"
+}
+```
+
+**Repository response:**
+```json
+{
+  "success": true,
+  "type": "repo",
+  "name": "facebook/react",
+  "description": "The library for web and native user interfaces",
+  "stars": 230000,
+  "forks": 47000,
+  "language": "JavaScript",
+  "license": "MIT",
+  "open_issues": 850,
+  "url": "https://github.com/facebook/react",
+  "created_at": "2013-05-24T16:15:54Z",
+  "updated_at": "2026-02-11T10:30:00Z"
+}
+```
+
+---
+
+### 12. NPM Registry API
+
+**Endpoint:** `GET /api/npm?package={package_name}`
+**Price:** 0.005 USDC
+**Source:** NPM Registry (public)
+
+Get metadata for any npm package.
+
+**Parameters:**
+- `package` (required): Package name (supports scoped packages like "@react/core")
+
+**Response:**
+```json
+{
+  "success": true,
+  "name": "react",
+  "description": "React is a JavaScript library for building user interfaces.",
+  "latest_version": "18.2.0",
+  "license": "MIT",
+  "homepage": "https://reactjs.org/",
+  "repository": "git+https://github.com/facebook/react.git",
+  "keywords": ["react", "framework", "ui"],
+  "author": "Meta Platforms, Inc.",
+  "modified": "2023-06-14T15:27:31.049Z"
+}
+```
+
+---
+
+## Location & Geography
+
+### 13. IP Geolocation
+
+**Endpoint:** `GET /api/ip?address={ip_address}`
+**Price:** 0.005 USDC
+**Source:** ip-api.com
+
+Get location data from any IP address (IPv4 and IPv6 supported).
+
+**Parameters:**
+- `address` (required): IP address (e.g., "8.8.8.8")
+
+**Response:**
+```json
+{
+  "success": true,
+  "ip": "8.8.8.8",
+  "country": "United States",
+  "country_code": "US",
+  "region": "California",
+  "city": "Mountain View",
+  "zip": "94035",
+  "latitude": 37.386,
+  "longitude": -122.0838,
+  "timezone": "America/Los_Angeles",
+  "isp": "Google LLC",
+  "org": "Google Public DNS"
+}
+```
+
+---
+
+### 14. Geocoding API
+
+**Endpoint:** `GET /api/geocoding?city={city_name}`
+**Price:** 0.005 USDC
+**Source:** Open-Meteo Geocoding API
+
+Convert city names to coordinates (lat/lon).
+
+**Parameters:**
+- `city` (required): City name (max 100 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "query": "Paris",
+  "results": [
+    {
+      "name": "Paris",
+      "country": "France",
+      "country_code": "FR",
+      "latitude": 48.85341,
+      "longitude": 2.3488,
+      "population": 2138551,
+      "timezone": "Europe/Paris"
+    }
+  ]
+}
+```
+
+---
+
+### 15. Air Quality API
+
+**Endpoint:** `GET /api/airquality?lat={latitude}&lon={longitude}`
+**Price:** 0.005 USDC
+**Source:** Open-Meteo Air Quality API
+
+Get real-time air quality data and pollutant levels.
+
+**Parameters:**
+- `lat` (required): Latitude (-90 to 90)
+- `lon` (required): Longitude (-180 to 180)
+
+**Response:**
+```json
+{
+  "success": true,
+  "latitude": 48.85,
+  "longitude": 2.35,
+  "time": "2026-02-11T10:00",
+  "pm2_5": 12.5,
+  "pm10": 18.3,
+  "ozone": 45.2,
+  "nitrogen_dioxide": 22.1,
+  "carbon_monoxide": 320,
+  "european_aqi": 28,
+  "us_aqi": 52
+}
+```
+
+---
+
+## Utility & Generation
+
+### 16. QR Code Generator
+
+**Endpoint:** `GET /api/qrcode?text={content}&size={pixels}`
+**Price:** 0.005 USDC
+**Source:** QR Server API
+
+Generate QR codes from any text (returns PNG image).
+
+**Parameters:**
+- `text` (required): Content to encode (max 500 chars)
+- `size` (optional): Image size in pixels (50-1000, default 200)
+
+**Response:** PNG image (Content-Type: image/png)
+
+**Note:** This endpoint returns an image directly, not JSON.
+
+---
+
+### 17. World Time API
+
+**Endpoint:** `GET /api/time?timezone={timezone}`
+**Price:** 0.005 USDC
+**Source:** World Time API
+
+Get current time in any timezone.
+
+**Parameters:**
+- `timezone` (required): Timezone (format: Region/City, e.g., "Europe/Paris")
+
+**Response:**
+```json
+{
+  "success": true,
+  "timezone": "Europe/Paris",
+  "datetime": "2026-02-11T11:30:45.123456+01:00",
+  "utc_offset": "+01:00",
+  "day_of_week": 2,
+  "week_number": 7,
+  "abbreviation": "CET",
+  "dst": false
+}
+```
+
+---
+
+### 18. Public Holidays API
+
+**Endpoint:** `GET /api/holidays?country={code}&year={year}`
+**Price:** 0.005 USDC
+**Source:** Nager.Date API
+
+Get public holidays for any country and year.
+
+**Parameters:**
+- `country` (required): 2-letter country code (ISO 3166-1 alpha-2, e.g., "FR")
+- `year` (optional): Year (2000-2100, default: current year)
+
+**Response:**
+```json
+{
+  "success": true,
+  "country": "FR",
+  "year": 2026,
+  "count": 11,
+  "holidays": [
+    {
+      "date": "2026-01-01",
+      "name": "Jour de l'an",
+      "name_en": "New Year's Day",
+      "fixed": true,
+      "types": ["Public"]
+    }
+  ]
+}
+```
+
+---
+
+## Fun & Random Content
+
+### 19. Random Quote API
+
+**Endpoint:** `GET /api/quote`
+**Price:** 0.005 USDC
+**Source:** Advice Slip API
+
+Get random advice/quotes.
+
+**Response:**
+```json
+{
+  "success": true,
+  "id": 123,
+  "advice": "Never stop learning. Knowledge is infinite."
+}
+```
+
+---
+
+### 20. Random Facts API
+
+**Endpoint:** `GET /api/facts`
+**Price:** 0.005 USDC
+**Source:** Cat Facts API
+
+Get random interesting facts.
+
+**Response:**
+```json
+{
+  "success": true,
+  "fact": "A group of cats is called a clowder.",
+  "length": 38
+}
+```
+
+---
+
+### 21. Random Dog Image API
+
+**Endpoint:** `GET /api/dogs?breed={breed_name}`
+**Price:** 0.005 USDC
+**Source:** Dog CEO API
+
+Get random dog images by breed (or random if no breed specified).
+
+**Parameters:**
+- `breed` (optional): Dog breed (lowercase, e.g., "labrador", "husky")
+
+**Response:**
+```json
+{
+  "success": true,
+  "image_url": "https://images.dog.ceo/breeds/labrador/n02099712_1234.jpg",
+  "breed": "labrador"
+}
+```
+
+---
+
 ## Payment Flow (all endpoints)
 
 1. **Request without payment** -> `402 Payment Required` with payment details
@@ -252,6 +660,20 @@ Generate high-quality images from text descriptions using DALL-E 3. Returns a te
 | `/api/weather` | 0.02 USDC | Open-Meteo | 30/min |
 | `/api/crypto` | 0.02 USDC | CoinGecko | 30/min |
 | `/api/joke` | 0.01 USDC | Official Joke API | 30/min |
+| `/api/wikipedia` | 0.005 USDC | Wikipedia API | 30/min |
+| `/api/dictionary` | 0.005 USDC | Free Dictionary API | 30/min |
+| `/api/countries` | 0.005 USDC | REST Countries | 30/min |
+| `/api/github` | 0.005 USDC | GitHub API | 30/min |
+| `/api/npm` | 0.005 USDC | NPM Registry | 30/min |
+| `/api/ip` | 0.005 USDC | ip-api.com | 30/min |
+| `/api/qrcode` | 0.005 USDC | QR Server API | 30/min |
+| `/api/time` | 0.005 USDC | World Time API | 30/min |
+| `/api/holidays` | 0.005 USDC | Nager.Date | 30/min |
+| `/api/geocoding` | 0.005 USDC | Open-Meteo Geocoding | 30/min |
+| `/api/airquality` | 0.005 USDC | Open-Meteo Air Quality | 30/min |
+| `/api/quote` | 0.005 USDC | Advice Slip | 30/min |
+| `/api/facts` | 0.005 USDC | Cat Facts | 30/min |
+| `/api/dogs` | 0.005 USDC | Dog CEO | 30/min |
 
 ---
 

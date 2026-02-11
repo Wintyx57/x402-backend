@@ -445,6 +445,20 @@ app.get('/', async (req, res) => {
             "GET /api/crypto?coin=": "Cryptocurrency prices (0.02 USDC)",
             "GET /api/joke": "Random joke (0.01 USDC)",
             "GET /api/image?prompt=": "AI image generation via DALL-E 3 (0.05 USDC)",
+            "GET /api/wikipedia?q=": "Wikipedia article summary (0.005 USDC)",
+            "GET /api/dictionary?word=": "English dictionary definitions (0.005 USDC)",
+            "GET /api/countries?name=": "Country data (population, capital, languages) (0.005 USDC)",
+            "GET /api/github?user=|repo=": "GitHub user profiles and repo stats (0.005 USDC)",
+            "GET /api/npm?package=": "NPM package metadata (0.005 USDC)",
+            "GET /api/ip?address=": "IP geolocation data (0.005 USDC)",
+            "GET /api/qrcode?text=": "QR code image generation (0.005 USDC)",
+            "GET /api/time?timezone=": "Current time in any timezone (0.005 USDC)",
+            "GET /api/holidays?country=&year=": "Public holidays by country (0.005 USDC)",
+            "GET /api/geocoding?city=": "City to coordinates geocoding (0.005 USDC)",
+            "GET /api/airquality?lat=&lon=": "Air quality index and pollutants (0.005 USDC)",
+            "GET /api/quote": "Random advice quote (0.005 USDC)",
+            "GET /api/facts": "Random fun fact (0.005 USDC)",
+            "GET /api/dogs?breed=": "Random dog image by breed (0.005 USDC)",
             "GET /api/agent/:agentId": "ERC-8004 agent identity lookup (free)"
         },
         protocol: "x402 - HTTP 402 Payment Required",
@@ -1135,6 +1149,605 @@ app.get('/api/image', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Image
         }
 
         return res.status(500).json({ error: 'Image generation failed' });
+    }
+});
+
+// --- WIKIPEDIA SUMMARY API WRAPPER (0.005 USDC) ---
+app.get('/api/wikipedia', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Wikipedia Summary API"), async (req, res) => {
+    const query = (req.query.q || '').trim().slice(0, 200);
+
+    if (!query) {
+        return res.status(400).json({ error: "Parameter 'q' required. Ex: /api/wikipedia?q=Bitcoin" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(query)) {
+        return res.status(400).json({ error: 'Invalid characters in query' });
+    }
+
+    try {
+        const apiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (data.type === 'disambiguation' || data.type === 'https://mediawiki.org/wiki/HyperSwitch/errors/not_found') {
+            return res.status(404).json({ error: 'Article not found or is a disambiguation page', query });
+        }
+
+        logActivity('api_call', `Wikipedia API: "${query}"`);
+
+        res.json({
+            success: true,
+            title: data.title,
+            extract: data.extract,
+            description: data.description || '',
+            thumbnail: data.thumbnail?.source || null,
+            url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(query)}`
+        });
+    } catch (err) {
+        console.error('[Wikipedia API] Error:', err.message);
+        return res.status(500).json({ error: 'Wikipedia API request failed' });
+    }
+});
+
+// --- DICTIONARY API WRAPPER (0.005 USDC) ---
+app.get('/api/dictionary', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Dictionary API"), async (req, res) => {
+    const word = (req.query.word || '').trim().toLowerCase().slice(0, 100);
+
+    if (!word) {
+        return res.status(400).json({ error: "Parameter 'word' required. Ex: /api/dictionary?word=hello" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(word)) {
+        return res.status(400).json({ error: 'Invalid characters in word' });
+    }
+
+    try {
+        const apiUrl = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+            return res.status(404).json({ error: 'Word not found', word });
+        }
+
+        const entry = data[0];
+        const meanings = (entry.meanings || []).map(m => ({
+            partOfSpeech: m.partOfSpeech,
+            definitions: (m.definitions || []).slice(0, 3).map(d => d.definition)
+        }));
+
+        logActivity('api_call', `Dictionary API: "${word}"`);
+
+        res.json({
+            success: true,
+            word: entry.word,
+            phonetic: entry.phonetic || '',
+            meanings,
+            sourceUrl: entry.sourceUrls?.[0] || ''
+        });
+    } catch (err) {
+        console.error('[Dictionary API] Error:', err.message);
+        return res.status(500).json({ error: 'Dictionary API request failed' });
+    }
+});
+
+// --- COUNTRIES API WRAPPER (0.005 USDC) ---
+app.get('/api/countries', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Countries API"), async (req, res) => {
+    const name = (req.query.name || '').trim().slice(0, 100);
+
+    if (!name) {
+        return res.status(400).json({ error: "Parameter 'name' required. Ex: /api/countries?name=France" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(name)) {
+        return res.status(400).json({ error: 'Invalid characters in country name' });
+    }
+
+    try {
+        const apiUrl = `https://restcountries.com/v3.1/name/${encodeURIComponent(name)}?fields=name,capital,population,region,subregion,currencies,languages,flags,timezones`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+            return res.status(404).json({ error: 'Country not found', name });
+        }
+
+        const country = data[0];
+        const currencies = country.currencies ? Object.values(country.currencies).map(c => c.name) : [];
+        const languages = country.languages ? Object.values(country.languages) : [];
+
+        logActivity('api_call', `Countries API: "${name}"`);
+
+        res.json({
+            success: true,
+            name: country.name?.common || name,
+            official: country.name?.official || '',
+            capital: country.capital?.[0] || '',
+            population: country.population || 0,
+            region: country.region || '',
+            subregion: country.subregion || '',
+            currencies,
+            languages,
+            flag: country.flags?.svg || country.flags?.png || '',
+            timezones: country.timezones || []
+        });
+    } catch (err) {
+        console.error('[Countries API] Error:', err.message);
+        return res.status(500).json({ error: 'Countries API request failed' });
+    }
+});
+
+// --- GITHUB API WRAPPER (0.005 USDC) ---
+app.get('/api/github', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "GitHub API"), async (req, res) => {
+    const user = (req.query.user || '').trim().slice(0, 100);
+    const repo = (req.query.repo || '').trim().slice(0, 200);
+
+    if (!user && !repo) {
+        return res.status(400).json({
+            error: "Parameter 'user' or 'repo' required.",
+            examples: ["/api/github?user=torvalds", "/api/github?repo=facebook/react"]
+        });
+    }
+
+    // Sanitize: alphanumeric + hyphens + slashes only
+    if (user && !/^[a-zA-Z0-9_-]+$/.test(user)) {
+        return res.status(400).json({ error: 'Invalid GitHub username format' });
+    }
+    if (repo && !/^[a-zA-Z0-9_-]+\/[a-zA-Z0-9_.-]+$/.test(repo)) {
+        return res.status(400).json({ error: 'Invalid GitHub repo format (expected: owner/repo)' });
+    }
+
+    try {
+        if (user) {
+            // User profile
+            const apiUrl = `https://api.github.com/users/${encodeURIComponent(user)}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                headers: { 'User-Agent': 'x402-bazaar' }
+            }, 5000);
+            const data = await apiRes.json();
+
+            if (data.message === 'Not Found') {
+                return res.status(404).json({ error: 'User not found', user });
+            }
+
+            logActivity('api_call', `GitHub API: user ${user}`);
+
+            return res.json({
+                success: true,
+                type: 'user',
+                login: data.login,
+                name: data.name || '',
+                bio: data.bio || '',
+                public_repos: data.public_repos || 0,
+                followers: data.followers || 0,
+                following: data.following || 0,
+                avatar: data.avatar_url || '',
+                url: data.html_url || '',
+                created_at: data.created_at || ''
+            });
+        } else {
+            // Repository
+            const apiUrl = `https://api.github.com/repos/${repo}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                headers: { 'User-Agent': 'x402-bazaar' }
+            }, 5000);
+            const data = await apiRes.json();
+
+            if (data.message === 'Not Found') {
+                return res.status(404).json({ error: 'Repository not found', repo });
+            }
+
+            logActivity('api_call', `GitHub API: repo ${repo}`);
+
+            return res.json({
+                success: true,
+                type: 'repo',
+                name: data.full_name,
+                description: data.description || '',
+                stars: data.stargazers_count || 0,
+                forks: data.forks_count || 0,
+                language: data.language || '',
+                license: data.license?.spdx_id || '',
+                open_issues: data.open_issues_count || 0,
+                url: data.html_url || '',
+                created_at: data.created_at || '',
+                updated_at: data.updated_at || ''
+            });
+        }
+    } catch (err) {
+        console.error('[GitHub API] Error:', err.message);
+        return res.status(500).json({ error: 'GitHub API request failed' });
+    }
+});
+
+// --- NPM REGISTRY API WRAPPER (0.005 USDC) ---
+app.get('/api/npm', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "NPM Registry API"), async (req, res) => {
+    const pkg = (req.query.package || '').trim().slice(0, 100);
+
+    if (!pkg) {
+        return res.status(400).json({ error: "Parameter 'package' required. Ex: /api/npm?package=react" });
+    }
+
+    // Sanitize: npm package names (alphanumeric, hyphens, dots, slashes for scoped packages)
+    if (!/^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/.test(pkg)) {
+        return res.status(400).json({ error: 'Invalid npm package name format' });
+    }
+
+    try {
+        const apiUrl = `https://registry.npmjs.org/${encodeURIComponent(pkg)}`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (data.error === 'Not found') {
+            return res.status(404).json({ error: 'Package not found', package: pkg });
+        }
+
+        logActivity('api_call', `NPM API: "${pkg}"`);
+
+        res.json({
+            success: true,
+            name: data.name,
+            description: data.description || '',
+            latest_version: data['dist-tags']?.latest || '',
+            license: data.license || '',
+            homepage: data.homepage || '',
+            repository: data.repository?.url || '',
+            keywords: (data.keywords || []).slice(0, 10),
+            author: data.author?.name || '',
+            modified: data.time?.modified || ''
+        });
+    } catch (err) {
+        console.error('[NPM API] Error:', err.message);
+        return res.status(500).json({ error: 'NPM API request failed' });
+    }
+});
+
+// --- IP GEOLOCATION API WRAPPER (0.005 USDC) ---
+app.get('/api/ip', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "IP Geolocation API"), async (req, res) => {
+    const address = (req.query.address || '').trim().slice(0, 100);
+
+    if (!address) {
+        return res.status(400).json({ error: "Parameter 'address' required. Ex: /api/ip?address=8.8.8.8" });
+    }
+
+    // Validate IP format (IPv4 and IPv6)
+    if (!/^[\d.:a-fA-F]+$/.test(address)) {
+        return res.status(400).json({ error: 'Invalid IP address format' });
+    }
+
+    try {
+        const apiUrl = `http://ip-api.com/json/${encodeURIComponent(address)}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (data.status === 'fail') {
+            return res.status(404).json({ error: data.message || 'IP lookup failed', address });
+        }
+
+        logActivity('api_call', `IP Geolocation API: ${address}`);
+
+        res.json({
+            success: true,
+            ip: address,
+            country: data.country || '',
+            country_code: data.countryCode || '',
+            region: data.regionName || '',
+            city: data.city || '',
+            zip: data.zip || '',
+            latitude: data.lat || 0,
+            longitude: data.lon || 0,
+            timezone: data.timezone || '',
+            isp: data.isp || '',
+            org: data.org || ''
+        });
+    } catch (err) {
+        console.error('[IP Geolocation API] Error:', err.message);
+        return res.status(500).json({ error: 'IP Geolocation API request failed' });
+    }
+});
+
+// --- QR CODE API WRAPPER (0.005 USDC) ---
+app.get('/api/qrcode', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "QR Code API"), async (req, res) => {
+    const text = (req.query.text || '').trim().slice(0, 500);
+    let size = parseInt(req.query.size) || 200;
+
+    if (!text) {
+        return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/qrcode?text=hello&size=200" });
+    }
+
+    // Clamp size between 50 and 1000
+    size = Math.max(50, Math.min(1000, size));
+
+    try {
+        const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(text)}&format=png`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+
+        if (!apiRes.ok) {
+            return res.status(500).json({ error: 'QR code generation failed' });
+        }
+
+        logActivity('api_call', `QR Code API: ${text.slice(0, 50)}... (${size}px)`);
+
+        // Return image directly
+        res.set('Content-Type', 'image/png');
+        const buffer = await apiRes.arrayBuffer();
+        res.send(Buffer.from(buffer));
+    } catch (err) {
+        console.error('[QR Code API] Error:', err.message);
+        return res.status(500).json({ error: 'QR Code API request failed' });
+    }
+});
+
+// --- WORLD TIME API WRAPPER (0.005 USDC) ---
+app.get('/api/time', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "World Time API"), async (req, res) => {
+    const timezone = (req.query.timezone || '').trim().slice(0, 100);
+
+    if (!timezone) {
+        return res.status(400).json({ error: "Parameter 'timezone' required. Ex: /api/time?timezone=Europe/Paris" });
+    }
+
+    // Sanitize: timezone format (Region/City)
+    if (!/^[A-Za-z_]+\/[A-Za-z_]+$/.test(timezone)) {
+        return res.status(400).json({ error: 'Invalid timezone format (expected: Region/City)' });
+    }
+
+    try {
+        const apiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(timezone)}`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (data.error) {
+            return res.status(404).json({ error: 'Timezone not found', timezone });
+        }
+
+        logActivity('api_call', `World Time API: ${timezone}`);
+
+        res.json({
+            success: true,
+            timezone: data.timezone,
+            datetime: data.datetime,
+            utc_offset: data.utc_offset,
+            day_of_week: data.day_of_week,
+            week_number: data.week_number,
+            abbreviation: data.abbreviation,
+            dst: data.dst
+        });
+    } catch (err) {
+        console.error('[World Time API] Error:', err.message);
+        return res.status(500).json({ error: 'World Time API request failed' });
+    }
+});
+
+// --- PUBLIC HOLIDAYS API WRAPPER (0.005 USDC) ---
+app.get('/api/holidays', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Public Holidays API"), async (req, res) => {
+    let country = (req.query.country || '').trim().toUpperCase().slice(0, 2);
+    let year = parseInt(req.query.year) || new Date().getFullYear();
+
+    if (!country) {
+        return res.status(400).json({ error: "Parameter 'country' required (2-letter code). Ex: /api/holidays?country=FR&year=2026" });
+    }
+
+    // Validate country code (2 letters)
+    if (country.length !== 2 || !/^[A-Z]{2}$/.test(country)) {
+        return res.status(400).json({ error: 'Country code must be 2 uppercase letters (ISO 3166-1 alpha-2)' });
+    }
+
+    // Validate year range
+    if (year < 2000 || year > 2100) {
+        return res.status(400).json({ error: 'Year must be between 2000 and 2100' });
+    }
+
+    try {
+        const apiUrl = `https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!Array.isArray(data)) {
+            return res.status(404).json({ error: 'Country not found or no holidays available', country });
+        }
+
+        const holidays = data.map(h => ({
+            date: h.date,
+            name: h.localName,
+            name_en: h.name,
+            fixed: h.fixed,
+            types: h.types || []
+        }));
+
+        logActivity('api_call', `Public Holidays API: ${country} ${year}`);
+
+        res.json({
+            success: true,
+            country,
+            year,
+            count: holidays.length,
+            holidays
+        });
+    } catch (err) {
+        console.error('[Public Holidays API] Error:', err.message);
+        return res.status(500).json({ error: 'Public Holidays API request failed' });
+    }
+});
+
+// --- GEOCODING API WRAPPER (0.005 USDC) ---
+app.get('/api/geocoding', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Geocoding API"), async (req, res) => {
+    const city = (req.query.city || '').trim().slice(0, 100);
+
+    if (!city) {
+        return res.status(400).json({ error: "Parameter 'city' required. Ex: /api/geocoding?city=Paris" });
+    }
+
+    // Sanitize: reject control characters
+    if (/[\x00-\x1F\x7F]/.test(city)) {
+        return res.status(400).json({ error: 'Invalid characters in city name' });
+    }
+
+    try {
+        const apiUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=5&language=en&format=json`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!data.results || data.results.length === 0) {
+            return res.status(404).json({ error: 'City not found', city });
+        }
+
+        const results = data.results.map(r => ({
+            name: r.name,
+            country: r.country,
+            country_code: r.country_code,
+            latitude: r.latitude,
+            longitude: r.longitude,
+            population: r.population || 0,
+            timezone: r.timezone || ''
+        }));
+
+        logActivity('api_call', `Geocoding API: "${city}"`);
+
+        res.json({
+            success: true,
+            query: city,
+            results
+        });
+    } catch (err) {
+        console.error('[Geocoding API] Error:', err.message);
+        return res.status(500).json({ error: 'Geocoding API request failed' });
+    }
+});
+
+// --- AIR QUALITY API WRAPPER (0.005 USDC) ---
+app.get('/api/airquality', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Air Quality API"), async (req, res) => {
+    const lat = parseFloat(req.query.lat);
+    const lon = parseFloat(req.query.lon);
+
+    if (isNaN(lat) || isNaN(lon)) {
+        return res.status(400).json({ error: "Parameters 'lat' and 'lon' required. Ex: /api/airquality?lat=48.85&lon=2.35" });
+    }
+
+    // Validate lat/lon ranges
+    if (lat < -90 || lat > 90) {
+        return res.status(400).json({ error: 'Latitude must be between -90 and 90' });
+    }
+    if (lon < -180 || lon > 180) {
+        return res.status(400).json({ error: 'Longitude must be between -180 and 180' });
+    }
+
+    try {
+        const apiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,ozone,european_aqi,us_aqi`;
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!data.current) {
+            return res.status(500).json({ error: 'Failed to fetch air quality data' });
+        }
+
+        const current = data.current;
+
+        logActivity('api_call', `Air Quality API: ${lat},${lon}`);
+
+        res.json({
+            success: true,
+            latitude: data.latitude,
+            longitude: data.longitude,
+            time: current.time,
+            pm2_5: current.pm2_5,
+            pm10: current.pm10,
+            ozone: current.ozone,
+            nitrogen_dioxide: current.nitrogen_dioxide,
+            carbon_monoxide: current.carbon_monoxide,
+            european_aqi: current.european_aqi,
+            us_aqi: current.us_aqi
+        });
+    } catch (err) {
+        console.error('[Air Quality API] Error:', err.message);
+        return res.status(500).json({ error: 'Air Quality API request failed' });
+    }
+});
+
+// --- RANDOM QUOTE API WRAPPER (0.005 USDC) ---
+app.get('/api/quote', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Random Quote API"), async (req, res) => {
+    try {
+        const apiUrl = 'https://api.adviceslip.com/advice';
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+
+        // IMPORTANT: adviceslip returns text that needs to be parsed
+        const text = await apiRes.text();
+        const data = JSON.parse(text);
+
+        if (!data.slip) {
+            return res.status(500).json({ error: 'Invalid quote data received' });
+        }
+
+        logActivity('api_call', 'Random Quote API');
+
+        res.json({
+            success: true,
+            id: data.slip.id,
+            advice: data.slip.advice
+        });
+    } catch (err) {
+        console.error('[Random Quote API] Error:', err.message);
+        return res.status(500).json({ error: 'Random Quote API request failed' });
+    }
+});
+
+// --- RANDOM FACTS API WRAPPER (0.005 USDC) ---
+app.get('/api/facts', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Random Facts API"), async (req, res) => {
+    try {
+        const apiUrl = 'https://catfact.ninja/fact';
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (!data.fact) {
+            return res.status(500).json({ error: 'Invalid fact data received' });
+        }
+
+        logActivity('api_call', 'Random Facts API');
+
+        res.json({
+            success: true,
+            fact: data.fact,
+            length: data.length
+        });
+    } catch (err) {
+        console.error('[Random Facts API] Error:', err.message);
+        return res.status(500).json({ error: 'Random Facts API request failed' });
+    }
+});
+
+// --- RANDOM DOG IMAGE API WRAPPER (0.005 USDC) ---
+app.get('/api/dogs', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Random Dog Image API"), async (req, res) => {
+    const breed = (req.query.breed || '').trim().toLowerCase().slice(0, 50);
+
+    // Sanitize breed if provided
+    if (breed && !/^[a-z]+$/.test(breed)) {
+        return res.status(400).json({ error: 'Invalid breed format (lowercase letters only)' });
+    }
+
+    try {
+        const apiUrl = breed
+            ? `https://dog.ceo/api/breed/${encodeURIComponent(breed)}/images/random`
+            : 'https://dog.ceo/api/breeds/image/random';
+
+        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+        const data = await apiRes.json();
+
+        if (data.status !== 'success') {
+            return res.status(404).json({ error: 'Breed not found or API error', breed: breed || 'random' });
+        }
+
+        logActivity('api_call', `Random Dog Image API: ${breed || 'random'}`);
+
+        res.json({
+            success: true,
+            image_url: data.message,
+            breed: breed || 'random'
+        });
+    } catch (err) {
+        console.error('[Random Dog Image API] Error:', err.message);
+        return res.status(500).json({ error: 'Random Dog Image API request failed' });
     }
 });
 
