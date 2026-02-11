@@ -1177,6 +1177,198 @@ app.get('/api/activity', dashboardApiLimiter, async (req, res) => {
     res.json(activity);
 });
 
+// --- SERVICES ACTIVITY (Last call timestamps) ---
+app.get('/api/services/activity', dashboardApiLimiter, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('activity')
+            .select('detail, created_at')
+            .eq('type', 'api_call')
+            .order('created_at', { ascending: false })
+            .limit(200);
+
+        if (error) {
+            console.error('[Supabase] /api/services/activity error:', error.message);
+            return res.status(500).json({ error: 'Failed to fetch activity' });
+        }
+
+        // Map detail patterns to endpoints and find latest timestamp
+        const activityMap = {};
+        const endpointPatterns = [
+            { pattern: /Web Search API/i, endpoint: '/api/search' },
+            { pattern: /Scraper API/i, endpoint: '/api/scrape' },
+            { pattern: /Twitter API/i, endpoint: '/api/twitter' },
+            { pattern: /Weather API/i, endpoint: '/api/weather' },
+            { pattern: /Crypto (?:Price )?API/i, endpoint: '/api/crypto' },
+            { pattern: /(?:Random )?Joke API/i, endpoint: '/api/joke' },
+            { pattern: /Image (?:Generation )?API/i, endpoint: '/api/image' },
+        ];
+
+        for (const row of (data || [])) {
+            for (const { pattern, endpoint } of endpointPatterns) {
+                if (pattern.test(row.detail) && !activityMap[endpoint]) {
+                    activityMap[endpoint] = row.created_at;
+                }
+            }
+        }
+
+        res.json(activityMap);
+    } catch (err) {
+        console.error('[Activity] Error:', err.message);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// --- HEALTH CHECK (service URLs) ---
+const healthCache = new Map();
+const HEALTH_TTL = 10 * 60 * 1000; // 10 minutes
+
+app.get('/api/health-check', dashboardApiLimiter, async (req, res) => {
+    try {
+        // Fetch all services
+        const { data: services, error } = await supabase
+            .from('services')
+            .select('url')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            return res.status(500).json({ error: 'Failed to fetch services' });
+        }
+
+        // Deduplicate base URLs
+        const urls = [...new Set((services || []).map(s => s.url).filter(Boolean))];
+
+        const results = {};
+        const toCheck = [];
+
+        // Check cache first
+        for (const url of urls) {
+            const cached = healthCache.get(url);
+            if (cached && (Date.now() - cached.timestamp < HEALTH_TTL)) {
+                results[url] = cached.status;
+            } else {
+                toCheck.push(url);
+            }
+        }
+
+        // Batch check remaining URLs (batches of 10)
+        for (let i = 0; i < toCheck.length; i += 10) {
+            const batch = toCheck.slice(i, i + 10);
+            const checks = batch.map(async (url) => {
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 5000);
+                    const response = await fetch(url, {
+                        method: 'HEAD',
+                        signal: controller.signal,
+                        redirect: 'follow',
+                    });
+                    clearTimeout(timeout);
+                    // Status 402 is normal for x402 (payment required = online)
+                    const status = (response.status >= 200 && response.status < 500) ? 'online' : 'offline';
+                    healthCache.set(url, { status, timestamp: Date.now() });
+                    results[url] = status;
+                } catch {
+                    healthCache.set(url, { status: 'offline', timestamp: Date.now() });
+                    results[url] = 'offline';
+                }
+            });
+            await Promise.all(checks);
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error('[Health Check] Error:', err.message);
+        res.status(500).json({ error: 'Health check failed' });
+    }
+});
+
+// --- ANALYTICS (aggregated data for charts) ---
+app.get('/api/analytics', dashboardApiLimiter, async (req, res) => {
+    try {
+        // 1. Get all payments for daily volume + cumulative revenue
+        const { data: payments } = await supabase
+            .from('activity')
+            .select('amount, created_at')
+            .eq('type', 'payment')
+            .order('created_at', { ascending: true });
+
+        // 2. Get all api_calls for top services
+        const { data: apiCalls } = await supabase
+            .from('activity')
+            .select('detail, created_at')
+            .eq('type', 'api_call')
+            .order('created_at', { ascending: false })
+            .limit(1000);
+
+        // 3. Total services count
+        const { count: servicesCount } = await supabase
+            .from('services')
+            .select('*', { count: 'exact', head: true });
+
+        // Aggregate payments by day
+        const dailyMap = {};
+        let cumulativeTotal = 0;
+        const cumulativeRevenue = [];
+
+        for (const p of (payments || [])) {
+            const date = p.created_at?.split('T')[0];
+            if (!date) continue;
+            const amount = Number(p.amount) || 0;
+            if (!dailyMap[date]) dailyMap[date] = { total: 0, count: 0 };
+            dailyMap[date].total += amount;
+            dailyMap[date].count++;
+        }
+
+        const dailyVolume = Object.entries(dailyMap)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, { total, count }]) => {
+                cumulativeTotal += total;
+                cumulativeRevenue.push({
+                    date,
+                    total: Math.round(cumulativeTotal * 100) / 100,
+                });
+                return {
+                    date,
+                    total: Math.round(total * 100) / 100,
+                    count,
+                };
+            });
+
+        // Aggregate top services by call count
+        const serviceCountMap = {};
+        for (const call of (apiCalls || [])) {
+            // Extract endpoint name from detail
+            const match = call.detail?.match(/^(\w[\w\s/]+?)(?:\s*[:.])/);
+            const endpoint = match ? match[1].trim() : (call.detail || 'Unknown');
+            serviceCountMap[endpoint] = (serviceCountMap[endpoint] || 0) + 1;
+        }
+
+        const topServices = Object.entries(serviceCountMap)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 8)
+            .map(([endpoint, count]) => ({ endpoint, count }));
+
+        // Totals
+        const totalRevenue = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const totalTransactions = (payments || []).length;
+
+        res.json({
+            dailyVolume,
+            topServices,
+            cumulativeRevenue,
+            totals: {
+                revenue: Math.round(totalRevenue * 100) / 100,
+                transactions: totalTransactions,
+                services: servicesCount || 0,
+            },
+        });
+    } catch (err) {
+        console.error('[Analytics] Error:', err.message);
+        res.status(500).json({ error: 'Analytics failed' });
+    }
+});
+
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
     console.error(`[ERROR] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
