@@ -37,9 +37,23 @@ async function initWallet() {
     const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
     const seedWalletId = Object.keys(seedData)[0];
 
-    wallet = await Wallet.fetch(seedWalletId);
-    await wallet.loadSeed(seedPath);
-    walletReady = true;
+    // Retry with exponential backoff for rate limits
+    for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+            wallet = await Wallet.fetch(seedWalletId);
+            await wallet.loadSeed(seedPath);
+            walletReady = true;
+            return;
+        } catch (err) {
+            if (err.httpCode === 429 && attempt < 5) {
+                const delay = Math.min(2000 * Math.pow(2, attempt), 30000);
+                console.error(`[Wallet] Rate limited (attempt ${attempt}/5), retrying in ${delay/1000}s...`);
+                await new Promise(r => setTimeout(r, delay));
+            } else {
+                throw err;
+            }
+        }
+    }
 }
 
 // ─── x402 Payment Flow ──────────────────────────────────────────────
