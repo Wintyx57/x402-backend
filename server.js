@@ -7,6 +7,7 @@ const { createClient } = require('@supabase/supabase-js');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 const OpenAI = require('openai');
+const { verifyAgent, getAgentInfo, IDENTITY_REGISTRY, REPUTATION_REGISTRY } = require('./erc8004');
 
 let _openai = null;
 function getOpenAI() {
@@ -377,6 +378,45 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
 // ROUTES
 // ============================================================
 
+// --- ERC-8004 Agent Registration JSON ---
+app.get('/.well-known/agent-registration.json', (req, res) => {
+    const agentId = process.env.ERC8004_AGENT_ID || null;
+    res.json({
+        type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+        name: 'x402 Bazaar',
+        description: 'The decentralized API marketplace where AI agents pay with USDC via HTTP 402 protocol',
+        image: 'https://x402bazaar.org/og-image.png',
+        services: [
+            { name: 'MCP', endpoint: 'https://x402-api.onrender.com/', version: '2025-06-18' }
+        ],
+        x402Support: true,
+        active: true,
+        registrations: agentId ? [{ chain: 'base', chainId: 8453, agentId, registry: IDENTITY_REGISTRY }] : [],
+        supportedTrust: ['reputation'],
+    });
+});
+
+// --- ERC-8004 Agent Lookup (free) ---
+app.get('/api/agent/:agentId', async (req, res) => {
+    const rawId = req.params.agentId;
+
+    // Validate: must be a positive integer
+    if (!/^\d+$/.test(rawId)) {
+        return res.status(400).json({ error: 'agentId must be a positive integer' });
+    }
+
+    try {
+        const info = await getAgentInfo(rawId);
+        if (!info) {
+            return res.status(404).json({ error: 'Agent not found', agentId: rawId });
+        }
+        res.json({ success: true, ...info });
+    } catch (err) {
+        console.error('[ERC-8004] Agent lookup error:', err.message);
+        return res.status(500).json({ error: 'Agent lookup failed' });
+    }
+});
+
 // --- HEALTH CHECK ---
 app.get('/health', (req, res) => {
     const supportedNetworks = Object.entries(CHAINS)
@@ -388,6 +428,7 @@ app.get('/health', (req, res) => {
 // --- ROUTE PUBLIQUE (Gratuite) ---
 app.get('/', async (req, res) => {
     const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+    const agentId = process.env.ERC8004_AGENT_ID || null;
     res.json({
         name: "x402 Bazaar",
         description: "Place de marché autonome de services IA - Protocole x402",
@@ -403,9 +444,18 @@ app.get('/', async (req, res) => {
             "GET /api/weather?city=": "Weather data for any city (0.02 USDC)",
             "GET /api/crypto?coin=": "Cryptocurrency prices (0.02 USDC)",
             "GET /api/joke": "Random joke (0.01 USDC)",
-            "GET /api/image?prompt=": "AI image generation via DALL-E 3 (0.05 USDC)"
+            "GET /api/image?prompt=": "AI image generation via DALL-E 3 (0.05 USDC)",
+            "GET /api/agent/:agentId": "ERC-8004 agent identity lookup (free)"
         },
-        protocol: "x402 - HTTP 402 Payment Required"
+        protocol: "x402 - HTTP 402 Payment Required",
+        erc8004: {
+            agentId,
+            identityRegistry: IDENTITY_REGISTRY,
+            reputationRegistry: REPUTATION_REGISTRY,
+            chain: 'base',
+            chainId: 8453,
+            registrationURI: 'https://x402-api.onrender.com/.well-known/agent-registration.json',
+        }
     });
 });
 
