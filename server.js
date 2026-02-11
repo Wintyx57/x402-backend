@@ -3,11 +3,23 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const compression = require('compression');
+const path = require('path');
+const dns = require('dns');
 const { createClient } = require('@supabase/supabase-js');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 const OpenAI = require('openai');
 const { verifyAgent, getAgentInfo, IDENTITY_REGISTRY, REPUTATION_REGISTRY } = require('./erc8004');
+
+// --- VALIDATION ENV VARS (U4) ---
+const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
+for (const key of REQUIRED_ENV) {
+    if (!process.env[key]) {
+        console.error(`FATAL: Missing required environment variable: ${key}`);
+        process.exit(1);
+    }
+}
 
 let _openai = null;
 function getOpenAI() {
@@ -66,9 +78,20 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // --- SECURITY HEADERS (Helmet) ---
 app.use(helmet({
-    contentSecurityPolicy: false, // Dashboard uses inline scripts
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "https:"],
+            connectSrc: ["*"],
+        },
+    },
     crossOriginEmbedderPolicy: false,
 }));
+
+// --- COMPRESSION ---
+app.use(compression());
 
 // --- CORS (whitelist strict — localhost only in dev) ---
 const PROD_ORIGINS = [
@@ -104,7 +127,7 @@ app.use(express.json({ limit: '10kb' }));
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 min
-    max: 500,
+    max: 200,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.path === '/health',
@@ -137,6 +160,19 @@ const registerLimiter = rateLimit({
 
 app.use(generalLimiter);
 
+// --- ADMIN AUTH MIDDLEWARE (H5) ---
+function adminAuth(req, res, next) {
+    const token = req.headers['x-admin-token'];
+    if (!process.env.ADMIN_TOKEN) {
+        // If ADMIN_TOKEN not set, allow access (backward compat for dev)
+        return next();
+    }
+    if (!token || token !== process.env.ADMIN_TOKEN) {
+        return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
+    }
+    next();
+}
+
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
     const start = Date.now();
@@ -155,19 +191,36 @@ app.use((req, res, next) => {
 });
 
 // --- Cache des paiements vérifiés (mémoire + Supabase persisté) ---
-const verifiedPayments = new Set();
+class BoundedSet {
+    constructor(maxSize = 10000) {
+        this.maxSize = maxSize;
+        this.set = new Set();
+    }
+    has(key) { return this.set.has(key); }
+    add(key) {
+        if (this.set.size >= this.maxSize) {
+            const first = this.set.values().next().value;
+            this.set.delete(first);
+        }
+        this.set.add(key);
+    }
+    get size() { return this.set.size; }
+}
+const verifiedPayments = new BoundedSet(10000);
 
-async function isTxAlreadyUsed(txHash) {
+async function isTxAlreadyUsed(...keys) {
     // Check memory cache first
-    if (verifiedPayments.has(txHash)) return true;
-    // Check Supabase
+    for (const key of keys) {
+        if (verifiedPayments.has(key)) return true;
+    }
+    // Check Supabase (single query for all keys)
     const { data } = await supabase
         .from('used_transactions')
         .select('tx_hash')
-        .eq('tx_hash', txHash)
+        .in('tx_hash', keys)
         .limit(1);
     if (data && data.length > 0) {
-        verifiedPayments.add(txHash); // warm cache
+        data.forEach(d => verifiedPayments.add(d.tx_hash));
         return true;
     }
     return false;
@@ -175,7 +228,13 @@ async function isTxAlreadyUsed(txHash) {
 
 async function markTxUsed(txHash, action) {
     verifiedPayments.add(txHash);
-    await supabase.from('used_transactions').insert([{ tx_hash: txHash, action }]).select();
+    // Use upsert with onConflict to handle race conditions (H6)
+    const { error } = await supabase
+        .from('used_transactions')
+        .upsert([{ tx_hash: txHash, action }], { onConflict: 'tx_hash', ignoreDuplicates: true });
+    if (error) {
+        console.error('[Anti-replay] markTxUsed error:', error.message);
+    }
 }
 
 // --- Activity log (persisté dans Supabase) ---
@@ -310,7 +369,7 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
 
             return res.status(402).json({
                 error: "Payment Required",
-                message: `Cette action coûte ${displayAmount} USDC. Envoyez le paiement puis fournissez le hash dans le header X-Payment-TxHash.`,
+                message: `This action costs ${displayAmount} USDC. Send payment then provide the transaction hash in the X-Payment-TxHash header.`,
                 payment_details: {
                     amount: displayAmount,
                     currency: "USDC",
@@ -320,7 +379,7 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
                     // Multi-chain: all accepted networks
                     networks: availableNetworks,
                     recipient: process.env.WALLET_ADDRESS,
-                    accepted: ["USDC", "ETH"],
+                    accepted: ["USDC"],
                     action: displayLabel
                 }
             });
@@ -334,8 +393,8 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
         // Anti-replay: check if tx already used (prefix with chain for disambiguation)
         const replayKey = `${chainKey}:${txHash}`;
         try {
-            // Check both prefixed and unprefixed forms for backward compat
-            const alreadyUsed = await isTxAlreadyUsed(txHash) || await isTxAlreadyUsed(replayKey);
+            // Check both prefixed and unprefixed forms in a single query
+            const alreadyUsed = await isTxAlreadyUsed(txHash, replayKey);
             if (alreadyUsed) {
                 console.log(`[x402] Replay blocked for tx ${txHash.slice(0, 10)}... on ${chainKey}`);
                 return res.status(402).json({
@@ -367,9 +426,7 @@ function paymentMiddleware(minAmountRaw, displayAmount, displayLabel) {
 
         return res.status(402).json({
             error: "Payment Required",
-            message: "Transaction invalide ou paiement insuffisant.",
-            tx_provided: txHash,
-            chain: chainKey
+            message: "Invalid transaction or insufficient payment."
         });
     };
 }
@@ -427,13 +484,19 @@ app.get('/health', (req, res) => {
 
 // --- ROUTE PUBLIQUE (Gratuite) ---
 app.get('/', async (req, res) => {
-    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+    let count = 0;
+    try {
+        const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+        count = result.count || 0;
+    } catch (err) {
+        console.error('[Root] Supabase error:', err.message);
+    }
     const agentId = process.env.ERC8004_AGENT_ID || null;
     res.json({
         name: "x402 Bazaar",
         description: "Place de marché autonome de services IA - Protocole x402",
         network: NETWORK_LABEL,
-        total_services: count || 0,
+        total_services: count,
         endpoints: {
             "GET /services":  "Liste complète des services (0.05 USDC)",
             "GET /search?q=": "Recherche de services par mot-clé (0.05 USDC)",
@@ -509,10 +572,12 @@ app.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Recherch
     const sanitized = query.replace(/[%_\\]/g, '\\$&');
 
     // Recherche floue sur name et description
+    // Sanitize for PostgREST filter: also escape commas, parens, dots that could break .or() syntax
+    const pgSafe = sanitized.replace(/[(),."']/g, '');
     const { data, error } = await supabase
         .from('services')
         .select('*')
-        .or(`name.ilike.%${sanitized}%,description.ilike.%${sanitized}%`);
+        .or(`name.ilike.%${pgSafe}%,description.ilike.%${pgSafe}%`);
 
     if (error) {
         console.error('[Supabase] /search error:', error.message);
@@ -802,6 +867,17 @@ app.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Univ
     const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
     if (blockedHostname.test(parsed.hostname)) {
         return res.status(400).json({ error: 'Internal URLs not allowed' });
+    }
+
+    // SECURITY: DNS resolution check to prevent DNS rebinding attacks (H1/I6)
+    try {
+        const { address } = await dns.promises.lookup(parsed.hostname);
+        const isPrivateIP = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address);
+        if (isPrivateIP) {
+            return res.status(400).json({ error: 'Internal URLs not allowed' });
+        }
+    } catch (dnsErr) {
+        return res.status(400).json({ error: 'Could not resolve hostname' });
     }
 
     try {
@@ -1755,16 +1831,20 @@ app.get('/api/dogs', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Random
 // DASHBOARD
 // ============================================================
 
-const path = require('path');
-
 // Servir le dashboard
 app.get('/dashboard', (req, res) => {
     res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
 
-// API stats (gratuit, pour le dashboard)
-app.get('/api/stats', dashboardApiLimiter, async (req, res) => {
-    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+// API stats (protected by admin auth)
+app.get('/api/stats', dashboardApiLimiter, adminAuth, async (req, res) => {
+    let count = 0;
+    try {
+        const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+        count = result.count || 0;
+    } catch (err) {
+        console.error('[Stats] Supabase count error:', err.message);
+    }
 
     // Paiements et revenus depuis Supabase
     let totalPayments = 0;
@@ -1893,6 +1973,14 @@ app.get('/api/services/activity', dashboardApiLimiter, async (req, res) => {
 const healthCache = new Map();
 const HEALTH_TTL = 10 * 60 * 1000; // 10 minutes
 
+// Cleanup expired healthCache entries every 30 min (U2)
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of healthCache) {
+        if (now - val.timestamp > HEALTH_TTL * 3) healthCache.delete(key);
+    }
+}, 30 * 60 * 1000);
+
 app.get('/api/health-check', dashboardApiLimiter, async (req, res) => {
     try {
         // Fetch all services
@@ -1953,8 +2041,8 @@ app.get('/api/health-check', dashboardApiLimiter, async (req, res) => {
     }
 });
 
-// --- ANALYTICS (aggregated data for charts) ---
-app.get('/api/analytics', dashboardApiLimiter, async (req, res) => {
+// --- ANALYTICS (aggregated data for charts, protected by admin auth) ---
+app.get('/api/analytics', dashboardApiLimiter, adminAuth, async (req, res) => {
     try {
         // 1. Get all payments for daily volume + cumulative revenue
         const { data: payments } = await supabase
@@ -2051,30 +2139,38 @@ app.use((err, req, res, next) => {
 });
 
 // --- LANCEMENT ---
-app.listen(PORT, async () => {
-    const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+const serverInstance = app.listen(PORT, async () => {
+    let count = 0;
+    try {
+        const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+        count = result.count || 0;
+    } catch { /* ignore */ }
     const maskedWallet = process.env.WALLET_ADDRESS
         ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
         : 'NOT SET';
     const activeNetworks = Object.entries(CHAINS)
         .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
         .map(([, cfg]) => cfg.label).join(', ');
-    console.log(`\n🚀 x402 Bazaar actif sur http://localhost:${PORT}`);
-    console.log(`💰 Wallet : ${maskedWallet}`);
-    console.log(`🔗 Réseaux : ${activeNetworks} (${NETWORK})`);
-    console.log(`🗄️  Base   : Supabase (PostgreSQL)`);
-    console.log(`📦 Services enregistrés : ${count || 0}`);
-    console.log(`\n   GET  /                → Infos (gratuit)`);
-    console.log(`   GET  /services        → Liste (0.05 USDC)`);
-    console.log(`   GET  /search?q=       → Recherche (0.05 USDC)`);
-    console.log(`   POST /register        → Enregistrement (1 USDC)`);
-    console.log(`\n   🌐 API Wrappers:`);
-    console.log(`   GET  /api/search?q=     → Clean web search (0.005 USDC)`);
-    console.log(`   GET  /api/scrape?url=   → URL to Markdown (0.005 USDC)`);
-    console.log(`   GET  /api/twitter       → Twitter/X data+search (0.005 USDC)`);
-    console.log(`   GET  /api/weather?city= → Weather data (0.02 USDC)`);
-    console.log(`   GET  /api/crypto?coin=  → Crypto prices (0.02 USDC)`);
-    console.log(`   GET  /api/joke          → Random joke (0.01 USDC)`);
-    console.log(`   GET  /api/image?prompt= → AI image generation (0.05 USDC)`);
-    console.log(`\n   📊 Dashboard : http://localhost:${PORT}/dashboard\n`);
+    console.log(`\nx402 Bazaar active on http://localhost:${PORT}`);
+    console.log(`Wallet: ${maskedWallet}`);
+    console.log(`Networks: ${activeNetworks} (${NETWORK})`);
+    console.log(`Database: Supabase (PostgreSQL)`);
+    console.log(`Services registered: ${count}`);
+    console.log(`Dashboard: http://localhost:${PORT}/dashboard\n`);
 });
+
+// --- GRACEFUL SHUTDOWN (U3) ---
+function gracefulShutdown(signal) {
+    console.log(`\n[Shutdown] ${signal} received. Closing server...`);
+    serverInstance.close(() => {
+        console.log('[Shutdown] HTTP server closed.');
+        process.exit(0);
+    });
+    setTimeout(() => {
+        console.error('[Shutdown] Forcing exit after timeout');
+        process.exit(1);
+    }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

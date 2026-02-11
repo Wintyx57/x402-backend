@@ -227,12 +227,35 @@ server.tool(
 );
 
 // --- Tool: call_api (FREE — calls external APIs) ---
+// SSRF protection helper
+const PRIVATE_IP_REGEX = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/;
+const BLOCKED_HOSTNAME_REGEX = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
+
+async function validateUrlForSSRF(urlStr) {
+    const parsed = new URL(urlStr);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Only HTTP/HTTPS URLs allowed');
+    }
+    if (BLOCKED_HOSTNAME_REGEX.test(parsed.hostname)) {
+        throw new Error('Internal URLs not allowed');
+    }
+    // DNS resolution check
+    const dns = await import('dns');
+    const { address } = await dns.promises.lookup(parsed.hostname);
+    if (PRIVATE_IP_REGEX.test(address)) {
+        throw new Error('Internal URLs not allowed');
+    }
+}
+
 server.tool(
     'call_api',
     'Call an external API URL and return the response. Use this to fetch real data from service URLs discovered on the marketplace. Free — no marketplace payment needed.',
     { url: z.string().url().describe('The full API URL to call') },
     async ({ url }) => {
         try {
+            // SSRF protection (I8/M6)
+            await validateUrlForSSRF(url);
+
             const res = await fetch(url);
             const text = await res.text();
             let parsed;

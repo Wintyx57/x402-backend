@@ -12,7 +12,16 @@
     "seed:wrappers": "node seed-wrappers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["x402", "marketplace", "micropayments", "USDC", "ai-agents", "MCP", "base", "skale"],
+  "keywords": [
+    "x402",
+    "marketplace",
+    "micropayments",
+    "USDC",
+    "ai-agents",
+    "MCP",
+    "base",
+    "skale"
+  ],
   "author": "Wintyx57",
   "license": "ISC",
   "type": "commonjs",
@@ -21,6 +30,7 @@
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@supabase/supabase-js": "^2.95.3",
     "cheerio": "^1.2.0",
+    "compression": "^1.8.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
