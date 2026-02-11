@@ -1,7 +1,7 @@
 <p align="center">
-  <h1 align="center">x402 Bazaar — Backend</h1>
+  <h1 align="center">x402 Bazaar</h1>
   <p align="center">
-    <strong>The API marketplace where AI agents pay with USDC, not API keys.</strong>
+    <strong>The decentralized API marketplace where AI agents pay with USDC, not API keys.</strong>
   </p>
   <p align="center">
     <a href="https://x402bazaar.org"><img src="https://img.shields.io/badge/website-x402bazaar.org-blue?style=flat-square" alt="Website"></a>
@@ -12,7 +12,19 @@
   </p>
 </p>
 
-<!-- screenshot here -->
+---
+
+## Ecosystem
+
+| Repository | Description |
+|------------|-------------|
+| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 8 native wrappers, MCP server |
+| **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 14 pages, glassmorphism UI, wallet connect, i18n FR/EN |
+| **[x402-langchain](https://github.com/Wintyx57/x402-langchain)** | Python package — LangChain tools for x402 Bazaar (pip install) |
+| **[x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)** | FastAPI template — Monetize any Python function with x402 in 5 minutes |
+| **[CLI: npx x402-bazaar](https://www.npmjs.com/package/x402-bazaar)** | One-line setup for Claude Desktop, Cursor, VS Code |
+
+**Live:** [x402bazaar.org](https://x402bazaar.org) | **API:** [x402-api.onrender.com](https://x402-api.onrender.com) | **Dashboard:** [x402-api.onrender.com/dashboard](https://x402-api.onrender.com/dashboard)
 
 ---
 
@@ -23,8 +35,9 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 ## Key Features
 
 - **HTTP 402 Protocol** -- Standard-compliant payment flow. Call an endpoint, get a `402` with payment details, pay USDC, retry with tx hash, done.
-- **6 Native API Wrappers** -- Web search, URL scraper, Twitter/X data, weather, crypto prices, and jokes -- all behind micropayments.
+- **8 Native API Wrappers** -- Web search, URL scraper, Twitter/X data & search, weather, crypto prices, jokes, and AI image generation (DALL-E 3) -- all behind micropayments.
 - **70+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
+- **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
 - **Multi-Chain** -- Base (mainnet) + SKALE Europa (zero gas fees via sFUEL).
 - **MCP Server** -- Plug into Claude Desktop, Cursor, VS Code, or Claude Code as native AI tools.
 - **One-Line Setup** -- `npx x402-bazaar init` detects your IDE and configures everything.
@@ -94,6 +107,8 @@ Agent                          x402 Bazaar                     Base / SKALE
 | `/api/weather?city=` | 0.02 USDC | Open-Meteo | Weather data for any city |
 | `/api/crypto?coin=` | 0.02 USDC | CoinGecko | Cryptocurrency prices (USD/EUR) |
 | `/api/joke` | 0.01 USDC | Official Joke API | Random joke |
+| `/api/image?prompt=` | 0.05 USDC | DALL-E 3 | AI image generation (1024x1024) |
+| `/api/twitter?search=` | 0.005 USDC | DuckDuckGo | Twitter/X keyword search |
 
 ### Dashboard (Free)
 
@@ -172,7 +187,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 npm start            # Start the server
 npm run mcp          # Start the MCP server
 npm run seed         # Seed 75+ services into Supabase
-npm run seed:wrappers # Register the 6 native wrappers
+npm run seed:wrappers # Register the 8 native wrappers
 npm run demo         # Run the autonomous agent demo
 npm run demo:live    # Hackathon live demo with terminal UI
 ```
@@ -221,7 +236,8 @@ Contributions are welcome. Please open an issue to discuss proposed changes befo
 ## Links
 
 - **Website:** [x402bazaar.org](https://x402bazaar.org)
-- **Frontend repo:** [github.com/Wintyx57/x402-frontend](https://github.com/Wintyx57/x402-frontend)
+- **Frontend:** [github.com/Wintyx57/x402-frontend](https://github.com/Wintyx57/x402-frontend)
+- **LangChain:** [github.com/Wintyx57/x402-langchain](https://github.com/Wintyx57/x402-langchain)
 - **CLI:** `npx x402-bazaar init` | [npm](https://www.npmjs.com/package/x402-bazaar)
 - **API Template:** [x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)
 - **Live API:** [x402-api.onrender.com](https://x402-api.onrender.com)
