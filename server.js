@@ -8,7 +8,14 @@ const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 const OpenAI = require('openai');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+let _openai = null;
+function getOpenAI() {
+    if (!_openai) {
+        if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
+        _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    }
+    return _openai;
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1040,7 +1047,7 @@ app.get('/api/image', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Image
         }
 
         // Call DALL-E 3
-        const response = await openai.images.generate({
+        const response = await getOpenAI().images.generate({
             model: 'dall-e-3',
             prompt,
             size,
