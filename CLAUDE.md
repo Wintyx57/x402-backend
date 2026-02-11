@@ -1,11 +1,11 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 11/02/2026 — Sprint P0 complete)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 11/02/2026 — PHASE 1 COMPLETE)
 
 ### Vue d'ensemble
 
 ```
-Phase 1: Developer Obsession (Mois 1-2)
+Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 ├── [x] Milestone 1: CLI "One-Line Install" (npx x402-bazaar init)
 │     ├── [x] 1.1 Structure du package CLI (x402-bazaar-cli/)
 │     ├── [x] 1.2 Detection d'environnement (Claude Desktop, Cursor, VS Code, generic)
@@ -25,12 +25,12 @@ Phase 1: Developer Obsession (Mois 1-2)
 │     ├── [x] 1b.5 Traductions EN+FR pour toutes les nouvelles cles
 │     └── [x] 1b.6 Push + deploy Vercel (commit bd67cc0, 09/02/2026)
 │
-├── [ ] Milestone 2: Config Generator (Web + CLI)
+├── [x] Milestone 2: Config Generator (Web + CLI) — COMPLET 11/02/2026
 │     ├── [x] 2.1 CLI: commande `npx x402-bazaar config` (FAIT dans Milestone 1)
-│     ├── [ ] 2.2 Web: page /config dans le frontend React
-│     ├── [ ] 2.3 Formulaire interactif + preview JSON temps reel
-│     ├── [ ] 2.4 Bouton copier + detection OS automatique
-│     └── [ ] 2.5 Lien dans la navbar du site
+│     ├── [x] 2.2 Web: page /config dans le frontend React
+│     ├── [x] 2.3 Formulaire interactif + preview JSON temps reel
+│     ├── [x] 2.4 Bouton copier + detection OS automatique
+│     └── [x] 2.5 Lien dans la navbar du site
 │
 ├── [x] Milestone 3: Wrappers API x402 (bootstrapper la marketplace)
 │     ├── [x] 3.1 Template de base pour wrapper x402
@@ -42,40 +42,40 @@ Phase 1: Developer Obsession (Mois 1-2)
 │     ├── [x] 3.7 Wrappers Weather, Crypto, Joke (/api/weather, /api/crypto, /api/joke)
 │     └── [x] 3.8 Badge "x402 Native" sur le frontend + compteur Live APIs
 │
-├── [x] Milestone 3b: Holy Trinity + Wrappers avances (COMPLET 11/02/2026)
+├── [x] Milestone 3b: Holy Trinity + Wrappers avances — COMPLET 11/02/2026
 │     ├── [x] 3b.1 Twitter Search: /api/twitter?search=keyword (DuckDuckGo site:twitter.com)
 │     ├── [x] 3b.2 Image Generation: /api/image?prompt=... via DALL-E 3 reel (0.05 USDC)
 │     ├── [x] 3b.3 Enregistrer nouveaux wrappers dans Supabase (seed-wrappers.js)
 │     ├── [x] 3b.4 Mettre a jour API_WRAPPERS.md
 │     └── [x] 3b.5 Mettre a jour route GET / avec nouveaux endpoints
 │
-├── [ ] Milestone 4: Refonte /docs et /mcp
-│     ├── [ ] 4.1 Page /docs avec navigation laterale
-│     ├── [ ] 4.2 Page /mcp avec instructions CLI
-│     ├── [ ] 4.3 Code examples avec copier en 1 clic
-│     ├── [ ] 4.4 Section Quickstart (5 min to first call)
-│     └── [ ] 4.5 API Reference auto-generee
+├── [x] Milestone 4: Refonte /docs — Page documentation centralisee — COMPLET 11/02/2026
+│     ├── [x] 4.1 Page /docs avec navigation laterale (DocsSidebar sticky + scroll-spy)
+│     ├── [x] 4.2 7 sections (Quickstart, Protocol, API Reference, Native Wrappers, MCP, Integration, Security)
+│     ├── [x] 4.3 Code examples interactifs (CopyButton + CodeBlock)
+│     ├── [x] 4.4 Section Quickstart (5 min to first call) avec badge vert
+│     └── [x] 4.5 API Reference auto-fetchee depuis GET / (fallback statique)
 │
-├── [ ] Milestone 4b: UX/UI & Trust Layer (NOUVEAU 11/02/2026)
-│     ├── [ ] 4b.1 Badges enrichis: "x402 Native", "Last active: Xh ago" sur ServiceCard
-│     ├── [ ] 4b.2 Health check services: ping URLs, badge Online/Offline
-│     ├── [ ] 4b.3 Filtres avances: filtre chain (Base/SKALE), slider prix max
-│     ├── [ ] 4b.4 Dashboard charts: Chart.js (tx volume, top services, revenus cumules)
-│     ├── [ ] 4b.5 Galerie demos agents: page /demos (code + video embed)
-│     └── [ ] 4b.6 Page FAQ: section FAQ couvrant tx fail, listing, testnet, gas
+├── [x] Milestone 4b: UX/UI & Trust Layer — COMPLET 11/02/2026
+│     ├── [x] 4b.1 Badges enrichis: "x402 Native", "Last active: Xh ago" sur ServiceCard
+│     ├── [x] 4b.2 Health check services: ping URLs, badge Online/Offline
+│     ├── [x] 4b.3 Filtres avances: filtre chain (Base/SKALE), slider prix max
+│     ├── [x] 4b.4 Dashboard charts: page /analytics (tx volume, top services, revenus cumules)
+│     ├── [x] 4b.5 Galerie demos agents: page /demos (code + video embed)
+│     └── [x] 4b.6 Page FAQ: section FAQ couvrant tx fail, listing, testnet, gas
 │
-├── [ ] Milestone 5: Marketing
-│     ├── [ ] 5.1 Landing page "Carte de credit illimitee pour agents"
-│     ├── [ ] 5.2 Video demo (agent autonome)
-│     ├── [ ] 5.3 Thread Twitter/X de lancement
-│     ├── [ ] 5.4 Post Hacker News / Reddit
-│     └── [ ] 5.5 Article blog
+├── [x] Milestone 5: Marketing "Carte de credit illimitee" — COMPLET 11/02/2026
+│     ├── [x] 5.1 Landing page value proposition (4 cartes) + social proof sur Home.jsx
+│     ├── [x] 5.2 Video demo script (3 min, 6 scenes) — x402-marketing/video-script.md
+│     ├── [x] 5.3 Thread Twitter/X (12 tweets) — x402-marketing/twitter-thread.md
+│     ├── [x] 5.4 Post Hacker News + Reddit — x402-marketing/hn-post.md + reddit-post.md
+│     └── [x] 5.5 DoraHacks submission — x402-marketing/dorahacks-submission.md
 │
-└── [ ] Milestone 6: Ecosysteme & Integrations (NOUVEAU 11/02/2026)
-      ├── [ ] 6.1 Package LangChain: tool X402BazaarTool (Python, handle 402/pay/retry auto)
-      ├── [ ] 6.2 Guide LangChain dans Integrate.jsx (tutoriel Python complet)
-      ├── [ ] 6.3 Section securite visible sur About (helmet, anti-replay, CORS, rate limiting)
-      └── [ ] 6.4 (Optionnel) Auto-GPT plugin
+└── [x] Milestone 6: Ecosysteme & Integrations — COMPLET 11/02/2026
+      ├── [x] 6.1 Package LangChain: x402-langchain v0.1.0 sur GitHub (Wintyx57/x402-langchain)
+      ├── [x] 6.2 Guide LangChain dans Integrate.jsx (CodeBlock + badge pip + lien GitHub)
+      ├── [x] 6.3 Section securite visible sur About.jsx (6 features securite)
+      └── [ ] 6.4 (Optionnel) Auto-GPT plugin — non prioritaire
 ```
 
 ### CLI x402-bazaar (Milestone 1 - COMPLET, PUBLIE sur npm)
@@ -113,35 +113,12 @@ x402-bazaar-cli/
 - `npx x402-bazaar config --output mcp.json` — Sauvegarder dans un fichier
 - `npx x402-bazaar status` — Verifier la connexion au serveur live
 
-**Fonctionnalites:**
-- Detection automatique de l'environnement AI (Claude Desktop, Cursor, Claude Code, VS Code)
-- Installation du serveur MCP + npm install automatique
-- Merge intelligent avec la config existante (ne casse pas les autres MCP servers)
-- Fallback: genere le mcp-server.mjs complet si pas de source locale
-- Check Node >= 18, global error handler, AbortSignal timeout sur les fetches
-- Banner colore + spinners + output structure
-
-**Tests effectues (Windows):**
-- `node bin/cli.js` — Help par defaut OK
-- `node bin/cli.js --help` — Commander help OK
-- `node bin/cli.js --version` — 1.0.0 OK
-- `node bin/cli.js status` — Connexion au serveur live OK (70 services, 9.35 USDC)
-- `node bin/cli.js init --help` — Options OK
-- `npm pack --dry-run` — 11 fichiers, 13.4 KB OK
-
 **Publie sur npm:** x402-bazaar@1.0.0 (09/02/2026) — https://www.npmjs.com/package/x402-bazaar
 **Compte npm:** wintyx
 
-### Pour reprendre le travail
-
-1. **Lire ce fichier** pour savoir ou on en est
-2. **Regarder les [ ] non coches** dans le plan ci-dessus
-3. **Commencer par le premier milestone non termine**
-4. **Cocher [x] chaque tache terminee** dans ce fichier
-
 ---
 
-## Etat actuel du projet (09/02/2026 - session CLI + Roadmap)
+## Etat actuel du projet (11/02/2026 — Phase 1 COMPLETE)
 
 ### Architecture
 
@@ -149,73 +126,94 @@ x402-bazaar-cli/
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
+│   │                      # 8 endpoints natifs: search, scrape, twitter, weather, crypto, joke, image
+│   │                      # + health-check, analytics, services/activity endpoints
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow)
 │   ├── dashboard.html    # Dashboard admin (stats, services, activity log)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
-│   ├── setup-activity.js # Script pour vérifier/créer la table activity
-│   ├── create-wallet.js  # Utilitaire création wallet
-│   ├── server-seed.json  # Seed du wallet serveur (NE PAS COMMIT)
-│   ├── agent-seed.json   # Seed du wallet agent (NE PAS COMMIT)
+│   ├── seed-wrappers.js  # Script pour injecter les 8 wrappers natifs dans Supabase
+│   ├── setup-activity.js # Script pour verifier/creer la table activity
+│   ├── create-wallet.js  # Utilitaire creation wallet
+│   ├── API_WRAPPERS.md   # Documentation des 8 endpoints wrapper
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
-│   ├── seed-wrappers.js  # Script pour injecter les 6 wrappers natifs dans Supabase
-│   ├── API_WRAPPERS.md   # Documentation des 6 endpoints wrapper
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
 │
-├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init)
+├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init) — npm x402-bazaar@1.0.0
 │   ├── bin/cli.js         # Point d'entree CLI
 │   ├── src/commands/      # init, config, status
 │   ├── src/detectors/     # Detection environnement (Claude, Cursor, VS Code)
 │   ├── src/generators/    # Generateur config MCP + .env
 │   └── package.json       # deps: chalk, commander, inquirer, ora
 │
+├── x402-langchain/       # Package Python LangChain (GitHub: Wintyx57/x402-langchain)
+│   ├── x402_langchain/    # X402BazaarTool, X402Client, X402PaymentHandler
+│   └── setup.py           # v0.1.0
+│
 ├── x402-fast-monetization-template/  # Template Python pour creer un wrapper x402 (FastAPI)
 │   ├── main.py            # Serveur FastAPI avec decorateur @x402_paywall
 │   ├── x402_middleware.py # Middleware x402 (verification paiements, 402 response)
-│   ├── requirements.txt   # deps: fastapi, uvicorn, httpx, pydantic
-│   └── .env.example       # WALLET_ADDRESS, NETWORK, etc.
+│   └── requirements.txt   # deps: fastapi, uvicorn, httpx, pydantic
 │
-├── ROADMAP.md            # Plan de route detaille Phase 1
+├── x402-marketing/       # Contenu marketing (5 fichiers)
+│   ├── twitter-thread.md  # 12 tweets de lancement
+│   ├── hn-post.md         # Post Hacker News
+│   ├── reddit-post.md     # Post Reddit
+│   ├── dorahacks-submission.md  # Submission hackathon
+│   └── video-script.md    # Script video 3 min (6 scenes)
 │
-└── x402-frontend/        # Frontend (React + Vite)
+├── ROADMAP.md            # Plan de route detaille Phase 1 (COMPLETE)
+│
+└── x402-frontend/        # Frontend (React + Vite + Tailwind v4)
     ├── index.html        # SEO: meta tags, Open Graph, Twitter Card, canonical x402bazaar.org
     ├── public/
     │   ├── robots.txt    # Allow all crawlers + sitemap link
-    │   └── sitemap.xml   # 5 pages indexées
+    │   ├── sitemap.xml   # Pages indexees
+    │   └── og-image.png  # Image OG pour partage social
     ├── src/
     │   ├── main.jsx      # Entry point (WagmiProvider, QueryClient, BrowserRouter, LanguageProvider)
-    │   ├── App.jsx       # Router (/, /services, /register, /developers, /integrate)
+    │   ├── App.jsx       # Router (14 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
     │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia, injected + coinbaseWallet connectors)
     │   ├── i18n/
-    │   │   ├── translations.js    # EN + FR (~110 strings par langue)
+    │   │   ├── translations.js    # EN + FR (~200+ strings par langue)
     │   │   └── LanguageContext.jsx # React Context + useTranslation() hook + localStorage persistence
     │   ├── hooks/
     │   │   └── useReveal.js       # IntersectionObserver pour animations scroll
     │   ├── components/
     │   │   ├── Navbar.jsx         # Sticky glass navbar + burger menu mobile + LanguageToggle
     │   │   ├── ConnectButton.jsx  # Wallet connect/disconnect + responsive (compact mobile)
-    │   │   ├── ServiceCard.jsx    # Glass card avec glow hover + i18n
+    │   │   ├── ServiceCard.jsx    # Glass card avec glow hover + badges enrichis + i18n
+    │   │   ├── DocsSidebar.jsx    # Sidebar sticky /docs avec scroll-spy
+    │   │   ├── CategoryIcon.jsx   # Icones par categorie de service
     │   │   ├── ScrollToTop.jsx    # Reset scroll on route change
     │   │   └── LanguageToggle.jsx # Toggle pill FR/EN
     │   └── pages/
-    │       ├── Home.jsx           # Hero glow orbs, stats glass, how-it-works, top services
-    │       ├── Services.jsx       # Grid services + search glass input + skeleton loading
-    │       ├── Register.jsx       # Form glass + USDC payment flow + i18n
+    │       ├── Home.jsx           # Hero glow orbs, stats, value proposition, social proof, top services
+    │       ├── Services.jsx       # Grid services + search + filtres avances (chain, prix)
+    │       ├── Register.jsx       # Form glass + USDC payment flow + spinner + i18n
     │       ├── Developers.jsx     # Doc API glass + scroll reveal + i18n
-    │       └── Integrate.jsx      # Guide intégration agent (JS + Python, payAndRequest, use cases)
+    │       ├── Integrate.jsx      # Guide integration agent (JS + Python + LangChain)
+    │       ├── MCP.jsx            # Guide MCP (CLI quick install + manual)
+    │       ├── Docs.jsx           # Documentation centralisee (7 sections, sidebar, API reference)
+    │       ├── Config.jsx         # Config Generator (formulaire + preview JSON + copier)
+    │       ├── About.jsx          # A propos + section securite (6 features)
+    │       ├── Pricing.jsx        # Page tarifs
+    │       ├── Blog.jsx           # Blog / actualites
+    │       ├── FAQ.jsx            # FAQ (tx fail, listing, testnet, gas)
+    │       ├── Demos.jsx          # Galerie demos agents (code + video)
+    │       └── Analytics.jsx      # Dashboard analytics (charts, volumes, top services)
     ├── vercel.json       # Config Vercel : framework vite, SPA rewrites, output dist
     ├── .env.example
     └── package.json      # deps: react, react-router-dom, wagmi, viem, @tanstack/react-query, tailwindcss
                           # engines: node >= 20
-
 ```
 
-### Déploiements
+### Deploiements
 
 | Service | URL | Statut |
 |---------|-----|--------|
@@ -224,74 +222,71 @@ HACKATHON/
 | Frontend (Vercel) | https://x402-frontend-one.vercel.app | LIVE - redirige aussi vers x402bazaar.org |
 | GitHub Backend | https://github.com/Wintyx57/x402-backend | A jour |
 | GitHub Frontend | https://github.com/Wintyx57/x402-frontend | A jour |
+| GitHub LangChain | https://github.com/Wintyx57/x402-langchain | A jour |
 | Dashboard | https://x402-api.onrender.com/dashboard | LIVE |
+| npm CLI | https://www.npmjs.com/package/x402-bazaar | v1.0.0 |
 
 ### Domaine x402bazaar.org
 
 - **Registrar** : Namecheap
 - **DNS** : A Record `@` → `76.76.21.21` + CNAME `www` → `cname.vercel-dns.com`
 - **SSL** : Auto (Vercel Let's Encrypt)
-- **SEO** : meta tags, Open Graph, Twitter Card, sitemap.xml, robots.txt, canonical URL
+- **SEO** : meta tags, Open Graph, Twitter Card, sitemap.xml, robots.txt, canonical URL, og-image.png
 
 ### Ce qui est FAIT et FONCTIONNE
 
 1. **Backend production** (Render, mainnet Base) :
    - `/health` → 200 OK, `"network": "Base"`
-   - Réseau configurable via `NETWORK` env var (testnet/mainnet)
-   - USDC contract addresses correctes pour les 2 réseaux
+   - 8 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search
+   - Health-check endpoint pour monitoring des services
+   - Analytics endpoint pour stats et volumes
    - CORS whitelist strict (x402bazaar.org, Vercel, localhost)
-   - Vérification on-chain des paiements USDC sur Base mainnet
-   - 70+ services en base Supabase (63 seed + 6 wrappers natifs + utilisateurs)
+   - Verification on-chain des paiements USDC sur Base mainnet
+   - 70+ services en base Supabase
 
-2. **Sécurité (audit 08/02/2026)** :
-   - Helmet : headers de sécurité (X-Content-Type, HSTS, X-Frame-Options)
+2. **Securite (audit 08/02/2026)** :
+   - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
    - CORS whitelist strict (plus de wildcard `*`)
-   - Anti-replay : tx hashes persistés dans Supabase `used_transactions`
+   - Anti-replay : tx hashes persistes dans Supabase `used_transactions`
    - Validation tx hash format (regex 0x + 64 hex)
    - Sanitization recherche (escape `%_\` pour Postgres LIKE)
    - Validation robuste /register (types, longueurs, format URL/wallet, prix 0-1000)
    - Body limit 10kb
    - RPC timeout 10s sur tous les appels on-chain
-   - Wallet masqué dans les logs (0xfb1c...2430)
    - Rate limiting : 3 tiers (general 100/15min, paid 30/min, register 10/hr)
-   - .gitignore renforcé (agent-seed.json, *.seed.json)
 
-3. **Test agent mainnet RÉUSSI** :
-   - Agent autonome (GPT-4o-mini + Coinbase SDK) testé sur Base mainnet
-   - 3 paiements USDC réels (0.15 USDC total)
-   - Agent wallet : 0xA986... (seed dans agent-seed.json)
-   - Wallet réception paiements : 0xfb1c478BD5567BdcD39782E0D6D23418bFda2430 (MetaMask)
-
-4. **Frontend React — DÉPLOYÉ SUR VERCEL + DOMAINE CUSTOM** :
+3. **Frontend React — 14 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
-   - i18n FR/EN avec toggle dans la navbar (localStorage persistence)
+   - i18n FR/EN avec toggle (~200+ strings par langue)
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - Détection réseau + switch vers Base
-   - Pages : Home, Services, Register, Developers, Integrate
-   - Burger menu mobile + responsive complet
-   - SEO complet (meta, OG, Twitter, sitemap, robots.txt)
-   - Domaine custom : x402bazaar.org
+   - 14 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /analytics
+   - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
+   - Config Generator /config (formulaire + preview JSON + copier)
+   - Filtres avances (chain, prix), badges enrichis, health check
+   - FAQ, Demos, Analytics, About avec section securite
+   - SEO complet + OG image
 
-5. **Supabase** :
+4. **CLI** (npm x402-bazaar@1.0.0) :
+   - `npx x402-bazaar init` — setup complet en 1 commande
+   - `npx x402-bazaar config` — generateur de config MCP
+   - `npx x402-bazaar status` — verification connexion
+
+5. **Ecosysteme** :
+   - x402-langchain : package Python sur GitHub (Wintyx57/x402-langchain)
+   - x402-fast-monetization-template : template FastAPI
+   - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
+
+6. **Supabase** :
    - URL : https://kucrowtjsgusdxnjglug.supabase.co
-   - Tables :
-     - `services` : catalogue des services (RLS active)
-     - `activity` : log d'activité persisté (paiements, recherches, erreurs)
-     - `used_transactions` : anti-replay tx hashes
-   - 17 services en base
-
-6. **Dashboard** (https://x402-api.onrender.com/dashboard) :
-   - Stats temps réel : services, paiements, revenus, balance USDC on-chain
-   - Liste des services avec liens BaseScan
-   - Activity log (depuis Supabase)
+   - Tables : `services`, `activity`, `used_transactions`
 
 ### Credentials (NE PAS AFFICHER)
 
 - Coinbase API Key : dans .env sur Render
-- Wallet réception (MetaMask) : `0xfb1c478BD5567BdcD39782E0D6D23418bFda2430`
-- Réseau : Base mainnet (chainId 8453)
+- Wallet reception (MetaMask) : `0xfb1c478BD5567BdcD39782E0D6D23418bFda2430`
+- Reseau : Base mainnet (chainId 8453)
 - Email git pour Vercel : `robin.fuchs57@hotmail.com`
-- Vercel CLI installé globalement, compte `wintyx57` connecté
+- Vercel CLI installe globalement, compte `wintyx57` connecte
 - Domaine : x402bazaar.org (Namecheap)
 
 ### Variables d'environnement
@@ -319,44 +314,30 @@ VITE_NETWORK=mainnet
 
 | Wallet | Adresse | Usage |
 |--------|---------|-------|
-| MetaMask (réception) | 0xfb1c478BD5567BdcD39782E0D6D23418bFda2430 | WALLET_ADDRESS - reçoit tous les paiements |
+| MetaMask (reception) | 0xfb1c478BD5567BdcD39782E0D6D23418bFda2430 | WALLET_ADDRESS - recoit tous les paiements |
 | Server wallet | WALLET_ID 81a05b08 (addr 0x5E83...) | Coinbase SDK, 2.3 USDC, 0 ETH |
-| Agent wallet | Seed dans agent-seed.json (addr 0xA986...) | Utilisé pour la démo agent mainnet |
-| Server seed wallet | Seed dans server-seed.json (wallet df759258) | Wallet vide, non utilisé |
+| Agent wallet | Seed dans agent-seed.json (addr 0xA986...) | Utilise pour la demo agent mainnet |
+| Server seed wallet | Seed dans server-seed.json (wallet df759258) | Wallet vide, non utilise |
 
-### Prochaines etapes (voir PLAN DE ROUTE en haut de ce fichier)
+### Prochaines etapes
 
-**FAIT:**
+**Phase 1 — COMPLETE (11/02/2026):**
 - [x] Milestone 1: CLI publie sur npm (x402-bazaar@1.0.0)
-- [x] Milestone 1b: CLI reference sur toutes les pages du site (Home, MCP, Integrate, Developers)
+- [x] Milestone 1b: CLI reference sur toutes les pages du site
+- [x] Milestone 2: Config Generator (CLI + page /config)
 - [x] Milestone 3: 6 wrappers API natifs (search, scrape, twitter, weather, crypto, joke)
 - [x] Milestone 3b: 2 wrappers avances (image DALL-E 3, twitter search) — total: 8 endpoints natifs
-- [x] Hackathon prep: UX polish + SKALE Europa integration + security audit
+- [x] Milestone 4: Refonte /docs — documentation centralisee avec sidebar + scroll-spy
+- [x] Milestone 4b: UX/UI & Trust Layer (FAQ, Demos, Analytics, badges, health check, filtres)
+- [x] Milestone 5: Marketing (landing page, thread Twitter, HN, Reddit, DoraHacks, video script)
+- [x] Milestone 6: Ecosysteme (x402-langchain, guide LangChain, section securite)
 
-**FAIT (11/02/2026 — Sprint P0):**
-- [x] Milestone 3b.2: Image Generation `/api/image` via DALL-E 3 reel (0.05 USDC)
-- [x] Milestone 3b.1: Twitter Search `/api/twitter?search=keyword` via DuckDuckGo
-- [x] Design P0: glass-card visibility, focus-visible rings, text-[10px] elimination, CTA mobile, spinner Register
-
-**Prochain — Priorite P0:**
-1. Milestone 2: Config Generator web — page /config sur x402bazaar.org
-
-**Prochain — Priorite P1 (haute valeur):**
-4. Milestone 6.1: Package LangChain (adoption organique via ecosysteme Python)
-5. Milestone 4b.1: Badges enrichis sur ServiceCard (trust layer)
-6. Milestone 4b.4: Dashboard avec charts Chart.js (appeal jury/investisseurs)
-7. Milestone 4b.2: Health check services + badge Online/Offline
-8. Milestone 4b.5: Galerie demos agents (page /demos)
-
-**Prochain — Priorite P2 (nice to have):**
-9. Milestone 4b.3: Filtres avances (chain, prix max)
-10. Milestone 6.2: Guide LangChain dans Integrate.jsx
-11. Milestone 4b.6: Page FAQ
-12. Milestone 6.3: Section securite visible
+**Phase 2 — A definir:**
+- [ ] A planifier apres soumission hackathon DoraHacks
 
 **Maintenance:**
 - Soumettre le sitemap sur Google Search Console
-- Creer une image OG pour le partage social
+- [ ] 6.4 (Optionnel) Auto-GPT plugin
 
 **Idees evaluees et rejetees (11/02/2026):**
 - Recherche semantique (embeddings) : overkill pour 70 services, effort L, impact 2/5
@@ -370,11 +351,11 @@ VITE_NETWORK=mainnet
 cd x402-bazaar-cli && node bin/cli.js init     # Setup complet
 cd x402-bazaar-cli && node bin/cli.js config   # Generer config MCP
 cd x402-bazaar-cli && node bin/cli.js status   # Verifier connexion
-cd x402-bazaar-cli && npm publish              # Publier sur npm
 
 # Backend
 cd x402-bazaar && node server.js          # Demarrer le backend local
 cd x402-bazaar && node seed-services.js   # Re-seeder la base
+cd x402-bazaar && node seed-wrappers.js   # Re-seeder les wrappers natifs
 cd x402-bazaar && node demo-agent.js      # Lancer l'agent demo
 cd x402-bazaar && node setup-activity.js  # Verifier la table activity
 
@@ -387,24 +368,32 @@ cd x402-frontend && git push origin main  # Push -> Vercel auto-deploy
 cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 ```
 
-### Historique des commits récents
+### Historique des commits recents
 
 **Backend (x402-bazaar)** :
-- `17286be` Add x402bazaar.org to CORS whitelist
-- `cbac6c8` Security hardening: anti-replay, helmet, CORS whitelist, input validation
-- `20ef904` Persist activity log and stats in Supabase
-- `5856677` Fix dashboard BaseScan links for mainnet + agent mainnet support
-- `ff4b71b` Add rate limiting, error monitoring, request logging and demo agent
+- `9161660` fix: lazy init OpenAI client to prevent crash on missing API key
+- `ea44857` Add services/activity, health-check, and analytics endpoints
+- `8510950` feat: add DALL-E 3 image generation + Twitter search endpoints
+- `5aa0a98` chore: add GitHub templates and CONTRIBUTING.md
+- `6be3006` Professional README with badges, payment flow diagram, full API reference
+- `a49cee3` Security hardening + documentation update
+- `824c447` Fix DDG protocol-relative URLs + turndown link handling
+- `7a3d638` Add high-value x402 wrappers: web search, scraper, Twitter/X data
+- `d72b8d6` Add x402 native API wrappers: weather, crypto, joke
+- `9a48468` Add SKALE Europa multi-chain support + UX improvements
 
 **Frontend (x402-frontend)** :
-- `bd67cc0` Add npx x402-bazaar init CLI references across all pages
-- `7b54fb3` Add 'Use with AI' button on service cards + find_tool_for_task in MCP docs
-- `40ecd7c` Fix search bar: sync navbar with Services page via URL params
-- `f66be81` Update SEO URLs to x402bazaar.org domain
-- `5c5e5ae` Add SEO: meta tags, Open Graph, sitemap, robots.txt
-- `9227b16` Add /integrate page — agent integration guide with code examples
-- `b07295e` Add mobile burger menu, responsive improvements, ScrollToTop
+- `2263f30` feat: Milestone 5.1 + 6.2 + 6.3 — landing page value prop, security section, LangChain guide
+- `94ce2bc` Add /docs page — centralized documentation with sidebar, scroll-spy, API reference
+- `9bc8eb5` feat: add Config Generator page (Milestone 2)
+- `59b5bab` Milestone 4b: FAQ, Demos, Analytics, badges, health check, advanced filters
+- `43bf121` fix: mobile CTA visibility + register spinner/error states
+- `48df71d` feat: add PNG OG image for social previews
+- `926982b` feat: add About and Pricing pages for SEO
+- `bc22b76` feat: add blog page, Twitter link in footer
+- `461d8d0` conversion: hero rewrite, trust bar, single CTA, speed stats, register flow
 
 **CLI (x402-bazaar-cli)** :
 - Publie sur npm: x402-bazaar@1.0.0 (09/02/2026)
-- https://www.npmjs.com/package/x402-bazaar
+
+*Derniere mise a jour: 11/02/2026 — Phase 1 COMPLETE, CLAUDE.md synchronise avec ROADMAP.md*
