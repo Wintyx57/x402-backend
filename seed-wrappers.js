@@ -15,7 +15,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/search`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "search", "web", "llm", "live"]
+        tags: ["x402-native", "data", "search", "web", "llm", "live"]
     },
     {
         name: "x402 Universal Scraper",
@@ -23,7 +23,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/scrape`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "scraper", "markdown", "web", "live"]
+        tags: ["x402-native", "scraping", "scraper", "markdown", "web", "live"]
     },
     {
         name: "x402 Twitter/X Data",
@@ -31,7 +31,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/twitter`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "twitter", "social", "data", "live"]
+        tags: ["x402-native", "communication", "twitter", "social", "live"]
     },
 
     // --- KNOWLEDGE & DATA (0.005 USDC) ---
@@ -41,7 +41,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/wikipedia`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "wikipedia", "knowledge", "data", "live"]
+        tags: ["x402-native", "data", "wikipedia", "knowledge", "live"]
     },
     {
         name: "x402 Dictionary API",
@@ -49,7 +49,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/dictionary`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "dictionary", "language", "live"]
+        tags: ["x402-native", "data", "dictionary", "language", "live"]
     },
     {
         name: "x402 Countries API",
@@ -57,7 +57,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/countries`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "countries", "geography", "data", "live"]
+        tags: ["x402-native", "data", "countries", "geography", "live"]
     },
 
     // --- DEVELOPER TOOLS (0.005 USDC) ---
@@ -85,7 +85,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/ip`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "ip", "geolocation", "network", "live"]
+        tags: ["x402-native", "security", "ip", "geolocation", "network", "live"]
     },
     {
         name: "x402 Geocoding API",
@@ -93,7 +93,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/geocoding`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "geocoding", "coordinates", "location", "live"]
+        tags: ["x402-native", "location", "geocoding", "coordinates", "live"]
     },
     {
         name: "x402 Air Quality API",
@@ -101,7 +101,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/airquality`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "airquality", "environment", "data", "live"]
+        tags: ["x402-native", "data", "airquality", "environment", "live"]
     },
 
     // --- UTILITY (0.005 USDC) ---
@@ -111,7 +111,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/qrcode`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "qrcode", "generator", "image", "live"]
+        tags: ["x402-native", "media", "qrcode", "generator", "live"]
     },
     {
         name: "x402 World Time API",
@@ -119,7 +119,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/time`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "time", "timezone", "data", "live"]
+        tags: ["x402-native", "data", "time", "timezone", "live"]
     },
     {
         name: "x402 Public Holidays API",
@@ -127,7 +127,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/holidays`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "holidays", "calendar", "data", "live"]
+        tags: ["x402-native", "data", "holidays", "calendar", "live"]
     },
 
     // --- FUN & RANDOM (0.005 USDC) ---
@@ -137,7 +137,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/quote`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "quotes", "advice", "fun", "live"]
+        tags: ["x402-native", "fun", "quotes", "advice", "live"]
     },
     {
         name: "x402 Random Facts API",
@@ -145,7 +145,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/facts`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "facts", "fun", "trivia", "live"]
+        tags: ["x402-native", "fun", "facts", "trivia", "live"]
     },
     {
         name: "x402 Random Dog Image API",
@@ -153,7 +153,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/dogs`,
         price_usdc: 0.005,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "dogs", "images", "fun", "live"]
+        tags: ["x402-native", "fun", "dogs", "images", "live"]
     },
 
     // --- PREMIUM SERVICES ---
@@ -163,7 +163,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/weather`,
         price_usdc: 0.02,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "weather", "data", "live"]
+        tags: ["x402-native", "data", "weather", "live"]
     },
     {
         name: "x402 Crypto Price API",
@@ -171,7 +171,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/crypto`,
         price_usdc: 0.02,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "crypto", "finance", "live"]
+        tags: ["x402-native", "finance", "crypto", "live"]
     },
     {
         name: "x402 Random Joke API",
@@ -179,7 +179,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/joke`,
         price_usdc: 0.01,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "fun", "jokes", "live"]
+        tags: ["x402-native", "fun", "jokes", "humor", "live"]
     },
     {
         name: "x402 AI Image Generation",
@@ -187,7 +187,7 @@ const WRAPPER_SERVICES = [
         url: `${BASE_URL}/api/image`,
         price_usdc: 0.05,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "image", "ai", "dall-e", "generation", "live"]
+        tags: ["x402-native", "ai", "image", "dall-e", "generation", "live"]
     },
 ];
 
