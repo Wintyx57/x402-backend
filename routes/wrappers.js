@@ -1158,7 +1158,8 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         }
 
         try {
-            const langPair = `${from}|${to}`;
+            const langFrom = from === 'auto' ? 'en' : from;
+            const langPair = `${langFrom}|${to}`;
             const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
             const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
             const data = await apiRes.json();
@@ -1167,12 +1168,12 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
                 return res.status(500).json({ error: 'Translation failed' });
             }
 
-            logActivity('api_call', `Translation API: ${from} -> ${to} (${text.slice(0, 50)}...)`);
+            logActivity('api_call', `Translation API: ${langFrom} -> ${to} (${text.slice(0, 50)}...)`);
 
             res.json({
                 success: true,
                 translatedText: data.responseData.translatedText,
-                from: from,
+                from: langFrom,
                 to: to,
                 original: text
             });
