@@ -46,15 +46,33 @@ let walletClient = null;
 function initWallet() {
     if (account) return;
 
-    // Decrypt agent seed locally (same algorithm as Coinbase SDK)
-    const seedPath = process.env.AGENT_SEED_PATH || 'agent-seed.json';
+    // Method 1: Direct private key (simplest — recommended for new users)
+    if (process.env.AGENT_PRIVATE_KEY) {
+        const key = process.env.AGENT_PRIVATE_KEY.startsWith('0x')
+            ? process.env.AGENT_PRIVATE_KEY
+            : `0x${process.env.AGENT_PRIVATE_KEY}`;
+        account = privateKeyToAccount(key);
+        publicClient = createPublicClient({ chain, transport: http() });
+        walletClient = createWalletClient({ account, chain, transport: http() });
+        console.error(`[Wallet] Initialized from private key: ${account.address} on ${networkLabel}`);
+        return;
+    }
+
+    // Method 2: Encrypted agent-seed.json (Coinbase SDK format — legacy)
+    const seedPath = process.env.AGENT_SEED_PATH || join(__dirname, 'agent-seed.json');
+    if (!fs.existsSync(seedPath)) {
+        throw new Error(
+            'No wallet configured. Set AGENT_PRIVATE_KEY in your .env file, ' +
+            'or provide an agent-seed.json file. Run "npx x402-bazaar init" to set up automatically.'
+        );
+    }
+
     const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
     const walletId = Object.keys(seedData)[0];
     const { seed, iv, authTag, encrypted } = seedData[walletId];
 
     let decryptedSeed = seed;
     if (encrypted) {
-        // Derive encryption key from Coinbase API secret (Ed25519 → X25519)
         let ed2curve;
         try {
             ed2curve = await_import_ed2curve();
@@ -76,7 +94,6 @@ function initWallet() {
         ]).toString('utf8');
     }
 
-    // Derive Ethereum private key (BIP-32 m/44'/60'/0'/0/0)
     const { HDKey } = await_import_hdkey();
     const hdKey = HDKey.fromMasterSeed(Buffer.from(decryptedSeed, 'hex'));
     const childKey = hdKey.derive("m/44'/60'/0'/0/0");
@@ -86,7 +103,7 @@ function initWallet() {
     publicClient = createPublicClient({ chain, transport: http() });
     walletClient = createWalletClient({ account, chain, transport: http() });
 
-    console.error(`[Wallet] Initialized: ${account.address} on ${networkLabel}`);
+    console.error(`[Wallet] Initialized from seed: ${account.address} on ${networkLabel}`);
 }
 
 // Synchronous require for CommonJS deps (works in ESM via createRequire)
