@@ -12,23 +12,37 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import crypto from 'crypto';
 import fs from 'fs';
-import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
+import { createPublicClient, createWalletClient, http, parseAbi, defineChain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
+
+// ─── SKALE Europa chain definition ──────────────────────────────────
+const skaleEuropa = defineChain({
+    id: 2046399126,
+    name: 'SKALE Europa',
+    nativeCurrency: { name: 'sFUEL', symbol: 'sFUEL', decimals: 18 },
+    rpcUrls: { default: { http: ['https://mainnet.skalenodes.com/v1/elated-tan-skat'] } },
+    blockExplorers: { default: { name: 'SKALE Explorer', url: 'https://elated-tan-skat.explorer.mainnet.skalenodes.com' } },
+});
 
 // ─── Config ──────────────────────────────────────────────────────────
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
 const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
 const NETWORK = process.env.NETWORK || 'mainnet';
-const isMainnet = NETWORK !== 'testnet';
-const explorerBase = isMainnet ? 'https://basescan.org' : 'https://sepolia.basescan.org';
-const networkLabel = isMainnet ? 'Base Mainnet' : 'Base Sepolia';
-const chain = isMainnet ? base : baseSepolia;
+const isMainnet = NETWORK === 'mainnet';
+const isSkale = NETWORK === 'skale';
+const chain = isSkale ? skaleEuropa : (isMainnet ? base : baseSepolia);
+const explorerBase = isSkale
+    ? 'https://elated-tan-skat.explorer.mainnet.skalenodes.com'
+    : (isMainnet ? 'https://basescan.org' : 'https://sepolia.basescan.org');
+const networkLabel = isSkale ? 'SKALE Europa' : (isMainnet ? 'Base Mainnet' : 'Base Sepolia');
 
-// USDC contract addresses
-const USDC_ADDRESS = isMainnet
-    ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // Base mainnet
-    : '0x036CbD53842c5426634e7929541eC2318f3dCF7e'; // Base Sepolia
+// USDC contract addresses per network
+const USDC_ADDRESS = isSkale
+    ? '0x5F795bb52dAc3085f578f4877D450e2929D2F13d'   // SKALE Europa
+    : (isMainnet
+        ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // Base mainnet
+        : '0x036CbD53842c5426634e7929541eC2318f3dCF7e'); // Base Sepolia
 const USDC_ABI = parseAbi([
     'function transfer(address to, uint256 amount) returns (bool)',
     'function balanceOf(address) view returns (uint256)',
@@ -163,8 +177,8 @@ async function payAndRequest(url, options = {}) {
         endpoint: url.replace(SERVER_URL, ''),
     });
 
-    // Retry with payment proof (MCP always pays on Base)
-    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': 'base' };
+    // Retry with payment proof
+    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': isSkale ? 'skale' : 'base' };
     const retryRes = await fetch(url, { ...options, headers: retryHeaders });
     const result = await retryRes.json();
 
