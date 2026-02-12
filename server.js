@@ -136,11 +136,13 @@ app.use(generalLimiter);
 
 // --- ADMIN AUTH MIDDLEWARE ---
 function adminAuth(req, res, next) {
-    const token = req.headers['x-admin-token'];
-    if (!process.env.ADMIN_TOKEN) {
+    const expected = (process.env.ADMIN_TOKEN || '').trim();
+    if (!expected) {
         return next();
     }
-    if (!token || token !== process.env.ADMIN_TOKEN) {
+    const token = (req.headers['x-admin-token'] || '').trim();
+    if (!token || token !== expected) {
+        logger.warn('AdminAuth', `Rejected: received ${token.length} chars, expected ${expected.length} chars`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     next();
