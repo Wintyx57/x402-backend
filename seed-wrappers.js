@@ -6,7 +6,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const SERVER_WALLET = process.env.WALLET_ADDRESS;
 const BASE_URL = 'https://x402-api.onrender.com';
 
-// All 21 x402 Native wrapper APIs — real endpoints proxied via x402 payments
+// All 41 x402 Native wrapper APIs — real endpoints proxied via x402 payments
 const WRAPPER_SERVICES = [
     // --- HIGH-VALUE SERVICES (0.005 USDC) ---
     {
@@ -254,6 +254,104 @@ const WRAPPER_SERVICES = [
         price_usdc: 0.003,
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "utility", "email", "validation", "verification", "live"]
+    },
+
+    // --- BATCH 2: 12 NEW WRAPPERS (2026-02-12) ---
+    {
+        name: "x402 Hash Generator",
+        description: "Generate cryptographic hashes (MD5, SHA1, SHA256, SHA512) from any text. Useful for checksums, data integrity, and security. Usage: /api/hash?text=hello&algo=sha256",
+        url: `${BASE_URL}/api/hash`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "hash", "crypto", "security", "live"]
+    },
+    {
+        name: "x402 UUID Generator",
+        description: "Generate cryptographically secure UUID v4 identifiers. Supports batch generation up to 100 UUIDs at once. Usage: /api/uuid?count=5",
+        url: `${BASE_URL}/api/uuid`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "uuid", "identifier", "live"]
+    },
+    {
+        name: "x402 Base64 Encoder/Decoder",
+        description: "Encode or decode Base64 strings. Supports UTF-8 text up to 50KB. Usage: /api/base64?text=hello&mode=encode or /api/base64?text=aGVsbG8=&mode=decode",
+        url: `${BASE_URL}/api/base64`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "base64", "encoding", "utility", "live"]
+    },
+    {
+        name: "x402 Password Generator",
+        description: "Generate cryptographically secure passwords. Configurable length (8-128), symbols, numbers, uppercase. Usage: /api/password?length=24&symbols=true",
+        url: `${BASE_URL}/api/password`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "security", "password", "generator", "live"]
+    },
+    {
+        name: "x402 Currency Converter",
+        description: "Real-time currency conversion with 30+ currencies. Powered by European Central Bank rates via Frankfurter API. Usage: /api/currency?from=USD&to=EUR&amount=100",
+        url: `${BASE_URL}/api/currency`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "finance", "currency", "exchange", "conversion", "live"]
+    },
+    {
+        name: "x402 Timestamp Converter",
+        description: "Convert between Unix timestamps and human-readable dates. Supports seconds and milliseconds. Returns ISO 8601, UTC, and Unix formats. Usage: /api/timestamp?ts=1700000000 or /api/timestamp?date=2026-01-15",
+        url: `${BASE_URL}/api/timestamp`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "timestamp", "date", "time", "live"]
+    },
+    {
+        name: "x402 Lorem Ipsum Generator",
+        description: "Generate lorem ipsum placeholder text. 1-20 paragraphs with random sentence structure. Usage: /api/lorem?paragraphs=5",
+        url: `${BASE_URL}/api/lorem`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "lorem", "text", "placeholder", "live"]
+    },
+    {
+        name: "x402 HTTP Headers Inspector",
+        description: "Inspect HTTP response headers of any URL. Returns status code and all headers. Built-in SSRF protection. Usage: /api/headers?url=https://example.com",
+        url: `${BASE_URL}/api/headers`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "http", "headers", "security", "live"]
+    },
+    {
+        name: "x402 Markdown to HTML",
+        description: "Convert Markdown text to clean HTML. Supports headings, bold, italic, code, links, and lists. Usage: /api/markdown?text=**bold**+_italic_",
+        url: `${BASE_URL}/api/markdown`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "markdown", "html", "converter", "live"]
+    },
+    {
+        name: "x402 Color Converter",
+        description: "Convert colors between HEX, RGB, and HSL formats. Returns all formats plus CSS-ready strings. Usage: /api/color?hex=ff5733 or /api/color?rgb=255,87,51",
+        url: `${BASE_URL}/api/color`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "color", "design", "converter", "live"]
+    },
+    {
+        name: "x402 JSON Validator",
+        description: "Validate and format JSON strings. Returns validity status, formatted output, type, and key count. Usage: POST /api/json-validate with {\"json\": \"your string\"}",
+        url: `${BASE_URL}/api/json-validate`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "json", "validator", "formatter", "live"]
+    },
+    {
+        name: "x402 User Agent Parser",
+        description: "Parse User-Agent strings into browser, OS, engine, and device type. Detects bots and mobile devices. Usage: /api/useragent?ua=Mozilla/5.0...",
+        url: `${BASE_URL}/api/useragent`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "useragent", "browser", "parser", "live"]
     },
 ];
 

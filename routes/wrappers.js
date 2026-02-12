@@ -1612,6 +1612,396 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         });
     });
 
+    // =============================================
+    // NEW WRAPPERS BATCH 2 (12 services → total 41)
+    // =============================================
+
+    // --- HASH GENERATOR API (0.001 USDC) ---
+    router.get('/api/hash', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Hash Generator API"), async (req, res) => {
+        const text = (req.query.text || '').trim();
+        const algo = (req.query.algo || 'sha256').trim().toLowerCase();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/hash?text=hello&algo=sha256" });
+        }
+        if (text.length > 10000) {
+            return res.status(400).json({ error: 'Text too long (max 10000 characters)' });
+        }
+
+        const validAlgos = ['md5', 'sha1', 'sha256', 'sha512'];
+        if (!validAlgos.includes(algo)) {
+            return res.status(400).json({ error: `Invalid algorithm. Accepted: ${validAlgos.join(', ')}` });
+        }
+
+        const crypto = require('crypto');
+        const hash = crypto.createHash(algo).update(text).digest('hex');
+
+        logActivity('api_call', `Hash Generator API: ${algo} (${text.slice(0, 30)}...)`);
+
+        res.json({ success: true, hash, algorithm: algo, input_length: text.length });
+    });
+
+    // --- UUID GENERATOR API (0.001 USDC) ---
+    router.get('/api/uuid', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "UUID Generator API"), async (req, res) => {
+        let count = parseInt(req.query.count) || 1;
+        count = Math.max(1, Math.min(100, count));
+
+        const crypto = require('crypto');
+        const uuids = Array.from({ length: count }, () => crypto.randomUUID());
+
+        logActivity('api_call', `UUID Generator API: ${count} UUIDs`);
+
+        res.json({ success: true, uuids, count });
+    });
+
+    // --- BASE64 ENCODE/DECODE API (0.001 USDC) ---
+    router.get('/api/base64', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Base64 API"), async (req, res) => {
+        const text = (req.query.text || '').trim();
+        const mode = (req.query.mode || 'encode').trim().toLowerCase();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/base64?text=hello&mode=encode" });
+        }
+        if (text.length > 50000) {
+            return res.status(400).json({ error: 'Text too long (max 50000 characters)' });
+        }
+        if (mode !== 'encode' && mode !== 'decode') {
+            return res.status(400).json({ error: "Parameter 'mode' must be 'encode' or 'decode'" });
+        }
+
+        let result;
+        try {
+            if (mode === 'encode') {
+                result = Buffer.from(text, 'utf-8').toString('base64');
+            } else {
+                result = Buffer.from(text, 'base64').toString('utf-8');
+            }
+        } catch {
+            return res.status(400).json({ error: 'Invalid base64 input' });
+        }
+
+        logActivity('api_call', `Base64 API: ${mode}`);
+
+        res.json({ success: true, result, mode, input_length: text.length, output_length: result.length });
+    });
+
+    // --- PASSWORD GENERATOR API (0.001 USDC) ---
+    router.get('/api/password', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Password Generator API"), async (req, res) => {
+        let length = parseInt(req.query.length) || 16;
+        length = Math.max(8, Math.min(128, length));
+        const includeSymbols = req.query.symbols !== 'false';
+        const includeNumbers = req.query.numbers !== 'false';
+        const includeUppercase = req.query.uppercase !== 'false';
+
+        let chars = 'abcdefghijklmnopqrstuvwxyz';
+        if (includeUppercase) chars += 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        if (includeNumbers) chars += '0123456789';
+        if (includeSymbols) chars += '!@#$%^&*()-_=+[]{}|;:,.<>?';
+
+        const crypto = require('crypto');
+        const bytes = crypto.randomBytes(length);
+        let password = '';
+        for (let i = 0; i < length; i++) {
+            password += chars[bytes[i] % chars.length];
+        }
+
+        logActivity('api_call', `Password Generator API: ${length} chars`);
+
+        res.json({ success: true, password, length, options: { symbols: includeSymbols, numbers: includeNumbers, uppercase: includeUppercase } });
+    });
+
+    // --- CURRENCY CONVERTER API (0.005 USDC) ---
+    router.get('/api/currency', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Currency Converter API"), async (req, res) => {
+        const from = (req.query.from || '').trim().toUpperCase().slice(0, 3);
+        const to = (req.query.to || '').trim().toUpperCase().slice(0, 3);
+        const amount = parseFloat(req.query.amount) || 1;
+
+        if (!from || !to) {
+            return res.status(400).json({ error: "Parameters 'from' and 'to' required. Ex: /api/currency?from=USD&to=EUR&amount=100" });
+        }
+        if (!/^[A-Z]{3}$/.test(from) || !/^[A-Z]{3}$/.test(to)) {
+            return res.status(400).json({ error: 'Currency codes must be 3 uppercase letters (ISO 4217)' });
+        }
+        if (amount <= 0 || amount > 1e12) {
+            return res.status(400).json({ error: 'Amount must be between 0 and 1,000,000,000,000' });
+        }
+
+        try {
+            const apiUrl = `https://api.frankfurter.dev/v1/latest?from=${from}&to=${to}&amount=${amount}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
+            const data = await apiRes.json();
+
+            if (!data.rates || !data.rates[to]) {
+                return res.status(400).json({ error: `Could not convert ${from} to ${to}. Check currency codes.` });
+            }
+
+            logActivity('api_call', `Currency API: ${amount} ${from} -> ${to}`);
+
+            res.json({ success: true, from, to, amount, converted: data.rates[to], rate: data.rates[to] / amount, date: data.date });
+        } catch (err) {
+            logger.error('Currency Converter API', err.message);
+            return res.status(500).json({ error: 'Currency Converter API request failed' });
+        }
+    });
+
+    // --- TIMESTAMP CONVERTER API (0.001 USDC) ---
+    router.get('/api/timestamp', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Timestamp Converter API"), async (req, res) => {
+        const ts = (req.query.ts || '').trim();
+        const date = (req.query.date || '').trim();
+
+        if (!ts && !date) {
+            // Return current timestamp
+            const now = new Date();
+            logActivity('api_call', `Timestamp API: current time`);
+            return res.json({
+                success: true,
+                timestamp: Math.floor(now.getTime() / 1000),
+                timestamp_ms: now.getTime(),
+                iso: now.toISOString(),
+                utc: now.toUTCString(),
+                unix_readable: now.toString()
+            });
+        }
+
+        if (ts) {
+            const num = parseInt(ts);
+            if (isNaN(num) || num < 0 || num > 32503680000) {
+                return res.status(400).json({ error: 'Invalid timestamp (must be 0-32503680000)' });
+            }
+            const d = new Date(num > 1e11 ? num : num * 1000);
+            logActivity('api_call', `Timestamp API: ts -> date`);
+            return res.json({ success: true, timestamp: Math.floor(d.getTime() / 1000), timestamp_ms: d.getTime(), iso: d.toISOString(), utc: d.toUTCString() });
+        }
+
+        if (date) {
+            const d = new Date(date);
+            if (isNaN(d.getTime())) {
+                return res.status(400).json({ error: 'Invalid date format. Use ISO 8601 (e.g., 2026-01-15T12:00:00Z)' });
+            }
+            logActivity('api_call', `Timestamp API: date -> ts`);
+            return res.json({ success: true, timestamp: Math.floor(d.getTime() / 1000), timestamp_ms: d.getTime(), iso: d.toISOString(), utc: d.toUTCString() });
+        }
+    });
+
+    // --- LOREM IPSUM GENERATOR API (0.001 USDC) ---
+    router.get('/api/lorem', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Lorem Ipsum Generator API"), async (req, res) => {
+        let paragraphs = parseInt(req.query.paragraphs) || 3;
+        paragraphs = Math.max(1, Math.min(20, paragraphs));
+
+        const LOREM_WORDS = 'lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum'.split(' ');
+
+        function genSentence() {
+            const len = 8 + Math.floor(Math.random() * 12);
+            const words = [];
+            for (let i = 0; i < len; i++) {
+                words.push(LOREM_WORDS[Math.floor(Math.random() * LOREM_WORDS.length)]);
+            }
+            words[0] = words[0][0].toUpperCase() + words[0].slice(1);
+            return words.join(' ') + '.';
+        }
+
+        function genParagraph() {
+            const count = 3 + Math.floor(Math.random() * 5);
+            return Array.from({ length: count }, genSentence).join(' ');
+        }
+
+        const text = Array.from({ length: paragraphs }, genParagraph);
+
+        logActivity('api_call', `Lorem Ipsum API: ${paragraphs} paragraphs`);
+
+        res.json({ success: true, paragraphs: text, count: paragraphs, total_words: text.join(' ').split(/\s+/).length });
+    });
+
+    // --- HTTP HEADERS INSPECTOR API (0.003 USDC) ---
+    router.get('/api/headers', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "HTTP Headers API"), async (req, res) => {
+        const targetUrl = (req.query.url || '').trim();
+
+        if (!targetUrl) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/headers?url=https://example.com" });
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(targetUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
+            }
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\])/i;
+        if (blockedHostname.test(parsed.hostname)) {
+            return res.status(400).json({ error: 'Internal URLs not allowed' });
+        }
+
+        try {
+            const headRes = await fetchWithTimeout(targetUrl, { method: 'HEAD', redirect: 'follow' }, 8000);
+            const headers = {};
+            headRes.headers.forEach((value, key) => { headers[key] = value; });
+
+            logActivity('api_call', `HTTP Headers API: ${parsed.hostname}`);
+
+            res.json({ success: true, url: targetUrl, status: headRes.status, headers });
+        } catch (err) {
+            logger.error('HTTP Headers API', err.message);
+            return res.status(500).json({ error: 'HTTP Headers request failed' });
+        }
+    });
+
+    // --- MARKDOWN TO HTML API (0.001 USDC) ---
+    router.get('/api/markdown', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Markdown to HTML API"), async (req, res) => {
+        const text = (req.query.text || '').trim();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/markdown?text=**bold**+_italic_" });
+        }
+        if (text.length > 50000) {
+            return res.status(400).json({ error: 'Text too long (max 50000 characters)' });
+        }
+
+        // Simple markdown to HTML conversion (no external deps)
+        let html = text
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            .replace(/`(.+?)`/g, '<code>$1</code>')
+            .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>')
+            .replace(/^- (.+)$/gm, '<li>$1</li>')
+            .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+            .replace(/\n\n/g, '</p><p>')
+            .replace(/\n/g, '<br>');
+        html = '<p>' + html + '</p>';
+
+        logActivity('api_call', `Markdown to HTML API: ${text.length} chars`);
+
+        res.json({ success: true, html, input_length: text.length, output_length: html.length });
+    });
+
+    // --- COLOR CONVERTER API (0.001 USDC) ---
+    router.get('/api/color', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Color Converter API"), async (req, res) => {
+        const hex = (req.query.hex || '').trim().replace(/^#/, '');
+        const rgb = (req.query.rgb || '').trim();
+
+        if (!hex && !rgb) {
+            return res.status(400).json({ error: "Parameter 'hex' or 'rgb' required. Ex: /api/color?hex=ff5733 or /api/color?rgb=255,87,51" });
+        }
+
+        let r, g, b;
+
+        if (hex) {
+            if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+                return res.status(400).json({ error: 'Invalid hex color (use 6 hex digits, e.g., ff5733)' });
+            }
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+        } else {
+            const parts = rgb.split(',').map(s => parseInt(s.trim()));
+            if (parts.length !== 3 || parts.some(p => isNaN(p) || p < 0 || p > 255)) {
+                return res.status(400).json({ error: 'Invalid RGB (use 3 values 0-255, e.g., 255,87,51)' });
+            }
+            [r, g, b] = parts;
+        }
+
+        // Convert to HSL
+        const rn = r / 255, gn = g / 255, bn = b / 255;
+        const max = Math.max(rn, gn, bn), min = Math.min(rn, gn, bn);
+        const l = (max + min) / 2;
+        let h = 0, s = 0;
+        if (max !== min) {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === rn) h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6;
+            else if (max === gn) h = ((bn - rn) / d + 2) / 6;
+            else h = ((rn - gn) / d + 4) / 6;
+        }
+
+        logActivity('api_call', `Color Converter API: #${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`);
+
+        res.json({
+            success: true,
+            hex: `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`,
+            rgb: { r, g, b },
+            hsl: { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) },
+            css_rgb: `rgb(${r}, ${g}, ${b})`,
+            css_hsl: `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`
+        });
+    });
+
+    // --- JSON VALIDATOR API (0.001 USDC) ---
+    router.post('/api/json-validate', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "JSON Validator API"), async (req, res) => {
+        const input = req.body && req.body.json !== undefined ? req.body.json : null;
+
+        if (input === null) {
+            return res.status(400).json({ error: "Body parameter 'json' required. POST with {\"json\": \"your string here\"}" });
+        }
+
+        const raw = typeof input === 'string' ? input : JSON.stringify(input);
+
+        if (raw.length > 100000) {
+            return res.status(400).json({ error: 'Input too large (max 100KB)' });
+        }
+
+        let valid = true;
+        let parsed = null;
+        let errorMsg = null;
+
+        try {
+            parsed = JSON.parse(raw);
+        } catch (err) {
+            valid = false;
+            errorMsg = err.message;
+        }
+
+        logActivity('api_call', `JSON Validator API: ${valid ? 'valid' : 'invalid'} (${raw.length} chars)`);
+
+        const result = { success: true, valid, input_length: raw.length };
+        if (valid) {
+            result.formatted = JSON.stringify(parsed, null, 2);
+            result.type = Array.isArray(parsed) ? 'array' : typeof parsed;
+            if (typeof parsed === 'object' && parsed !== null) {
+                result.keys_count = Array.isArray(parsed) ? parsed.length : Object.keys(parsed).length;
+            }
+        } else {
+            result.error_message = errorMsg;
+        }
+        res.json(result);
+    });
+
+    // --- USER AGENT PARSER API (0.001 USDC) ---
+    router.get('/api/useragent', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "User Agent Parser API"), async (req, res) => {
+        const ua = (req.query.ua || req.headers['user-agent'] || '').trim();
+
+        if (!ua) {
+            return res.status(400).json({ error: "Parameter 'ua' required (or sends your own User-Agent). Ex: /api/useragent?ua=Mozilla/5.0..." });
+        }
+        if (ua.length > 1000) {
+            return res.status(400).json({ error: 'User agent too long (max 1000 characters)' });
+        }
+
+        // Simple UA parsing (no external deps)
+        const browser = ua.match(/(?:Chrome|Firefox|Safari|Edge|Opera|MSIE|Trident|Brave|Vivaldi|Arc|SamsungBrowser)[\/\s]?([\d.]+)?/i);
+        const os = ua.match(/(?:Windows NT [\d.]+|Mac OS X [\d._]+|Linux|Android [\d.]+|iPhone OS [\d_]+|iPad|CrOS)/i);
+        const isBot = /bot|crawler|spider|scraper|curl|wget|python|httpx|node-fetch|axios/i.test(ua);
+        const isMobile = /Mobile|Android|iPhone|iPad|iPod/i.test(ua);
+
+        logActivity('api_call', `User Agent Parser API`);
+
+        res.json({
+            success: true,
+            user_agent: ua,
+            browser: browser ? browser[0] : 'Unknown',
+            os: os ? os[0].replace(/_/g, '.') : 'Unknown',
+            is_mobile: isMobile,
+            is_bot: isBot,
+            engine: ua.includes('Gecko') ? 'Gecko' : ua.includes('WebKit') ? 'WebKit' : ua.includes('Trident') ? 'Trident' : 'Unknown'
+        });
+    });
+
     return router;
 }
 
