@@ -85,7 +85,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 
 **Localisation:** `HACKATHON/x402-bazaar-cli/`
 **npm package size:** 13.4 KB (11 fichiers)
-**Version actuelle:** x402-bazaar@2.0.0
+**Version actuelle:** x402-bazaar@3.0.0
 
 ```
 x402-bazaar-cli/
@@ -98,13 +98,15 @@ x402-bazaar-cli/
 │   │   ├── status.js       # npx x402-bazaar status (health + stats + marketplace info)
 │   │   ├── list.js         # npx x402-bazaar list [--chain] [--category] [--free]
 │   │   ├── search.js       # npx x402-bazaar search <query>
-│   │   ├── call.js         # npx x402-bazaar call <endpoint> [--param key=value]
+│   │   ├── call.js         # npx x402-bazaar call <endpoint> [--param key=value] [--key wallet.json]
 │   │   └── wallet.js       # npx x402-bazaar wallet [--address]
 │   ├── detectors/
 │   │   └── environment.js  # Detection: Claude Desktop, Cursor, VS Code+Continue, Claude Code
 │   ├── generators/
 │   │   ├── mcp-config.js   # Generateur JSON MCP (merge avec config existante)
 │   │   └── env-file.js     # Generateur .env
+│   ├── lib/
+│   │   └── payment.js      # Auto-payment avec USDC sur Base (viem)
 │   └── utils/
 │       └── logger.js       # Output colore (chalk) + banner + box
 ├── README.md               # Documentation npm avec Quick Start
@@ -117,15 +119,16 @@ x402-bazaar-cli/
 - `npx x402-bazaar init` — Setup complet (detect env, install MCP, config wallet, verify)
 - `npx x402-bazaar init --no-wallet` — Setup en mode lecture seule
 - `npx x402-bazaar init --env claude-desktop` — Forcer l'environnement
+- `npx x402-bazaar init --setup` — Mode setup guide interactif pour wallet
 - `npx x402-bazaar config` — Generer la config MCP interactivement
 - `npx x402-bazaar config --output mcp.json` — Sauvegarder dans un fichier
 - `npx x402-bazaar status` — Verifier la connexion au serveur live
 - `npx x402-bazaar list [--chain base|skale] [--category ai] [--free]` — Lister les services
 - `npx x402-bazaar search <query>` — Chercher un service par nom/description
-- `npx x402-bazaar call <endpoint> [--param key=value]` — Appeler un service directement
+- `npx x402-bazaar call <endpoint> [--param key=value] [--key wallet.json]` — Appeler un service directement avec auto-payment USDC
 - `npx x402-bazaar wallet [--address 0x...]` — Afficher/gerer la wallet agent
 
-**Publie sur npm:** x402-bazaar@2.0.0 (12/02/2026) — https://www.npmjs.com/package/x402-bazaar
+**Publie sur npm:** x402-bazaar@3.0.0 (12/02/2026) — https://www.npmjs.com/package/x402-bazaar
 **Compte npm:** wintyx
 
 ---
@@ -138,7 +141,7 @@ x402-bazaar-cli/
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
-│   │                      # 29 endpoints natifs (x402-native)
+│   │                      # 41 endpoints natifs (x402-native)
 │   │                      # routes/, lib/ modules (health, services, register, dashboard, wrappers, logger, chains, activity, payment)
 │   ├── routes/           # Modularisation routes
 │   │   ├── health.js     # GET /health
@@ -155,10 +158,10 @@ HACKATHON/
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
-│   ├── seed-wrappers.js  # Script pour injecter les 29 wrappers natifs dans Supabase
+│   ├── seed-wrappers.js  # Script pour injecter les 41 wrappers natifs dans Supabase
 │   ├── setup-activity.js # Script pour verifier/creer la table activity
 │   ├── create-wallet.js  # Utilitaire creation wallet
-│   ├── API_WRAPPERS.md   # Documentation des 29 endpoints wrapper
+│   ├── API_WRAPPERS.md   # Documentation des 41 endpoints wrapper
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
@@ -167,12 +170,13 @@ HACKATHON/
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
 │
-├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init) — npm x402-bazaar@2.0.0
+├── x402-bazaar-cli/      # CLI "One-Line Install" (npx x402-bazaar init) — npm x402-bazaar@3.0.0
 │   ├── bin/cli.js         # Point d'entree CLI
 │   ├── src/commands/      # init, config, status, list, search, call, wallet
 │   ├── src/detectors/     # Detection environnement (Claude, Cursor, VS Code)
 │   ├── src/generators/    # Generateur config MCP + .env
-│   └── package.json       # deps: chalk, commander, inquirer, ora
+│   ├── src/lib/           # payment.js — auto-payment USDC sur Base (viem)
+│   └── package.json       # deps: chalk, commander, inquirer, ora, viem
 │
 ├── x402-langchain/       # Package Python LangChain (GitHub: Wintyx57/x402-langchain)
 │   ├── x402_langchain/    # X402BazaarTool, X402Client, X402PaymentHandler
@@ -249,7 +253,7 @@ HACKATHON/
 | GitHub Frontend | https://github.com/Wintyx57/x402-frontend | A jour |
 | GitHub LangChain | https://github.com/Wintyx57/x402-langchain | A jour |
 | Dashboard | https://x402-api.onrender.com/dashboard | LIVE (protected ADMIN_TOKEN) |
-| npm CLI | https://www.npmjs.com/package/x402-bazaar | v2.0.0 |
+| npm CLI | https://www.npmjs.com/package/x402-bazaar | v3.0.0 |
 
 ### Domaine x402bazaar.org
 
@@ -263,7 +267,7 @@ HACKATHON/
 
 1. **Backend production** (Render, mainnet Base) :
    - `/health` → 200 OK, `"network": "Base"`
-   - 29 endpoints natifs x402 (21 existants + 8 nouveaux) : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, +14 autres
+   - 41 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, +14 autres
    - Health-check endpoint pour monitoring des services
    - Analytics endpoint enrichi (walletBalance, recentActivity, avgPrice, activeServicesCount)
    - Dashboard admin `/dashboard` avec wallet balance hero, 5 stat cards, activity feed, glassmorphism
@@ -304,13 +308,13 @@ HACKATHON/
    - SEO complet (sitemap.xml, robots.txt, JSON-LD)
    - Google Search Console intégré
 
-4. **CLI** (npm x402-bazaar@2.0.0) :
-   - `npx x402-bazaar init` — setup complet en 1 commande
+4. **CLI** (npm x402-bazaar@3.0.0) :
+   - `npx x402-bazaar init` — setup complet en 1 commande (avec --setup pour mode guide interactif)
    - `npx x402-bazaar config` — generateur de config MCP
    - `npx x402-bazaar status` — verification connexion
    - `npx x402-bazaar list` — lister les services (filtres chain, category, free)
    - `npx x402-bazaar search` — chercher un service
-   - `npx x402-bazaar call` — appeler un service directement
+   - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base (--key wallet.json)
    - `npx x402-bazaar wallet` — gestion wallet agent
 
 5. **Ecosysteme** :
@@ -377,8 +381,8 @@ VITE_NETWORK=mainnet
 - [x] Milestone 6: Ecosysteme (x402-langchain, guide LangChain, section securite, backend refactoring, SEO, tests)
 
 **Phase 2 — A definir:**
-- [ ] Atteindre 40+ services natifs
-- [ ] CLI v3 (paiement automatique via wallet)
+- [x] Atteindre 40+ services natifs (FAIT: 41 endpoints)
+- [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
 - [ ] Monitoring et alertes (uptime, erreurs)
 - [ ] Auto-GPT plugin
 - [ ] Tests unitaires backend
@@ -426,6 +430,8 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 ### Historique des commits recents
 
 **Backend (x402-bazaar)** :
+- `c7cfadd` feat: add 12 new API wrappers (batch 2: hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent)
+- `f4cc4d7` fix: translate wrapper fallback 'auto' to 'en'
 - `2159d83` fix: trim whitespace in adminAuth token comparison
 - `cbcde3f` feat: add e2e test suite (37 tests)
 - `4b42930` feat: add 8 new API wrappers (translate, summarize, code, dns, qrcode, readability, sentiment, validate-email)
@@ -447,7 +453,8 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `59b5bab` Milestone 4b: FAQ, Demos, Analytics, badges, health check, advanced filters
 
 **CLI (x402-bazaar-cli)** :
+- `44ce9b2` feat: CLI v3.0.0 — auto-payment with USDC on Base
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
-- Publie sur npm: x402-bazaar@2.0.0 (12/02/2026)
+- Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 12/02/2026 — Phase 1 COMPLETE, CLAUDE.md synchronise avec ROADMAP.md*
+*Derniere mise a jour: 12/02/2026 — Phase 1 COMPLETE + Phase 2 partiel (41 wrappers, CLI v3.0.0), CLAUDE.md synchronise avec ROADMAP.md*
