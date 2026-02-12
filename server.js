@@ -2111,6 +2111,51 @@ app.get('/api/analytics', dashboardApiLimiter, adminAuth, async (req, res) => {
         const totalRevenue = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
         const totalTransactions = (payments || []).length;
 
+        // 4. Wallet balance (on-chain USDC)
+        let walletBalance = null;
+        try {
+            const balanceCall = '0x70a08231' + '000000000000000000000000' + process.env.WALLET_ADDRESS.slice(2).toLowerCase();
+            const balRes = await fetchWithTimeout(RPC_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    jsonrpc: '2.0', method: 'eth_call',
+                    params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
+                })
+            });
+            const { result } = await balRes.json();
+            if (result) walletBalance = Number(BigInt(result)) / 1e6;
+        } catch { /* ignore */ }
+
+        // 5. Recent activity (last 10)
+        let recentActivity = [];
+        try {
+            const { data: actData } = await supabase
+                .from('activity')
+                .select('type, detail, amount, created_at, tx_hash')
+                .order('created_at', { ascending: false })
+                .limit(10);
+            recentActivity = (actData || []).map(a => ({
+                type: a.type,
+                detail: a.detail,
+                amount: a.amount,
+                time: a.created_at,
+                txHash: a.tx_hash
+            }));
+        } catch { /* ignore */ }
+
+        // 6. Average price of paid services
+        let avgPrice = 0;
+        try {
+            const { data: svcData } = await supabase
+                .from('services')
+                .select('price_usdc')
+                .gt('price_usdc', 0);
+            if (svcData && svcData.length > 0) {
+                avgPrice = Math.round((svcData.reduce((sum, s) => sum + Number(s.price_usdc), 0) / svcData.length) * 1000) / 1000;
+            }
+        } catch { /* ignore */ }
+
         res.json({
             dailyVolume,
             topServices,
@@ -2120,6 +2165,13 @@ app.get('/api/analytics', dashboardApiLimiter, adminAuth, async (req, res) => {
                 transactions: totalTransactions,
                 services: servicesCount || 0,
             },
+            walletBalance,
+            walletAddress: process.env.WALLET_ADDRESS,
+            network: NETWORK_LABEL,
+            explorer: EXPLORER_URL,
+            recentActivity,
+            activeServicesCount: servicesCount || 0,
+            avgPrice,
         });
     } catch (err) {
         console.error('[Analytics] Error:', err.message);
