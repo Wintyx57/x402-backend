@@ -10,7 +10,8 @@
     "demo:live": "node demo-live.js",
     "mcp": "node mcp-server.mjs",
     "seed:wrappers": "node seed-wrappers.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:e2e": "node --test tests/e2e.test.js"
   },
   "keywords": [
     "x402",
