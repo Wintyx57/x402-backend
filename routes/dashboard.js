@@ -9,8 +9,8 @@ const { fetchWithTimeout } = require('../lib/payment');
 function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
     const router = express.Router();
 
-    // Servir le dashboard
-    router.get('/dashboard', adminAuth, (req, res) => {
+    // Servir le dashboard HTML (auth handled client-side via API calls)
+    router.get('/dashboard', (req, res) => {
         res.sendFile(path.join(__dirname, '..', 'dashboard.html'));
     });
 

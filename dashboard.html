@@ -538,6 +538,29 @@
 
     <script>
         let fullWalletAddress = '';
+        let adminToken = sessionStorage.getItem('x402_admin_token') || '';
+
+        // --- AUTH: prompt for token if needed ---
+        async function checkAuth() {
+            if (!adminToken) {
+                adminToken = prompt('Admin Token:');
+                if (!adminToken) { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef4444;font-size:18px">Access denied</div>'; return false; }
+            }
+            // Test the token
+            const res = await fetch('/api/stats', { headers: { 'X-Admin-Token': adminToken } });
+            if (res.status === 401) {
+                sessionStorage.removeItem('x402_admin_token');
+                adminToken = '';
+                document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#ef4444;font-size:18px">Invalid token. Reload to retry.</div>';
+                return false;
+            }
+            sessionStorage.setItem('x402_admin_token', adminToken);
+            return true;
+        }
+
+        function authHeaders() {
+            return adminToken ? { 'X-Admin-Token': adminToken } : {};
+        }
 
         function timeAgo(isoStr) {
             const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
@@ -570,7 +593,7 @@
 
         async function refreshAnalytics() {
             try {
-                const res = await fetch('/api/analytics');
+                const res = await fetch('/api/analytics', { headers: authHeaders() });
                 const d = await res.json();
 
                 // Balance
@@ -676,8 +699,12 @@
             await Promise.all([refreshAnalytics(), refreshServices()]);
         }
 
-        refresh();
-        setInterval(refresh, 5000);
+        (async () => {
+            const ok = await checkAuth();
+            if (!ok) return;
+            refresh();
+            setInterval(refresh, 5000);
+        })();
     </script>
 
 </body>
