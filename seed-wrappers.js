@@ -189,6 +189,72 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "ai", "image", "dall-e", "generation", "live"]
     },
+
+    // --- NEW WRAPPERS (2026-02-12) ---
+    {
+        name: "x402 Translation API",
+        description: "Translate text between 90+ languages using MyMemory API. Auto-detect source language or specify explicitly. Returns translated text with source and target language codes. Usage: /api/translate?text=hello&from=auto&to=fr",
+        url: `${BASE_URL}/api/translate`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "translation", "language", "live"]
+    },
+    {
+        name: "x402 Text Summarization",
+        description: "AI-powered text summarization using GPT-4o-mini. Condense long articles, documents or text into concise summaries. Configurable max length (50-2000 words). Perfect for research and content analysis. Usage: /api/summarize?text=long+article&maxLength=200",
+        url: `${BASE_URL}/api/summarize`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "summarization", "nlp", "live"]
+    },
+    {
+        name: "x402 Code Execution",
+        description: "Execute code in 50+ programming languages via sandboxed Piston API. Supports Python, JavaScript, Go, Rust, C++, Java and more. Returns stdout and stderr. Usage: POST /api/code {language: 'python', code: 'print(42)'}",
+        url: `${BASE_URL}/api/code`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "code", "execution", "sandbox", "live"]
+    },
+    {
+        name: "x402 DNS Lookup",
+        description: "DNS record lookup for any domain. Supports A, AAAA, MX, TXT, CNAME, NS, SOA, PTR, SRV records. Built-in SSRF protection. Usage: /api/dns?domain=google.com&type=A",
+        url: `${BASE_URL}/api/dns`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "dns", "network", "security", "live"]
+    },
+    {
+        name: "x402 QR Code Generator",
+        description: "Generate QR code images from any text or URL. Returns image URL (PNG format). Customizable size 50-1000px. Usage: /api/qrcode-gen?data=https://example.com&size=300",
+        url: `${BASE_URL}/api/qrcode-gen`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "qrcode", "generator", "media", "live"]
+    },
+    {
+        name: "x402 Readability Extractor",
+        description: "Extract clean readable text from any web page. Strips ads, navigation, scripts and returns title + main content. Built-in SSRF protection. Perfect for content analysis and AI training data. Usage: /api/readability?url=https://example.com/article",
+        url: `${BASE_URL}/api/readability`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "data", "scraping", "readability", "text", "live"]
+    },
+    {
+        name: "x402 Sentiment Analysis",
+        description: "AI-powered sentiment analysis using GPT-4o-mini. Classifies text as positive/negative/neutral with confidence score and keyword extraction. Usage: /api/sentiment?text=I+love+this+product",
+        url: `${BASE_URL}/api/sentiment`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "sentiment", "nlp", "analysis", "live"]
+    },
+    {
+        name: "x402 Email Validation",
+        description: "Validate email addresses with format check and DNS MX record verification. Returns detailed validation results including domain info. Usage: /api/validate-email?email=test@example.com",
+        url: `${BASE_URL}/api/validate-email`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "email", "validation", "verification", "live"]
+    },
 ];
 
 async function seedWrappers() {

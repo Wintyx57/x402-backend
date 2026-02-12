@@ -1139,6 +1139,478 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         }
     });
 
+    // --- TRANSLATION API WRAPPER (0.005 USDC) ---
+    router.get('/api/translate', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Translation API"), async (req, res) => {
+        const text = (req.query.text || '').trim().slice(0, 5000);
+        const from = (req.query.from || 'auto').trim().toLowerCase().slice(0, 10);
+        const to = (req.query.to || '').trim().toLowerCase().slice(0, 10);
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/translate?text=hello&from=en&to=fr" });
+        }
+
+        if (!to) {
+            return res.status(400).json({ error: "Parameter 'to' required (target language code, ex: 'fr', 'es', 'en')" });
+        }
+
+        if (/[\x00-\x1F\x7F]/.test(text) || !/^[a-z-]{2,10}$/.test(to) || (from !== 'auto' && !/^[a-z-]{2,10}$/.test(from))) {
+            return res.status(400).json({ error: 'Invalid characters or language code format' });
+        }
+
+        try {
+            const langPair = `${from}|${to}`;
+            const apiUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
+            const data = await apiRes.json();
+
+            if (!data.responseData || !data.responseData.translatedText) {
+                return res.status(500).json({ error: 'Translation failed' });
+            }
+
+            logActivity('api_call', `Translation API: ${from} -> ${to} (${text.slice(0, 50)}...)`);
+
+            res.json({
+                success: true,
+                translatedText: data.responseData.translatedText,
+                from: from,
+                to: to,
+                original: text
+            });
+        } catch (err) {
+            logger.error('Translation API', err.message);
+            return res.status(500).json({ error: 'Translation API request failed' });
+        }
+    });
+
+    // --- SUMMARIZE API WRAPPER (0.01 USDC) ---
+    router.get('/api/summarize', paidEndpointLimiter, paymentMiddleware(10000, 0.01, "Summarize API"), async (req, res) => {
+        const text = (req.query.text || '').trim();
+        const maxLength = parseInt(req.query.maxLength) || 200;
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/summarize?text=long+article+here&maxLength=200" });
+        }
+
+        if (text.length < 50) {
+            return res.status(400).json({ error: 'Text too short to summarize (minimum 50 characters)' });
+        }
+
+        if (text.length > 50000) {
+            return res.status(400).json({ error: 'Text too long (max 50000 characters)' });
+        }
+
+        if (maxLength < 50 || maxLength > 2000) {
+            return res.status(400).json({ error: 'maxLength must be between 50 and 2000 words' });
+        }
+
+        try {
+            const response = await getOpenAI().chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                    {
+                        role: 'system',
+                        content: `You are a text summarization assistant. Summarize the provided text in approximately ${maxLength} words or less. Keep the summary concise, informative, and in the same language as the original text.`
+                    },
+                    {
+                        role: 'user',
+                        content: text
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: Math.min(Math.ceil(maxLength * 1.5), 4000)
+            });
+
+            const summary = response.choices[0].message.content.trim();
+            logActivity('api_call', `Summarize API: ${text.length} chars -> ${summary.length} chars`);
+
+            res.json({
+                success: true,
+                summary,
+                originalLength: text.length,
+                summaryLength: summary.length
+            });
+        } catch (err) {
+            logger.error('Summarize API', err.message);
+
+            if (err.status === 429) {
+                return res.status(429).json({
+                    error: 'Rate limit exceeded',
+                    message: 'OpenAI rate limit reached. Please try again in a few seconds.'
+                });
+            }
+
+            return res.status(500).json({ error: 'Summarize API request failed' });
+        }
+    });
+
+    // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
+    router.post('/api/code', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Code Execution API"), async (req, res) => {
+        const language = (req.body.language || '').trim().toLowerCase().slice(0, 50);
+        const code = (req.body.code || '').trim();
+
+        if (!language || !code) {
+            return res.status(400).json({ error: "Parameters 'language' and 'code' required. Ex: POST /api/code {language: 'python', code: 'print(42)'}" });
+        }
+
+        if (code.length > 50000) {
+            return res.status(400).json({ error: 'Code too long (max 50000 characters)' });
+        }
+
+        try {
+            const apiUrl = 'https://emkc.org/api/v2/piston/execute';
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: language,
+                    version: '*',
+                    files: [{ content: code }]
+                })
+            }, 30000); // 30s timeout for code execution
+
+            const data = await apiRes.json();
+
+            if (!data.run) {
+                return res.status(500).json({ error: 'Code execution failed', details: data.message || 'Unknown error' });
+            }
+
+            logActivity('api_call', `Code Execution API: ${language} (${code.length} chars)`);
+
+            res.json({
+                success: true,
+                language: data.language,
+                version: data.version,
+                output: data.run.stdout || '',
+                stderr: data.run.stderr || ''
+            });
+        } catch (err) {
+            logger.error('Code Execution API', err.message);
+            return res.status(500).json({ error: 'Code Execution API request failed' });
+        }
+    });
+
+    // --- DNS LOOKUP API WRAPPER (0.003 USDC) ---
+    router.get('/api/dns', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "DNS Lookup API"), async (req, res) => {
+        const domain = (req.query.domain || '').trim().toLowerCase().slice(0, 255);
+        const type = (req.query.type || 'A').trim().toUpperCase();
+
+        if (!domain) {
+            return res.status(400).json({ error: "Parameter 'domain' required. Ex: /api/dns?domain=google.com&type=A" });
+        }
+
+        // Validate domain format (basic check)
+        if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/.test(domain)) {
+            return res.status(400).json({ error: 'Invalid domain name format' });
+        }
+
+        // Security: Block localhost, private IPs
+        const blockedDomains = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|::1|fc00:|fe80:)/i;
+        if (blockedDomains.test(domain)) {
+            return res.status(400).json({ error: 'Internal domains not allowed' });
+        }
+
+        const validTypes = ['A', 'AAAA', 'MX', 'TXT', 'CNAME', 'NS', 'SOA', 'PTR', 'SRV'];
+        if (!validTypes.includes(type)) {
+            return res.status(400).json({ error: `Invalid DNS type. Accepted: ${validTypes.join(', ')}` });
+        }
+
+        try {
+            const dnsPromises = require('dns/promises');
+            let records;
+
+            switch (type) {
+                case 'A':
+                    records = await dnsPromises.resolve4(domain);
+                    break;
+                case 'AAAA':
+                    records = await dnsPromises.resolve6(domain);
+                    break;
+                case 'MX':
+                    records = await dnsPromises.resolveMx(domain);
+                    break;
+                case 'TXT':
+                    records = await dnsPromises.resolveTxt(domain);
+                    break;
+                case 'CNAME':
+                    records = await dnsPromises.resolveCname(domain);
+                    break;
+                case 'NS':
+                    records = await dnsPromises.resolveNs(domain);
+                    break;
+                case 'SOA':
+                    records = await dnsPromises.resolveSoa(domain);
+                    break;
+                case 'PTR':
+                    records = await dnsPromises.resolvePtr(domain);
+                    break;
+                case 'SRV':
+                    records = await dnsPromises.resolveSrv(domain);
+                    break;
+            }
+
+            logActivity('api_call', `DNS Lookup API: ${domain} (${type})`);
+
+            res.json({
+                success: true,
+                domain,
+                type,
+                records
+            });
+        } catch (err) {
+            if (err.code === 'ENOTFOUND' || err.code === 'ENODATA') {
+                return res.status(404).json({ error: 'DNS records not found', domain, type });
+            }
+            logger.error('DNS Lookup API', err.message);
+            return res.status(500).json({ error: 'DNS Lookup API request failed' });
+        }
+    });
+
+    // --- QR CODE GENERATOR API WRAPPER (0.003 USDC) ---
+    router.get('/api/qrcode-gen', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "QR Code Generator API"), async (req, res) => {
+        const data = (req.query.data || '').trim().slice(0, 2000);
+        let size = parseInt(req.query.size) || 300;
+
+        if (!data) {
+            return res.status(400).json({ error: "Parameter 'data' required. Ex: /api/qrcode-gen?data=https://example.com&size=300" });
+        }
+
+        size = Math.max(50, Math.min(1000, size));
+
+        try {
+            const apiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(data)}&format=png`;
+
+            logActivity('api_call', `QR Code Generator API: ${data.slice(0, 50)}... (${size}px)`);
+
+            // Return JSON with the image URL instead of returning the image directly
+            res.json({
+                success: true,
+                imageUrl: apiUrl,
+                data: data,
+                size: size
+            });
+        } catch (err) {
+            logger.error('QR Code Generator API', err.message);
+            return res.status(500).json({ error: 'QR Code Generator API request failed' });
+        }
+    });
+
+    // --- READABILITY API WRAPPER (0.005 USDC) ---
+    router.get('/api/readability', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Readability API"), async (req, res) => {
+        const targetUrl = (req.query.url || '').trim();
+
+        if (!targetUrl) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/readability?url=https://example.com/article" });
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(targetUrl);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
+            }
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        // SECURITY: Block internal/private IPs and cloud metadata endpoints
+        const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
+        if (blockedHostname.test(parsed.hostname)) {
+            return res.status(400).json({ error: 'Internal URLs not allowed' });
+        }
+
+        // SECURITY: DNS resolution check to prevent DNS rebinding attacks
+        try {
+            const { address } = await dns.promises.lookup(parsed.hostname);
+            const isPrivateIP = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address);
+            if (isPrivateIP) {
+                return res.status(400).json({ error: 'Internal URLs not allowed' });
+            }
+        } catch (dnsErr) {
+            return res.status(400).json({ error: 'Could not resolve hostname' });
+        }
+
+        try {
+            const pageRes = await fetchWithTimeout(targetUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' },
+                redirect: 'follow',
+            }, 10000);
+
+            const contentLength = parseInt(pageRes.headers.get('content-length') || '0');
+            if (contentLength > 5 * 1024 * 1024) {
+                return res.status(400).json({ error: 'Page too large (max 5MB)' });
+            }
+
+            const contentType = pageRes.headers.get('content-type') || '';
+            if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
+                return res.status(400).json({ error: 'URL does not return HTML or text content', content_type: contentType });
+            }
+
+            const html = await pageRes.text();
+
+            if (html.length > 5 * 1024 * 1024) {
+                return res.status(400).json({ error: 'Page too large (max 5MB)' });
+            }
+
+            const $ = cheerio.load(html);
+
+            // Remove unwanted elements
+            $('script, style, nav, footer, header, iframe, noscript, svg, [role="navigation"], [role="banner"], .sidebar, .menu, .nav, .footer, .header, .ad, .ads, .advertisement').remove();
+
+            const title = $('title').text().trim() || $('h1').first().text().trim() || '';
+
+            // Extract main text content
+            const textParts = [];
+            $('article, main, [role="main"], p').each((i, el) => {
+                const text = $(el).text().trim();
+                if (text.length > 50) {
+                    textParts.push(text);
+                }
+            });
+
+            let fullText = textParts.join('\n\n').replace(/\s+/g, ' ').trim();
+
+            if (fullText.length > 50000) {
+                fullText = fullText.slice(0, 50000) + '\n\n[...truncated]';
+            }
+
+            const wordCount = fullText.split(/\s+/).length;
+
+            logActivity('api_call', `Readability API: ${parsed.hostname} -> ${wordCount} words`);
+
+            res.json({
+                success: true,
+                title,
+                text: fullText,
+                wordCount,
+                url: targetUrl
+            });
+        } catch (err) {
+            logger.error('Readability API', err.message);
+            return res.status(500).json({ error: 'Readability API request failed' });
+        }
+    });
+
+    // --- SENTIMENT ANALYSIS API WRAPPER (0.005 USDC) ---
+    router.get('/api/sentiment', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Sentiment Analysis API"), async (req, res) => {
+        const text = (req.query.text || '').trim();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/sentiment?text=I+love+this+product" });
+        }
+
+        if (text.length < 5) {
+            return res.status(400).json({ error: 'Text too short (minimum 5 characters)' });
+        }
+
+        if (text.length > 10000) {
+            return res.status(400).json({ error: 'Text too long (max 10000 characters)' });
+        }
+
+        try {
+            const response = await getOpenAI().chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are a sentiment analysis assistant. Analyze the sentiment of the provided text and respond ONLY with valid JSON in this exact format: {"sentiment": "positive|negative|neutral", "score": 0.0-1.0, "keywords": ["word1", "word2", "word3"]}. The score represents confidence (0=low, 1=high). Extract 3-5 keywords that influenced the sentiment.'
+                    },
+                    {
+                        role: 'user',
+                        content: text
+                    }
+                ],
+                temperature: 0.3,
+                max_tokens: 200
+            });
+
+            const resultText = response.choices[0].message.content.trim();
+            let analysis;
+
+            try {
+                analysis = JSON.parse(resultText);
+            } catch {
+                // Fallback if OpenAI doesn't return valid JSON
+                analysis = {
+                    sentiment: 'neutral',
+                    score: 0.5,
+                    keywords: []
+                };
+            }
+
+            logActivity('api_call', `Sentiment Analysis API: ${analysis.sentiment} (${analysis.score.toFixed(2)})`);
+
+            res.json({
+                success: true,
+                sentiment: analysis.sentiment || 'neutral',
+                score: analysis.score || 0.5,
+                keywords: analysis.keywords || [],
+                text: text.slice(0, 100) + (text.length > 100 ? '...' : '')
+            });
+        } catch (err) {
+            logger.error('Sentiment Analysis API', err.message);
+
+            if (err.status === 429) {
+                return res.status(429).json({
+                    error: 'Rate limit exceeded',
+                    message: 'OpenAI rate limit reached. Please try again in a few seconds.'
+                });
+            }
+
+            return res.status(500).json({ error: 'Sentiment Analysis API request failed' });
+        }
+    });
+
+    // --- EMAIL VALIDATION API WRAPPER (0.003 USDC) ---
+    router.get('/api/validate-email', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Email Validation API"), async (req, res) => {
+        const email = (req.query.email || '').trim().toLowerCase().slice(0, 320);
+
+        if (!email) {
+            return res.status(400).json({ error: "Parameter 'email' required. Ex: /api/validate-email?email=test@example.com" });
+        }
+
+        // Email format validation (RFC 5322 simplified)
+        const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+        const formatValid = emailRegex.test(email);
+
+        if (!formatValid) {
+            logActivity('api_call', `Email Validation API: ${email} (invalid format)`);
+            return res.json({
+                success: true,
+                email,
+                valid: false,
+                format: false,
+                mxRecords: false,
+                domain: null
+            });
+        }
+
+        // Extract domain
+        const domain = email.split('@')[1];
+
+        // DNS MX lookup
+        let mxValid = false;
+        try {
+            const dnsPromises = require('dns/promises');
+            const mxRecords = await dnsPromises.resolveMx(domain);
+            mxValid = mxRecords && mxRecords.length > 0;
+        } catch (err) {
+            // MX lookup failed
+        }
+
+        const isValid = formatValid && mxValid;
+
+        logActivity('api_call', `Email Validation API: ${email} (${isValid ? 'valid' : 'invalid'})`);
+
+        res.json({
+            success: true,
+            email,
+            valid: isValid,
+            format: formatValid,
+            mxRecords: mxValid,
+            domain
+        });
+    });
+
     return router;
 }
 

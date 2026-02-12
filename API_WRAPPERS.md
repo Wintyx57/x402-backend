@@ -2,7 +2,7 @@
 
 ## Overview
 
-x402 Bazaar includes **22 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
+x402 Bazaar includes **29 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
 
 ## High-Value Endpoints
 
@@ -674,6 +674,231 @@ Get random dog images by breed (or random if no breed specified).
 | `/api/quote` | 0.005 USDC | Advice Slip | 30/min |
 | `/api/facts` | 0.005 USDC | Cat Facts | 30/min |
 | `/api/dogs` | 0.005 USDC | Dog CEO | 30/min |
+| `/api/translate` | 0.005 USDC | MyMemory | 30/min |
+| `/api/summarize` | 0.01 USDC | OpenAI GPT-4o-mini | 30/min |
+| `/api/code` | 0.005 USDC | Piston API | 30/min |
+| `/api/dns` | 0.003 USDC | Node DNS (built-in) | 30/min |
+| `/api/qrcode-gen` | 0.003 USDC | QR Server API | 30/min |
+| `/api/readability` | 0.005 USDC | Direct fetch + Cheerio | 30/min |
+| `/api/sentiment` | 0.005 USDC | OpenAI GPT-4o-mini | 30/min |
+| `/api/validate-email` | 0.003 USDC | Node DNS MX (built-in) | 30/min |
+
+---
+
+## New Wrappers (Added 2026-02-12)
+
+### 23. Translation API
+
+**Endpoint:** `GET /api/translate?text={text}&from={lang}&to={lang}`
+**Price:** 0.005 USDC
+**Source:** MyMemory Translation API (free, no API key)
+
+Translate text between 90+ languages. Auto-detect source language.
+
+**Parameters:**
+- `text` (required): Text to translate (max 5000 chars)
+- `from` (optional): Source language code (default: "auto", e.g., "en", "fr", "es")
+- `to` (required): Target language code (e.g., "fr", "es", "en")
+
+**Response:**
+```json
+{
+  "success": true,
+  "translatedText": "Bonjour le monde",
+  "from": "en",
+  "to": "fr",
+  "original": "Hello world"
+}
+```
+
+---
+
+### 24. Text Summarization API
+
+**Endpoint:** `GET /api/summarize?text={text}&maxLength={words}`
+**Price:** 0.01 USDC
+**Source:** OpenAI GPT-4o-mini
+
+AI-powered text summarization. Condense long articles, documents, or text into concise summaries.
+
+**Parameters:**
+- `text` (required): Text to summarize (50-50000 chars)
+- `maxLength` (optional): Max summary length in words (50-2000, default: 200)
+
+**Response:**
+```json
+{
+  "success": true,
+  "summary": "This article discusses the rise of decentralized AI agents...",
+  "originalLength": 5432,
+  "summaryLength": 156
+}
+```
+
+---
+
+### 25. Code Execution API
+
+**Endpoint:** `POST /api/code`
+**Price:** 0.005 USDC
+**Source:** Piston API (free sandbox)
+
+Execute code in 50+ programming languages (Python, JavaScript, Go, Rust, C++, Java, etc.) in a secure sandbox.
+
+**Body (JSON):**
+```json
+{
+  "language": "python",
+  "code": "print('Hello from x402!')"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "language": "python",
+  "version": "3.10.0",
+  "output": "Hello from x402!\n",
+  "stderr": ""
+}
+```
+
+**Supported languages:** python, javascript, go, rust, cpp, java, c, ruby, php, swift, kotlin, typescript, bash, perl, lua, r, scala, haskell, and 30+ more.
+
+---
+
+### 26. DNS Lookup API
+
+**Endpoint:** `GET /api/dns?domain={domain}&type={type}`
+**Price:** 0.003 USDC
+**Source:** Node.js built-in DNS module
+
+Query DNS records for any domain. Built-in SSRF protection.
+
+**Parameters:**
+- `domain` (required): Domain name (e.g., "google.com")
+- `type` (optional): Record type (A, AAAA, MX, TXT, CNAME, NS, SOA, PTR, SRV, default: "A")
+
+**Response:**
+```json
+{
+  "success": true,
+  "domain": "google.com",
+  "type": "A",
+  "records": ["142.250.185.206"]
+}
+```
+
+**Security:** Blocks localhost, private IPs, and cloud metadata endpoints.
+
+---
+
+### 27. QR Code Generator API
+
+**Endpoint:** `GET /api/qrcode-gen?data={data}&size={size}`
+**Price:** 0.003 USDC
+**Source:** QR Server API (free)
+
+Generate QR code images from any text or URL. Returns image URL.
+
+**Parameters:**
+- `data` (required): Data to encode (max 2000 chars)
+- `size` (optional): Image size in pixels (50-1000, default: 300)
+
+**Response:**
+```json
+{
+  "success": true,
+  "imageUrl": "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=...",
+  "data": "https://example.com",
+  "size": 300
+}
+```
+
+---
+
+### 28. Readability Extractor API
+
+**Endpoint:** `GET /api/readability?url={url}`
+**Price:** 0.005 USDC
+**Source:** Direct fetch + Cheerio
+
+Extract clean readable text from any web page. Strips ads, navigation, scripts -- returns only main content.
+
+**Parameters:**
+- `url` (required): Web page URL (HTTP/HTTPS only)
+
+**Response:**
+```json
+{
+  "success": true,
+  "title": "Article Title",
+  "text": "This is the main article text without ads or navigation...",
+  "wordCount": 1234,
+  "url": "https://example.com/article"
+}
+```
+
+**Security:** SSRF protection blocks localhost, private IPs, and cloud metadata. 5MB size limit.
+
+---
+
+### 29. Sentiment Analysis API
+
+**Endpoint:** `GET /api/sentiment?text={text}`
+**Price:** 0.005 USDC
+**Source:** OpenAI GPT-4o-mini
+
+AI-powered sentiment analysis. Classifies text as positive/negative/neutral with confidence score and keyword extraction.
+
+**Parameters:**
+- `text` (required): Text to analyze (5-10000 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "sentiment": "positive",
+  "score": 0.92,
+  "keywords": ["love", "amazing", "great"],
+  "text": "I love this product! It's amazing..."
+}
+```
+
+**Sentiment values:** `positive`, `negative`, `neutral`
+**Score range:** 0.0 (low confidence) to 1.0 (high confidence)
+
+---
+
+### 30. Email Validation API
+
+**Endpoint:** `GET /api/validate-email?email={email}`
+**Price:** 0.003 USDC
+**Source:** Node.js built-in DNS module
+
+Validate email addresses with format check and DNS MX record verification.
+
+**Parameters:**
+- `email` (required): Email address to validate (max 320 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "email": "test@example.com",
+  "valid": true,
+  "format": true,
+  "mxRecords": true,
+  "domain": "example.com"
+}
+```
+
+**Validation steps:**
+1. Format check (RFC 5322 simplified regex)
+2. Domain extraction
+3. DNS MX record lookup
+4. Final validation = format valid AND MX records exist
 
 ---
 
