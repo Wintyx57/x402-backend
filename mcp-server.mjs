@@ -2,59 +2,90 @@ import 'dotenv/config';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const { Coinbase, Wallet } = require('@coinbase/coinbase-sdk');
+import crypto from 'crypto';
+import fs from 'fs';
+import { createPublicClient, createWalletClient, http, parseAbi } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { base, baseSepolia } from 'viem/chains';
 
 // ─── Config ──────────────────────────────────────────────────────────
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
 const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
 const NETWORK = process.env.NETWORK || 'mainnet';
-const explorerBase = NETWORK === 'testnet'
-    ? 'https://sepolia.basescan.org'
-    : 'https://basescan.org';
-const networkLabel = NETWORK === 'testnet' ? 'Base Sepolia' : 'Base Mainnet';
+const isMainnet = NETWORK !== 'testnet';
+const explorerBase = isMainnet ? 'https://basescan.org' : 'https://sepolia.basescan.org';
+const networkLabel = isMainnet ? 'Base Mainnet' : 'Base Sepolia';
+const chain = isMainnet ? base : baseSepolia;
+
+// USDC contract addresses
+const USDC_ADDRESS = isMainnet
+    ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // Base mainnet
+    : '0x036CbD53842c5426634e7929541eC2318f3dCF7e'; // Base Sepolia
+const USDC_ABI = parseAbi([
+    'function transfer(address to, uint256 amount) returns (bool)',
+    'function balanceOf(address) view returns (uint256)',
+]);
 
 // ─── Budget Tracking ─────────────────────────────────────────────────
 let sessionSpending = 0;
 const sessionPayments = [];
 
-// ─── Wallet ──────────────────────────────────────────────────────────
-let wallet = null;
-let walletReady = false;
+// ─── Wallet (viem — no Coinbase CDP dependency) ──────────────────────
+let account = null;
+let publicClient = null;
+let walletClient = null;
 
-async function initWallet() {
-    if (walletReady) return;
+function initWallet() {
+    if (account) return;
 
-    Coinbase.configure({
-        apiKeyName: process.env.COINBASE_API_KEY,
-        privateKey: process.env.COINBASE_API_SECRET,
-    });
-
+    // Decrypt agent seed locally (same algorithm as Coinbase SDK)
     const seedPath = process.env.AGENT_SEED_PATH || 'agent-seed.json';
-    const fs = await import('fs');
     const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
-    const seedWalletId = Object.keys(seedData)[0];
+    const walletId = Object.keys(seedData)[0];
+    const { seed, iv, authTag, encrypted } = seedData[walletId];
 
-    // Retry with exponential backoff for rate limits
-    for (let attempt = 1; attempt <= 5; attempt++) {
+    let decryptedSeed = seed;
+    if (encrypted) {
+        // Derive encryption key from Coinbase API secret (Ed25519 → X25519)
+        let ed2curve;
         try {
-            wallet = await Wallet.fetch(seedWalletId);
-            await wallet.loadSeed(seedPath);
-            walletReady = true;
-            return;
-        } catch (err) {
-            if (err.httpCode === 429 && attempt < 5) {
-                const delay = Math.min(2000 * Math.pow(2, attempt), 30000);
-                console.error(`[Wallet] Rate limited (attempt ${attempt}/5), retrying in ${delay/1000}s...`);
-                await new Promise(r => setTimeout(r, delay));
-            } else {
-                throw err;
-            }
+            ed2curve = await_import_ed2curve();
+        } catch {
+            throw new Error('ed2curve package required for encrypted seeds. Install with: npm install ed2curve');
         }
+
+        const apiSecret = process.env.COINBASE_API_SECRET;
+        if (!apiSecret) throw new Error('COINBASE_API_SECRET required to decrypt wallet seed');
+
+        const decoded = Buffer.from(apiSecret, 'base64');
+        const x25519Key = ed2curve.convertSecretKey(new Uint8Array(decoded.slice(0, 32)));
+        const encKey = crypto.createHash('sha256').update(Buffer.from(x25519Key)).digest();
+        const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, Buffer.from(iv, 'hex'));
+        decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+        decryptedSeed = Buffer.concat([
+            decipher.update(Buffer.from(seed, 'hex')),
+            decipher.final(),
+        ]).toString('utf8');
     }
+
+    // Derive Ethereum private key (BIP-32 m/44'/60'/0'/0/0)
+    const { HDKey } = await_import_hdkey();
+    const hdKey = HDKey.fromMasterSeed(Buffer.from(decryptedSeed, 'hex'));
+    const childKey = hdKey.derive("m/44'/60'/0'/0/0");
+    const privateKey = '0x' + Buffer.from(childKey.privateKey).toString('hex');
+
+    account = privateKeyToAccount(privateKey);
+    publicClient = createPublicClient({ chain, transport: http() });
+    walletClient = createWalletClient({ account, chain, transport: http() });
+
+    console.error(`[Wallet] Initialized: ${account.address} on ${networkLabel}`);
 }
+
+// Synchronous require for CommonJS deps (works in ESM via createRequire)
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+function await_import_ed2curve() { return require('ed2curve'); }
+function await_import_hdkey() { return require('@scure/bip32'); }
 
 // ─── x402 Payment Flow ──────────────────────────────────────────────
 async function payAndRequest(url, options = {}) {
@@ -77,15 +108,26 @@ async function payAndRequest(url, options = {}) {
         );
     }
 
-    await initWallet();
+    initWallet();
 
-    const transfer = await wallet.createTransfer({
-        amount: details.amount,
-        assetId: Coinbase.assets.Usdc,
-        destination: details.recipient,
+    // Send USDC transfer via viem
+    const amountInUnits = BigInt(Math.round(cost * 1e6));
+    const txHash = await walletClient.writeContract({
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'transfer',
+        args: [details.recipient, amountInUnits],
     });
-    const confirmed = await transfer.wait({ timeoutSeconds: 120 });
-    const txHash = confirmed.getTransactionHash();
+
+    // Wait for confirmation
+    const receipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        timeout: 120_000,
+    });
+
+    if (receipt.status !== 'success') {
+        throw new Error(`Transaction failed: ${txHash}`);
+    }
 
     // Track spending
     sessionSpending += cost;
@@ -117,13 +159,13 @@ async function payAndRequest(url, options = {}) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '1.1.0',
+    version: '2.0.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
 server.tool(
     'discover_marketplace',
-    'Discover the x402 Bazaar marketplace. Returns available endpoints, total services, and protocol info. Free — no payment needed. Supports payments on Base and SKALE Europa (zero gas fees).',
+    'Discover the x402 Bazaar marketplace. Returns available endpoints, total services, and protocol info. Free — no payment needed.',
     {},
     async () => {
         try {
@@ -190,7 +232,6 @@ server.tool(
     { task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")') },
     async ({ task }) => {
         try {
-            // Extract keywords: remove stop words, keep meaningful terms
             const stopWords = new Set(['i', 'need', 'want', 'to', 'a', 'an', 'the', 'for', 'of', 'and', 'or', 'in', 'on', 'with', 'that', 'this', 'get', 'find', 'me', 'my', 'some', 'can', 'you', 'do', 'is', 'it', 'be', 'have', 'use', 'please', 'should', 'would', 'could']);
             const keywords = task.toLowerCase()
                 .replace(/[^a-z0-9\s]/g, '')
@@ -241,7 +282,6 @@ server.tool(
 );
 
 // --- Tool: call_api (FREE — calls external APIs) ---
-// SSRF protection helper
 const PRIVATE_IP_REGEX = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/;
 const BLOCKED_HOSTNAME_REGEX = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
 
@@ -253,7 +293,6 @@ async function validateUrlForSSRF(urlStr) {
     if (BLOCKED_HOSTNAME_REGEX.test(parsed.hostname)) {
         throw new Error('Internal URLs not allowed');
     }
-    // DNS resolution check
     const dns = await import('dns');
     const { address } = await dns.promises.lookup(parsed.hostname);
     if (PRIVATE_IP_REGEX.test(address)) {
@@ -267,7 +306,6 @@ server.tool(
     { url: z.string().url().describe('The full API URL to call') },
     async ({ url }) => {
         try {
-            // SSRF protection (I8/M6)
             await validateUrlForSSRF(url);
 
             const res = await fetch(url);
@@ -290,24 +328,30 @@ server.tool(
     }
 );
 
-// --- Tool: get_wallet_balance (FREE) ---
+// --- Tool: get_wallet_balance (FREE — direct on-chain query) ---
 server.tool(
     'get_wallet_balance',
     'Check the USDC balance of the agent wallet on-chain. Free.',
     {},
     async () => {
         try {
-            await initWallet();
-            const balance = await wallet.getBalance(Coinbase.assets.Usdc);
-            const address = (await wallet.getDefaultAddress()).getId();
+            initWallet();
+            const balance = await publicClient.readContract({
+                address: USDC_ADDRESS,
+                abi: USDC_ABI,
+                functionName: 'balanceOf',
+                args: [account.address],
+            });
+            const ethBalance = await publicClient.getBalance({ address: account.address });
             return {
                 content: [{
                     type: 'text',
                     text: JSON.stringify({
-                        address,
-                        balance_usdc: balance.toString(),
+                        address: account.address,
+                        balance_usdc: (Number(balance) / 1e6).toFixed(6),
+                        balance_eth: (Number(ethBalance) / 1e18).toFixed(8),
                         network: networkLabel,
-                        explorer: `${explorerBase}/address/${address}`,
+                        explorer: `${explorerBase}/address/${account.address}`,
                     }, null, 2),
                 }],
             };
