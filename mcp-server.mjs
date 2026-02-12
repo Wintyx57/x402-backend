@@ -320,7 +320,7 @@ server.tool(
     }
 );
 
-// --- Tool: call_api (FREE — calls external APIs) ---
+// --- Tool: call_api (handles x402 payments automatically) ---
 const PRIVATE_IP_REGEX = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/;
 const BLOCKED_HOSTNAME_REGEX = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
 
@@ -341,13 +341,108 @@ async function validateUrlForSSRF(urlStr) {
 
 server.tool(
     'call_api',
-    'Call an external API URL and return the response. Use this to fetch real data from service URLs discovered on the marketplace. Free — no marketplace payment needed.',
+    `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     { url: z.string().url().describe('The full API URL to call') },
     async ({ url }) => {
         try {
             await validateUrlForSSRF(url);
 
             const res = await fetch(url);
+
+            // ── x402 Payment Required ──────────────────────────────
+            if (res.status === 402) {
+                let body;
+                try {
+                    body = await res.json();
+                } catch {
+                    return {
+                        content: [{ type: 'text', text: 'Error: API returned 402 Payment Required but response is not valid JSON' }],
+                        isError: true,
+                    };
+                }
+
+                const details = body.payment_details;
+                if (!details || !details.amount || !details.recipient) {
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify({ error: 'Non-standard 402 response (missing payment_details)', raw: body }, null, 2) }],
+                        isError: true,
+                    };
+                }
+
+                const cost = parseFloat(details.amount);
+
+                // Budget check
+                if (sessionSpending + cost > MAX_BUDGET) {
+                    return {
+                        content: [{ type: 'text', text: `Error: Budget limit reached. Spent: ${sessionSpending.toFixed(2)} / ${MAX_BUDGET.toFixed(2)} USDC. This call costs ${cost} USDC. Increase MAX_BUDGET_USDC to allow more spending.` }],
+                        isError: true,
+                    };
+                }
+
+                initWallet();
+
+                // Send USDC payment on-chain
+                const amountInUnits = BigInt(Math.round(cost * 1e6));
+                const txHash = await walletClient.writeContract({
+                    address: USDC_ADDRESS,
+                    abi: USDC_ABI,
+                    functionName: 'transfer',
+                    args: [details.recipient, amountInUnits],
+                });
+
+                const receipt = await publicClient.waitForTransactionReceipt({
+                    hash: txHash,
+                    timeout: 120_000,
+                });
+
+                if (receipt.status !== 'success') {
+                    return {
+                        content: [{ type: 'text', text: `Error: Payment transaction failed: ${txHash}` }],
+                        isError: true,
+                    };
+                }
+
+                // Track spending
+                sessionSpending += cost;
+                sessionPayments.push({
+                    amount: cost,
+                    txHash,
+                    timestamp: new Date().toISOString(),
+                    endpoint: url,
+                });
+
+                // Retry with payment proof
+                const retryRes = await fetch(url, {
+                    headers: {
+                        'X-Payment-TxHash': txHash,
+                        'X-Payment-Chain': isSkale ? 'skale' : 'base',
+                    },
+                });
+
+                const retryText = await retryRes.text();
+                let result;
+                try {
+                    result = JSON.parse(retryText);
+                } catch {
+                    result = { response: retryText.slice(0, 5000) };
+                }
+
+                // Enrich with payment info
+                result._payment = {
+                    amount: details.amount,
+                    currency: 'USDC',
+                    txHash,
+                    explorer: `${explorerBase}/tx/${txHash}`,
+                    session_spent: sessionSpending.toFixed(2),
+                    session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+                };
+
+                return {
+                    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+                };
+            }
+
+            // ── Normal response (non-402) ──────────────────────────
             const text = await res.text();
             let parsed;
             try {
