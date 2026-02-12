@@ -732,27 +732,49 @@ app.get('/api/crypto', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "Cryp
         return res.status(400).json({ error: 'Invalid characters in coin name' });
     }
 
-    try {
-        // CoinGecko free API (no key needed)
-        const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd,eur&include_24hr_change=true`;
-        const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
-        const data = await apiRes.json();
+    const apiHeaders = { 'User-Agent': 'x402-bazaar/1.0', 'Accept': 'application/json' };
 
-        if (!data[coin]) {
-            return res.status(404).json({ error: 'Cryptocurrency not found', coin });
+    try {
+        // CoinGecko free API (primary)
+        const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd,eur&include_24hr_change=true`;
+        const apiRes = await fetchWithTimeout(apiUrl, { headers: apiHeaders }, 5000);
+
+        if (apiRes.ok) {
+            const data = await apiRes.json();
+            if (data[coin]) {
+                const prices = data[coin];
+                logActivity('api_call', `Crypto Price API: ${coin}`);
+                return res.json({
+                    success: true, coin,
+                    usd: prices.usd, eur: prices.eur,
+                    usd_24h_change: prices.usd_24h_change || 0,
+                    source: 'coingecko'
+                });
+            }
         }
 
-        const prices = data[coin];
+        // Fallback: CryptoCompare API (uses symbols)
+        const symbolMap = { bitcoin:'BTC', ethereum:'ETH', solana:'SOL', dogecoin:'DOGE', cardano:'ADA', polkadot:'DOT', avalanche:'AVAX', chainlink:'LINK', polygon:'MATIC', litecoin:'LTC', uniswap:'UNI', stellar:'XLM', cosmos:'ATOM', near:'NEAR', arbitrum:'ARB', optimism:'OP', aptos:'APT', sui:'SUI', toncoin:'TON', tron:'TRX', ripple:'XRP' };
+        const sym = symbolMap[coin] || coin.toUpperCase();
+        const ccUrl = `https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${encodeURIComponent(sym)}&tsyms=USD,EUR`;
+        const ccRes = await fetchWithTimeout(ccUrl, { headers: apiHeaders }, 5000);
 
-        logActivity('api_call', `Crypto Price API: ${coin}`);
+        if (ccRes.ok) {
+            const ccData = await ccRes.json();
+            if (ccData.RAW?.[sym]?.USD) {
+                const d = ccData.RAW[sym];
+                logActivity('api_call', `Crypto Price API (fallback): ${coin}`);
+                return res.json({
+                    success: true, coin,
+                    usd: d.USD.PRICE,
+                    eur: d.EUR?.PRICE || null,
+                    usd_24h_change: d.USD.CHANGEPCT24HOUR || 0,
+                    source: 'cryptocompare'
+                });
+            }
+        }
 
-        res.json({
-            success: true,
-            coin,
-            usd: prices.usd,
-            eur: prices.eur,
-            usd_24h_change: prices.usd_24h_change || 0
-        });
+        return res.status(404).json({ error: 'Cryptocurrency not found', coin });
     } catch (err) {
         console.error('[Crypto API] Error:', err.message);
         return res.status(500).json({ error: 'Crypto API request failed' });
