@@ -328,7 +328,7 @@ HACKATHON/
 
 6. **Supabase** :
    - URL : https://kucrowtjsgusdxnjglug.supabase.co
-   - Tables : `services`, `activity`, `used_transactions`
+   - Tables : `services`, `activity`, `used_transactions`, `monitoring_checks`
 
 ### Credentials (NE PAS AFFICHER)
 
@@ -339,6 +339,7 @@ HACKATHON/
 - Vercel CLI installe globalement, compte `wintyx57` connecte
 - Domaine : x402bazaar.org (Namecheap)
 - Google Search Console : Verifie (DNS TXT record)
+- Telegram Bot : @x402_monitoradmin_bot (alertes monitoring → Robin)
 
 ### Variables d'environnement
 
@@ -354,6 +355,8 @@ COINBASE_API_SECRET=***
 SUPABASE_URL=https://kucrowtjsgusdxnjglug.supabase.co
 SUPABASE_KEY=***
 OPENAI_API_KEY=***
+TELEGRAM_BOT_TOKEN=***
+TELEGRAM_CHAT_ID=***
 ```
 
 **Frontend (Vercel)** :
@@ -387,7 +390,7 @@ VITE_NETWORK=mainnet
 **Phase 2 — A definir:**
 - [x] Atteindre 40+ services natifs (FAIT: 41 endpoints)
 - [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
-- [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx — 13/02/2026)
+- [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx, Telegram @x402_monitoradmin_bot, Supabase monitoring_checks — 13/02/2026)
 - [ ] Auto-GPT plugin
 - [ ] Tests unitaires backend
 - [ ] Landing page A/B testing
