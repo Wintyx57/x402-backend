@@ -485,7 +485,205 @@ describe('Edge cases', () => {
 });
 
 // ============================
-// 10. CORS
+// 10. BATCH 2 PAID ENDPOINTS
+// ============================
+
+describe('Batch 2 paid endpoints (should return 402 or 429 without payment)', () => {
+  const assert402or429 = (res) => {
+    assert.ok(res.status === 402 || res.status === 429, `Expected 402 or 429, got ${res.status}`);
+  };
+
+  it('GET /api/hash should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/hash?text=hello&algo=sha256`);
+    assert402or429(res);
+  });
+
+  it('GET /api/uuid should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/uuid`);
+    assert402or429(res);
+  });
+
+  it('GET /api/base64 should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/base64?text=hello&action=encode`);
+    assert402or429(res);
+  });
+
+  it('GET /api/password should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/password?length=16`);
+    assert402or429(res);
+  });
+
+  it('GET /api/currency should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/currency?from=USD&to=EUR&amount=100`);
+    assert402or429(res);
+  });
+
+  it('GET /api/timestamp should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/timestamp`);
+    assert402or429(res);
+  });
+
+  it('GET /api/lorem should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/lorem?paragraphs=2`);
+    assert402or429(res);
+  });
+
+  it('GET /api/headers should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/headers`);
+    assert402or429(res);
+  });
+
+  it('GET /api/markdown should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/markdown?text=**bold**`);
+    assert402or429(res);
+  });
+
+  it('GET /api/color should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/color?hex=FF5733`);
+    assert402or429(res);
+  });
+
+  it('POST /api/json-validate should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/json-validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ json: '{"valid": true}' })
+    });
+    assert402or429(res);
+  });
+
+  it('GET /api/useragent should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/useragent`);
+    assert402or429(res);
+  });
+});
+
+// ============================
+// 11. BATCH 1 REMAINING PAID ENDPOINTS
+// ============================
+
+describe('Batch 1 remaining paid endpoints (should return 402 or 429 without payment)', () => {
+  const assert402or429 = (res) => {
+    assert.ok(res.status === 402 || res.status === 429, `Expected 402 or 429, got ${res.status}`);
+  };
+
+  it('GET /api/translate should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/translate?text=hello&to=fr`);
+    assert402or429(res);
+  });
+
+  it('GET /api/summarize should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/summarize?text=This+is+a+long+text+that+needs+summarizing`);
+    assert402or429(res);
+  });
+
+  it('POST /api/code should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ language: 'python', code: 'print(42)' })
+    });
+    assert402or429(res);
+  });
+
+  it('GET /api/dns should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/dns?domain=google.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/qrcode-gen should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/qrcode-gen?data=hello`);
+    assert402or429(res);
+  });
+
+  it('GET /api/readability should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/readability?url=https://example.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/sentiment should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/sentiment?text=I+love+this`);
+    assert402or429(res);
+  });
+
+  it('GET /api/validate-email should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/validate-email?email=test@example.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/wikipedia should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/wikipedia?q=bitcoin`);
+    assert402or429(res);
+  });
+
+  it('GET /api/dictionary should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/dictionary?word=hello`);
+    assert402or429(res);
+  });
+
+  it('GET /api/countries should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/countries?name=france`);
+    assert402or429(res);
+  });
+
+  it('GET /api/github should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/github?user=torvalds`);
+    assert402or429(res);
+  });
+
+  it('GET /api/npm should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/npm?package=express`);
+    assert402or429(res);
+  });
+
+  it('GET /api/ip should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/ip`);
+    assert402or429(res);
+  });
+
+  it('GET /api/qrcode should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/qrcode?text=hello`);
+    assert402or429(res);
+  });
+
+  it('GET /api/time should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/time?timezone=Europe/Paris`);
+    assert402or429(res);
+  });
+
+  it('GET /api/holidays should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/holidays?country=US`);
+    assert402or429(res);
+  });
+
+  it('GET /api/geocoding should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/geocoding?city=Paris`);
+    assert402or429(res);
+  });
+
+  it('GET /api/airquality should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/airquality?city=Paris`);
+    assert402or429(res);
+  });
+
+  it('GET /api/quote should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/quote`);
+    assert402or429(res);
+  });
+
+  it('GET /api/facts should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/facts`);
+    assert402or429(res);
+  });
+
+  it('GET /api/dogs should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/dogs`);
+    assert402or429(res);
+  });
+});
+
+// ============================
+// 12. CORS
 // ============================
 
 describe('CORS', () => {
