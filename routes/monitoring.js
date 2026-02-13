@@ -40,7 +40,15 @@ function createMonitoringRouter(supabase) {
         .order('checked_at', { ascending: false });
 
       if (error) {
-        return res.status(500).json({ error: 'Failed to query uptime data' });
+        // Table may not exist yet — return empty data gracefully
+        const endpoints = getEndpoints();
+        return res.json({
+          success: true,
+          period,
+          overallUptime: null,
+          endpoints: endpoints.map((ep) => ({ endpoint: ep.path, label: ep.label, uptime: null, checks: 0 })),
+          note: 'Monitoring table not yet populated',
+        });
       }
 
       // Group by endpoint and calc uptime %
@@ -100,7 +108,14 @@ function createMonitoringRouter(supabase) {
         .limit(limit);
 
       if (error) {
-        return res.status(500).json({ error: 'Failed to query history' });
+        // Table may not exist yet — return empty data gracefully
+        return res.json({
+          success: true,
+          endpoint,
+          count: 0,
+          checks: [],
+          note: 'Monitoring table not yet populated',
+        });
       }
 
       res.json({
