@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "x402 Bazaar API",
-    "description": "The decentralized API marketplace where AI agents pay with USDC via HTTP 402 protocol. Free endpoints return data directly. Paid endpoints return HTTP 402 with payment details (wallet address, amount in USDC, supported chains). To use paid endpoints, send USDC on Base to the specified wallet, then retry with X-Payment-TxHash header.",
+    "description": "The decentralized API marketplace where AI agents pay with USDC via HTTP 402 protocol. Free endpoints return data directly. Paid endpoints return HTTP 402 with payment details (wallet address, amount in USDC, supported chains). To use paid endpoints, send USDC on Base to the specified wallet, then retry with X-Payment-TxHash header. 41 total endpoints available — this schema covers the 30 most popular ones.",
     "version": "2.0.0",
     "contact": {
       "name": "x402 Bazaar",
@@ -24,17 +24,11 @@
       "get": {
         "operationId": "getMarketplaceInfo",
         "summary": "Get marketplace info",
-        "description": "Returns marketplace name, description, total services count, all available endpoints with prices, and protocol info. Free endpoint.",
+        "description": "Returns marketplace name, description, total services count, all 41 available endpoints with prices, and protocol info. Free endpoint.",
         "responses": {
           "200": {
             "description": "Marketplace information",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MarketplaceInfo"
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MarketplaceInfo" } } }
           }
         }
       }
@@ -47,13 +41,7 @@
         "responses": {
           "200": {
             "description": "Health status",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } }
           }
         }
       }
@@ -66,13 +54,7 @@
         "responses": {
           "200": {
             "description": "Monitoring status for all endpoints",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StatusResponse"
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StatusResponse" } } }
           }
         }
       }
@@ -85,45 +67,7 @@
         "responses": {
           "200": {
             "description": "Uptime percentages per endpoint",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UptimeResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/services": {
-      "get": {
-        "operationId": "listServices",
-        "summary": "List all registered services",
-        "description": "Returns the complete list of services registered on x402 Bazaar, including name, description, price, endpoint URL, tags, and chain. Costs 0.05 USDC.",
-        "responses": {
-          "200": {
-            "description": "List of services (when payment is provided)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Service"
-                  }
-                }
-              }
-            }
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentRequired"
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UptimeResponse" } } }
           }
         }
       }
@@ -139,42 +83,25 @@
             "in": "path",
             "required": true,
             "description": "The numeric agent ID in the ERC-8004 registry",
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d+$"
-            }
+            "schema": { "type": "string", "pattern": "^\\d+$" }
           }
         ],
         "responses": {
           "200": {
             "description": "Agent information",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AgentInfo"
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentInfo" } } }
           },
-          "404": {
-            "description": "Agent not found"
-          }
+          "404": { "description": "Agent not found" }
         }
       }
     },
     "/api/weather": {
       "get": {
         "operationId": "getWeather",
-        "summary": "Weather data for any city",
+        "summary": "Weather data for any city (0.02 USDC)",
         "description": "Get current weather data (temperature, wind speed, conditions) for any city worldwide. Costs 0.02 USDC.",
         "parameters": [
-          {
-            "name": "city",
-            "in": "query",
-            "required": true,
-            "description": "City name (e.g., Paris, Tokyo, New York)",
-            "schema": { "type": "string", "maxLength": 100 }
-          }
+          { "name": "city", "in": "query", "required": true, "description": "City name (e.g., Paris, Tokyo, New York)", "schema": { "type": "string", "maxLength": 100 } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -185,16 +112,10 @@
     "/api/crypto": {
       "get": {
         "operationId": "getCryptoPrice",
-        "summary": "Cryptocurrency price data",
+        "summary": "Cryptocurrency price data (0.02 USDC)",
         "description": "Get current price, market cap, and 24h change for any cryptocurrency. Costs 0.02 USDC.",
         "parameters": [
-          {
-            "name": "coin",
-            "in": "query",
-            "required": true,
-            "description": "Cryptocurrency ID (e.g., bitcoin, ethereum, solana)",
-            "schema": { "type": "string" }
-          }
+          { "name": "coin", "in": "query", "required": true, "description": "Cryptocurrency ID (e.g., bitcoin, ethereum, solana)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -205,7 +126,7 @@
     "/api/joke": {
       "get": {
         "operationId": "getRandomJoke",
-        "summary": "Random joke",
+        "summary": "Random joke (0.01 USDC)",
         "description": "Returns a random joke (setup + punchline or single-liner). Costs 0.01 USDC.",
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -216,16 +137,10 @@
     "/api/search": {
       "get": {
         "operationId": "webSearch",
-        "summary": "Clean web search results for LLMs",
+        "summary": "Web search for LLMs (0.005 USDC)",
         "description": "Returns clean, structured web search results optimized for AI consumption. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": true,
-            "description": "Search query",
-            "schema": { "type": "string", "maxLength": 200 }
-          }
+          { "name": "q", "in": "query", "required": true, "description": "Search query", "schema": { "type": "string", "maxLength": 200 } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -236,16 +151,10 @@
     "/api/scrape": {
       "get": {
         "operationId": "scrapeUrl",
-        "summary": "Universal URL scraper",
+        "summary": "Universal URL scraper (0.005 USDC)",
         "description": "Scrapes any URL and returns clean Markdown content, optimized for LLM consumption. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "description": "URL to scrape (must be a valid HTTP/HTTPS URL)",
-            "schema": { "type": "string", "format": "uri" }
-          }
+          { "name": "url", "in": "query", "required": true, "description": "URL to scrape", "schema": { "type": "string", "format": "uri" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -256,27 +165,12 @@
     "/api/twitter": {
       "get": {
         "operationId": "getTwitterData",
-        "summary": "Twitter/X data (profiles, tweets, search)",
-        "description": "Get Twitter/X user profiles, individual tweets, or search results. Provide one of: user, tweet, or search parameter. Costs 0.005 USDC.",
+        "summary": "Twitter/X data (0.005 USDC)",
+        "description": "Get Twitter/X user profiles, individual tweets, or search results. Provide one of: user, tweet, or search. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "user",
-            "in": "query",
-            "description": "Twitter username (without @)",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "tweet",
-            "in": "query",
-            "description": "Tweet ID or URL",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Search keyword for tweets",
-            "schema": { "type": "string" }
-          }
+          { "name": "user", "in": "query", "description": "Twitter username (without @)", "schema": { "type": "string" } },
+          { "name": "tweet", "in": "query", "description": "Tweet ID or URL", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "description": "Search keyword for tweets", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -287,22 +181,11 @@
     "/api/image": {
       "get": {
         "operationId": "generateImage",
-        "summary": "AI image generation (DALL-E 3)",
-        "description": "Generate an image from a text prompt using DALL-E 3. Returns a URL to the generated image. Costs 0.05 USDC.",
+        "summary": "AI image generation DALL-E 3 (0.05 USDC)",
+        "description": "Generate an image from a text prompt using DALL-E 3. Returns a URL. Costs 0.05 USDC.",
         "parameters": [
-          {
-            "name": "prompt",
-            "in": "query",
-            "required": true,
-            "description": "Image generation prompt",
-            "schema": { "type": "string", "maxLength": 1000 }
-          },
-          {
-            "name": "size",
-            "in": "query",
-            "description": "Image size",
-            "schema": { "type": "string", "enum": ["1024x1024", "1024x1792", "1792x1024"], "default": "1024x1024" }
-          }
+          { "name": "prompt", "in": "query", "required": true, "description": "Image generation prompt", "schema": { "type": "string", "maxLength": 1000 } },
+          { "name": "size", "in": "query", "description": "Image size", "schema": { "type": "string", "enum": ["1024x1024", "1024x1792", "1792x1024"], "default": "1024x1024" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -313,16 +196,10 @@
     "/api/wikipedia": {
       "get": {
         "operationId": "getWikipediaSummary",
-        "summary": "Wikipedia article summary",
+        "summary": "Wikipedia summary (0.005 USDC)",
         "description": "Get a summary of any Wikipedia article. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": true,
-            "description": "Search term for Wikipedia",
-            "schema": { "type": "string" }
-          }
+          { "name": "q", "in": "query", "required": true, "description": "Search term for Wikipedia", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -333,16 +210,10 @@
     "/api/dictionary": {
       "get": {
         "operationId": "getDictionaryDefinition",
-        "summary": "English dictionary definitions",
+        "summary": "Dictionary definitions (0.005 USDC)",
         "description": "Get definitions, phonetics, and examples for any English word. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "word",
-            "in": "query",
-            "required": true,
-            "description": "English word to define",
-            "schema": { "type": "string" }
-          }
+          { "name": "word", "in": "query", "required": true, "description": "English word to define", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -353,16 +224,10 @@
     "/api/countries": {
       "get": {
         "operationId": "getCountryData",
-        "summary": "Country information",
+        "summary": "Country information (0.005 USDC)",
         "description": "Get population, capital, languages, currencies, and region for any country. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "name",
-            "in": "query",
-            "required": true,
-            "description": "Country name (e.g., France, Japan)",
-            "schema": { "type": "string" }
-          }
+          { "name": "name", "in": "query", "required": true, "description": "Country name (e.g., France, Japan)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -373,22 +238,11 @@
     "/api/github": {
       "get": {
         "operationId": "getGithubData",
-        "summary": "GitHub user profiles and repo stats",
-        "description": "Get GitHub user profile info or repository statistics. Provide user and optionally repo. Costs 0.005 USDC.",
+        "summary": "GitHub profiles and repos (0.005 USDC)",
+        "description": "Get GitHub user profile info or repository statistics. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "user",
-            "in": "query",
-            "required": true,
-            "description": "GitHub username",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "repo",
-            "in": "query",
-            "description": "Repository name (optional, for repo stats)",
-            "schema": { "type": "string" }
-          }
+          { "name": "user", "in": "query", "required": true, "description": "GitHub username", "schema": { "type": "string" } },
+          { "name": "repo", "in": "query", "description": "Repository name (optional)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -399,16 +253,10 @@
     "/api/npm": {
       "get": {
         "operationId": "getNpmPackageInfo",
-        "summary": "NPM package metadata",
-        "description": "Get metadata for any NPM package (version, downloads, dependencies, etc.). Costs 0.005 USDC.",
+        "summary": "NPM package metadata (0.005 USDC)",
+        "description": "Get metadata for any NPM package. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "package",
-            "in": "query",
-            "required": true,
-            "description": "NPM package name (e.g., express, react)",
-            "schema": { "type": "string" }
-          }
+          { "name": "package", "in": "query", "required": true, "description": "NPM package name (e.g., express, react)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -419,16 +267,10 @@
     "/api/ip": {
       "get": {
         "operationId": "getIpGeolocation",
-        "summary": "IP geolocation data",
-        "description": "Get geolocation data for an IP address (country, city, ISP, coordinates). Costs 0.005 USDC.",
+        "summary": "IP geolocation (0.005 USDC)",
+        "description": "Get geolocation data for an IP address. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "address",
-            "in": "query",
-            "required": true,
-            "description": "IP address (IPv4 or IPv6)",
-            "schema": { "type": "string" }
-          }
+          { "name": "address", "in": "query", "required": true, "description": "IP address (IPv4 or IPv6)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -436,39 +278,13 @@
         }
       }
     },
-    "/api/qrcode": {
-      "get": {
-        "operationId": "generateQrCode",
-        "summary": "QR code image generation",
-        "description": "Generate a QR code image from text. Returns the image directly. Costs 0.005 USDC.",
-        "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text or URL to encode in QR code",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "QR code image (PNG)" }
-        }
-      }
-    },
     "/api/time": {
       "get": {
         "operationId": "getWorldTime",
-        "summary": "Current time in any timezone",
+        "summary": "World time by timezone (0.005 USDC)",
         "description": "Get the current date and time for any timezone. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "timezone",
-            "in": "query",
-            "required": true,
-            "description": "IANA timezone (e.g., Europe/Paris, America/New_York, Asia/Tokyo)",
-            "schema": { "type": "string" }
-          }
+          { "name": "timezone", "in": "query", "required": true, "description": "IANA timezone (e.g., Europe/Paris, America/New_York)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -479,22 +295,11 @@
     "/api/holidays": {
       "get": {
         "operationId": "getPublicHolidays",
-        "summary": "Public holidays by country",
+        "summary": "Public holidays by country (0.005 USDC)",
         "description": "Get the list of public holidays for a country and year. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "country",
-            "in": "query",
-            "required": true,
-            "description": "ISO 3166-1 alpha-2 country code (e.g., US, FR, JP)",
-            "schema": { "type": "string", "minLength": 2, "maxLength": 2 }
-          },
-          {
-            "name": "year",
-            "in": "query",
-            "description": "Year (defaults to current year)",
-            "schema": { "type": "integer" }
-          }
+          { "name": "country", "in": "query", "required": true, "description": "ISO 3166-1 alpha-2 country code (e.g., US, FR, JP)", "schema": { "type": "string", "minLength": 2, "maxLength": 2 } },
+          { "name": "year", "in": "query", "description": "Year (defaults to current year)", "schema": { "type": "integer" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -505,16 +310,10 @@
     "/api/geocoding": {
       "get": {
         "operationId": "geocodeCity",
-        "summary": "City to coordinates geocoding",
-        "description": "Convert a city name to geographic coordinates (latitude, longitude). Costs 0.005 USDC.",
+        "summary": "City to coordinates (0.005 USDC)",
+        "description": "Convert a city name to geographic coordinates. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "city",
-            "in": "query",
-            "required": true,
-            "description": "City name",
-            "schema": { "type": "string" }
-          }
+          { "name": "city", "in": "query", "required": true, "description": "City name", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -525,23 +324,11 @@
     "/api/airquality": {
       "get": {
         "operationId": "getAirQuality",
-        "summary": "Air quality index and pollutants",
+        "summary": "Air quality index (0.005 USDC)",
         "description": "Get the air quality index (AQI) and pollutant levels for a location. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "lat",
-            "in": "query",
-            "required": true,
-            "description": "Latitude",
-            "schema": { "type": "number" }
-          },
-          {
-            "name": "lon",
-            "in": "query",
-            "required": true,
-            "description": "Longitude",
-            "schema": { "type": "number" }
-          }
+          { "name": "lat", "in": "query", "required": true, "description": "Latitude", "schema": { "type": "number" } },
+          { "name": "lon", "in": "query", "required": true, "description": "Longitude", "schema": { "type": "number" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -552,7 +339,7 @@
     "/api/quote": {
       "get": {
         "operationId": "getRandomQuote",
-        "summary": "Random advice quote",
+        "summary": "Random advice quote (0.005 USDC)",
         "description": "Returns a random piece of advice or inspirational quote. Costs 0.005 USDC.",
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -563,7 +350,7 @@
     "/api/facts": {
       "get": {
         "operationId": "getRandomFact",
-        "summary": "Random fun fact",
+        "summary": "Random fun fact (0.005 USDC)",
         "description": "Returns a random interesting fact. Costs 0.005 USDC.",
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -571,51 +358,15 @@
         }
       }
     },
-    "/api/dogs": {
-      "get": {
-        "operationId": "getRandomDogImage",
-        "summary": "Random dog image by breed",
-        "description": "Get a random dog image, optionally filtered by breed. Costs 0.005 USDC.",
-        "parameters": [
-          {
-            "name": "breed",
-            "in": "query",
-            "description": "Dog breed (e.g., labrador, poodle). Optional.",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Dog image URL", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
     "/api/translate": {
       "get": {
         "operationId": "translateText",
-        "summary": "Translate text between 90+ languages",
+        "summary": "Translate text 90+ languages (0.005 USDC)",
         "description": "Translate text from one language to another. Supports 90+ language pairs. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text to translate",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "description": "Source language code (e.g., en, fr, es). Defaults to 'en'.",
-            "schema": { "type": "string", "default": "en" }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "required": true,
-            "description": "Target language code (e.g., fr, es, de, ja)",
-            "schema": { "type": "string" }
-          }
+          { "name": "text", "in": "query", "required": true, "description": "Text to translate", "schema": { "type": "string" } },
+          { "name": "from", "in": "query", "description": "Source language code (e.g., en, fr). Defaults to 'en'.", "schema": { "type": "string", "default": "en" } },
+          { "name": "to", "in": "query", "required": true, "description": "Target language code (e.g., fr, es, de, ja)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -626,22 +377,11 @@
     "/api/summarize": {
       "get": {
         "operationId": "summarizeText",
-        "summary": "AI-powered text summarization",
+        "summary": "AI text summarization (0.01 USDC)",
         "description": "Summarize a long text using AI (GPT-4o-mini). Costs 0.01 USDC.",
         "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text to summarize",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "maxLength",
-            "in": "query",
-            "description": "Maximum summary length in characters",
-            "schema": { "type": "integer", "default": 200 }
-          }
+          { "name": "text", "in": "query", "required": true, "description": "Text to summarize", "schema": { "type": "string" } },
+          { "name": "maxLength", "in": "query", "description": "Maximum summary length in characters", "schema": { "type": "integer", "default": 200 } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -652,7 +392,7 @@
     "/api/code": {
       "post": {
         "operationId": "executeCode",
-        "summary": "Execute code in 50+ languages",
+        "summary": "Execute code in 50+ languages (0.005 USDC)",
         "description": "Execute code in 50+ programming languages via a sandboxed environment. Costs 0.005 USDC.",
         "requestBody": {
           "required": true,
@@ -662,14 +402,8 @@
                 "type": "object",
                 "required": ["language", "code"],
                 "properties": {
-                  "language": {
-                    "type": "string",
-                    "description": "Programming language (e.g., python, javascript, go, rust)"
-                  },
-                  "code": {
-                    "type": "string",
-                    "description": "Source code to execute"
-                  }
+                  "language": { "type": "string", "description": "Programming language (e.g., python, javascript, go, rust)" },
+                  "code": { "type": "string", "description": "Source code to execute" }
                 }
               }
             }
@@ -684,22 +418,11 @@
     "/api/dns": {
       "get": {
         "operationId": "dnsLookup",
-        "summary": "DNS record lookup",
+        "summary": "DNS record lookup (0.003 USDC)",
         "description": "Look up DNS records (A, AAAA, MX, TXT, CNAME, NS) for a domain. Costs 0.003 USDC.",
         "parameters": [
-          {
-            "name": "domain",
-            "in": "query",
-            "required": true,
-            "description": "Domain name (e.g., google.com)",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "type",
-            "in": "query",
-            "description": "DNS record type (A, AAAA, MX, TXT, CNAME, NS). Defaults to A.",
-            "schema": { "type": "string", "enum": ["A", "AAAA", "MX", "TXT", "CNAME", "NS"], "default": "A" }
-          }
+          { "name": "domain", "in": "query", "required": true, "description": "Domain name (e.g., google.com)", "schema": { "type": "string" } },
+          { "name": "type", "in": "query", "description": "DNS record type. Defaults to A.", "schema": { "type": "string", "enum": ["A", "AAAA", "MX", "TXT", "CNAME", "NS"], "default": "A" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -707,207 +430,15 @@
         }
       }
     },
-    "/api/qrcode-gen": {
-      "get": {
-        "operationId": "generateQrCodeUrl",
-        "summary": "Generate QR code image URL",
-        "description": "Generate a QR code and return the image URL. Costs 0.003 USDC.",
-        "parameters": [
-          {
-            "name": "data",
-            "in": "query",
-            "required": true,
-            "description": "Data to encode (URL, text, etc.)",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "size",
-            "in": "query",
-            "description": "Image size in pixels (default 200)",
-            "schema": { "type": "integer", "default": 200 }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "QR code image URL", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/readability": {
-      "get": {
-        "operationId": "extractReadableContent",
-        "summary": "Extract clean text from web pages",
-        "description": "Extract the main content from any web page in clean, readable Markdown format. Costs 0.005 USDC.",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "description": "URL of the web page to extract content from",
-            "schema": { "type": "string", "format": "uri" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Extracted content", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/sentiment": {
-      "get": {
-        "operationId": "analyzeSentiment",
-        "summary": "AI sentiment analysis",
-        "description": "Analyze the sentiment of text using AI. Returns positive, negative, or neutral with confidence score. Costs 0.005 USDC.",
-        "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text to analyze",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Sentiment analysis result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/validate-email": {
-      "get": {
-        "operationId": "validateEmail",
-        "summary": "Email validation with MX verification",
-        "description": "Validate an email address format and check MX records. Costs 0.003 USDC.",
-        "parameters": [
-          {
-            "name": "email",
-            "in": "query",
-            "required": true,
-            "description": "Email address to validate",
-            "schema": { "type": "string", "format": "email" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Validation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/hash": {
-      "get": {
-        "operationId": "generateHash",
-        "summary": "Hash text with various algorithms",
-        "description": "Generate a hash of text using MD5, SHA-1, SHA-256, or SHA-512. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text to hash",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "algo",
-            "in": "query",
-            "description": "Hash algorithm (md5, sha1, sha256, sha512). Defaults to sha256.",
-            "schema": { "type": "string", "enum": ["md5", "sha1", "sha256", "sha512"], "default": "sha256" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Hash result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/uuid": {
-      "get": {
-        "operationId": "generateUuid",
-        "summary": "Generate UUID v4",
-        "description": "Generate a random UUID v4 identifier. Costs 0.001 USDC.",
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Generated UUID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/base64": {
-      "get": {
-        "operationId": "base64EncodeDecode",
-        "summary": "Base64 encode/decode",
-        "description": "Encode text to Base64 or decode Base64 to text. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Text to encode or Base64 string to decode",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "action",
-            "in": "query",
-            "description": "Action: encode or decode. Defaults to encode.",
-            "schema": { "type": "string", "enum": ["encode", "decode"], "default": "encode" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Base64 result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/password": {
-      "get": {
-        "operationId": "generatePassword",
-        "summary": "Secure password generator",
-        "description": "Generate a cryptographically secure random password. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "length",
-            "in": "query",
-            "description": "Password length (8-128). Defaults to 16.",
-            "schema": { "type": "integer", "minimum": 8, "maximum": 128, "default": 16 }
-          },
-          {
-            "name": "symbols",
-            "in": "query",
-            "description": "Include symbols (true/false). Defaults to true.",
-            "schema": { "type": "boolean", "default": true }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Generated password", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
     "/api/currency": {
       "get": {
         "operationId": "convertCurrency",
-        "summary": "Currency conversion (ECB rates)",
+        "summary": "Currency conversion ECB rates (0.005 USDC)",
         "description": "Convert between currencies using European Central Bank exchange rates. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "amount",
-            "in": "query",
-            "required": true,
-            "description": "Amount to convert",
-            "schema": { "type": "number" }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "required": true,
-            "description": "Source currency code (e.g., USD, EUR, GBP)",
-            "schema": { "type": "string" }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "required": true,
-            "description": "Target currency code (e.g., EUR, JPY, CHF)",
-            "schema": { "type": "string" }
-          }
+          { "name": "amount", "in": "query", "required": true, "description": "Amount to convert", "schema": { "type": "number" } },
+          { "name": "from", "in": "query", "required": true, "description": "Source currency (e.g., USD, EUR)", "schema": { "type": "string" } },
+          { "name": "to", "in": "query", "required": true, "description": "Target currency (e.g., EUR, JPY)", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
@@ -915,155 +446,17 @@
         }
       }
     },
-    "/api/timestamp": {
+    "/api/sentiment": {
       "get": {
-        "operationId": "convertTimestamp",
-        "summary": "Timestamp converter",
-        "description": "Convert between Unix timestamps and ISO date strings. Costs 0.001 USDC.",
+        "operationId": "analyzeSentiment",
+        "summary": "AI sentiment analysis (0.005 USDC)",
+        "description": "Analyze the sentiment of text using AI. Returns positive, negative, or neutral with confidence score. Costs 0.005 USDC.",
         "parameters": [
-          {
-            "name": "ts",
-            "in": "query",
-            "description": "Unix timestamp (seconds) to convert to ISO date",
-            "schema": { "type": "integer" }
-          },
-          {
-            "name": "date",
-            "in": "query",
-            "description": "ISO date string to convert to Unix timestamp",
-            "schema": { "type": "string" }
-          }
+          { "name": "text", "in": "query", "required": true, "description": "Text to analyze", "schema": { "type": "string" } }
         ],
         "responses": {
           "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Timestamp conversion result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/lorem": {
-      "get": {
-        "operationId": "generateLoremIpsum",
-        "summary": "Lorem ipsum generator",
-        "description": "Generate lorem ipsum placeholder text. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "paragraphs",
-            "in": "query",
-            "description": "Number of paragraphs (1-10). Defaults to 3.",
-            "schema": { "type": "integer", "minimum": 1, "maximum": 10, "default": 3 }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Lorem ipsum text", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/headers": {
-      "get": {
-        "operationId": "getHttpHeaders",
-        "summary": "HTTP headers inspection",
-        "description": "Fetch and display the HTTP response headers for any URL. Costs 0.003 USDC.",
-        "parameters": [
-          {
-            "name": "url",
-            "in": "query",
-            "required": true,
-            "description": "URL to inspect headers",
-            "schema": { "type": "string", "format": "uri" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "HTTP headers", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/markdown": {
-      "get": {
-        "operationId": "markdownToHtml",
-        "summary": "Markdown to HTML converter",
-        "description": "Convert Markdown text to HTML. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "text",
-            "in": "query",
-            "required": true,
-            "description": "Markdown text to convert",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "HTML output", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/color": {
-      "get": {
-        "operationId": "convertColor",
-        "summary": "Color format converter",
-        "description": "Convert between color formats (HEX, RGB, HSL). Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "hex",
-            "in": "query",
-            "required": true,
-            "description": "Hex color code (with or without #, e.g., FF5733 or #FF5733)",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Color conversions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/json-validate": {
-      "post": {
-        "operationId": "validateJson",
-        "summary": "JSON validator",
-        "description": "Validate a JSON string and return parsed result or error details. Costs 0.001 USDC.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["json"],
-                "properties": {
-                  "json": {
-                    "type": "string",
-                    "description": "JSON string to validate"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Validation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
-        }
-      }
-    },
-    "/api/useragent": {
-      "get": {
-        "operationId": "parseUserAgent",
-        "summary": "User agent parser",
-        "description": "Parse a user agent string to extract browser, OS, and device info. Costs 0.001 USDC.",
-        "parameters": [
-          {
-            "name": "ua",
-            "in": "query",
-            "required": true,
-            "description": "User agent string to parse",
-            "schema": { "type": "string" }
-          }
-        ],
-        "responses": {
-          "402": { "$ref": "#/components/responses/PaymentRequired" },
-          "200": { "description": "Parsed user agent info", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
+          "200": { "description": "Sentiment analysis result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuccessResponse" } } } }
         }
       }
     }
@@ -1077,10 +470,7 @@
           "description": { "type": "string" },
           "network": { "type": "string", "example": "Base" },
           "total_services": { "type": "integer", "example": 70 },
-          "endpoints": {
-            "type": "object",
-            "description": "Map of endpoint paths to descriptions with prices"
-          },
+          "endpoints": { "type": "object", "description": "Map of all 41 endpoint paths to descriptions with prices" },
           "protocol": { "type": "string", "example": "x402 - HTTP 402 Payment Required" }
         }
       },
@@ -1089,17 +479,7 @@
         "properties": {
           "status": { "type": "string", "example": "ok" },
           "network": { "type": "string", "example": "Base" },
-          "networks": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "network": { "type": "string" },
-                "label": { "type": "string" },
-                "chainId": { "type": "integer" }
-              }
-            }
-          },
+          "networks": { "type": "array", "items": { "type": "object", "properties": { "network": { "type": "string" }, "label": { "type": "string" }, "chainId": { "type": "integer" } } } },
           "timestamp": { "type": "string", "format": "date-time" }
         }
       },
@@ -1111,19 +491,7 @@
           "total": { "type": "integer" },
           "online": { "type": "integer" },
           "offline": { "type": "integer" },
-          "endpoints": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "endpoint": { "type": "string" },
-                "label": { "type": "string" },
-                "status": { "type": "string", "enum": ["online", "offline"] },
-                "latency": { "type": "integer" },
-                "http_status": { "type": "integer" }
-              }
-            }
-          }
+          "endpoints": { "type": "array", "items": { "type": "object", "properties": { "endpoint": { "type": "string" }, "label": { "type": "string" }, "status": { "type": "string", "enum": ["online", "offline"] }, "latency": { "type": "integer" }, "http_status": { "type": "integer" } } } }
         }
       },
       "UptimeResponse": {
@@ -1131,33 +499,7 @@
         "properties": {
           "success": { "type": "boolean" },
           "period": { "type": "string" },
-          "endpoints": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "endpoint": { "type": "string" },
-                "label": { "type": "string" },
-                "uptime_24h": { "type": "number" },
-                "uptime_7d": { "type": "number" },
-                "uptime_30d": { "type": "number" },
-                "total_checks": { "type": "integer" }
-              }
-            }
-          }
-        }
-      },
-      "Service": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string" },
-          "name": { "type": "string" },
-          "description": { "type": "string" },
-          "endpoint": { "type": "string", "format": "uri" },
-          "price": { "type": "number" },
-          "chain": { "type": "string" },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "created_at": { "type": "string", "format": "date-time" }
+          "endpoints": { "type": "array", "items": { "type": "object", "properties": { "endpoint": { "type": "string" }, "label": { "type": "string" }, "uptime_24h": { "type": "number" }, "uptime_7d": { "type": "number" }, "uptime_30d": { "type": "number" }, "total_checks": { "type": "integer" } } } }
         }
       },
       "AgentInfo": {
@@ -1210,9 +552,7 @@
         "description": "Payment required. Send USDC on Base to the specified wallet address, then retry with X-Payment-TxHash header.",
         "content": {
           "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/PaymentRequired"
-            }
+            "schema": { "$ref": "#/components/schemas/PaymentRequired" }
           }
         }
       }

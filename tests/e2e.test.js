@@ -764,9 +764,9 @@ describe('OpenAPI Spec (GPT Actions)', () => {
     const data = await res.json();
 
     const paths = Object.keys(data.paths);
-    // Free: /, /health, /api/status, /api/status/uptime, /api/services, /api/agent/{agentId}
-    // Paid: 41 wrapper endpoints
-    assert.ok(paths.length >= 47, `Expected at least 47 paths, got ${paths.length}`);
+    // Free: /, /health, /api/status, /api/status/uptime, /api/agent/{agentId}
+    // Paid: 25 most popular wrapper endpoints (OpenAI GPT Actions limit: 30 operations)
+    assert.ok(paths.length >= 30, `Expected at least 30 paths, got ${paths.length}`);
     assert.ok(data.paths['/api/weather'], 'Missing /api/weather');
     assert.ok(data.paths['/api/crypto'], 'Missing /api/crypto');
     assert.ok(data.paths['/api/image'], 'Missing /api/image');
