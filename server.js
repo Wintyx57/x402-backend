@@ -112,10 +112,10 @@ app.use(express.json({ limit: '10kb' }));
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status'),
+    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status') || req.headers['x-payment-txhash'],
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
@@ -129,10 +129,10 @@ const dashboardApiLimiter = rateLimit({
 
 const paidEndpointLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 30,
+    max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.headers['x-monitor'] === 'internal',
+    skip: (req) => req.headers['x-monitor'] === 'internal' || req.headers['x-payment-txhash'],
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
 });
 
