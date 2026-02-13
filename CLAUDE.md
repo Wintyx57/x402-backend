@@ -141,7 +141,7 @@ x402-bazaar-cli/
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
-│   │                      # 41 endpoints natifs (x402-native)
+│   │                      # 61 endpoints natifs (x402-native)
 │   │                      # routes/, lib/ modules (health, services, register, dashboard, wrappers, logger, chains, activity, payment)
 │   ├── routes/           # Modularisation routes
 │   │   ├── health.js     # GET /health
@@ -157,16 +157,16 @@ HACKATHON/
 │   │   ├── activity.js   # Activity tracking
 │   │   ├── payment.js    # Payment verification (with budget integration)
 │   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
-│   │   ├── monitor.js    # Monitoring engine (41 endpoints, 5min checks, Telegram alerts)
+│   │   ├── monitor.js    # Monitoring engine (61 endpoints, 5min checks, Telegram alerts)
 │   │   └── telegram-bot.js # Interactive Telegram bot (6 commands, polling, secured by chat_id)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
-│   ├── seed-wrappers.js  # Script pour injecter les 41 wrappers natifs dans Supabase
+│   ├── seed-wrappers.js  # Script pour injecter les 61 wrappers natifs dans Supabase
 │   ├── setup-activity.js # Script pour verifier/creer la table activity
 │   ├── create-wallet.js  # Utilitaire creation wallet
-│   ├── API_WRAPPERS.md   # Documentation des 41 endpoints wrapper
+│   ├── API_WRAPPERS.md   # Documentation des 61 endpoints wrapper
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
@@ -235,7 +235,7 @@ HACKATHON/
     │   └── pages/
     │       ├── Home.jsx           # Hero glow orbs, CountUp stats, value prop (4 cards), social proof, top services
     │       ├── Services.jsx       # Grid services + search + filtres avances (chain, prix)
-    │       ├── Register.jsx       # Form glass + USDC payment flow + spinner + i18n
+    │       ├── Register.jsx       # Form glass + USDC payment + live preview card + category/method selectors + checklist
     │       ├── Developers.jsx     # Doc API glass + scroll reveal + i18n
     │       ├── Integrate.jsx      # Guide integration agent (JS + Python + LangChain)
     │       ├── MCP.jsx            # Guide MCP (CLI quick install + manual)
@@ -286,7 +286,7 @@ HACKATHON/
    - Verification on-chain des paiements USDC sur Base mainnet
    - 70+ services en base Supabase
    - Backend refactoring en modules (routes/, lib/)
-   - Monitoring: 41 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
+   - Monitoring: 61 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
    - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
    - GPT Actions: Custom GPT with 30 operations (OpenAPI 3.1 spec)
    - Telegram bot: @x402_monitoradmin_bot (6 interactive commands, polling, secured by chat_id)
@@ -313,7 +313,7 @@ HACKATHON/
    - Rate limiting : 3 tiers (general 500/15min, paid 120/min, register 10/hr) — paid requests (X-Payment-TxHash) bypass rate limits
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
 
-3. **Frontend React — 17 pages deployees (+3 en cours)** :
+3. **Frontend React — 20 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
    - CountUp animations sur les stats
    - Compatible With section (5 logos)
@@ -322,8 +322,7 @@ HACKATHON/
    - i18n FR/EN avec toggle (137+ cles pour blog bilingue)
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - 17 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground
-   - 3 pages wirees et live : /analytics, /compare, /for-providers
+   - 20 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground, /analytics, /compare, /for-providers
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
    - Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen)
@@ -440,6 +439,12 @@ VITE_NETWORK=mainnet
 - [x] Home.jsx: CTA "View Analytics" dans hero
 - [x] Budget Guardian (backend: max spend caps par agent, alerts 50/75/90%) — DONE session 20
 
+*P1.6 — Frontend Polish & Provider Onboarding (sessions 22-23):*
+- [x] Accessibility audit + fixes: ConnectButton (Escape key + aria-haspopup), ServiceCard (alt text), FAQ (aria-controls on 18 items)
+- [x] Frontend polish: Navbar reorg, Footer reorg, outdated values fix (41→61, 333→416), i18n NotFound/Demos
+- [x] Register.jsx enhanced: category dropdown (7 cats), HTTP method toggle, live preview card, readiness checklist, i18n ~30 keys EN+FR
+- [x] Backend values sync: monitoring.js, dashboard.html, openapi.json, telegram-bot.js, server.js, e2e.test.js
+
 *P2 — Scale (long terme):*
 - [ ] Solana support (multi-chain)
 - [ ] Batch payments / Subscription tiers
@@ -516,4 +521,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 416 tests, 6 integrations, 61 APIs all MCP-verified)*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 P1.6 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 416 tests, 6 integrations, 61 APIs, enhanced Register with live preview, a11y audit 9.5/10)*
