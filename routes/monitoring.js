@@ -120,7 +120,7 @@ function createMonitoringRouter(supabase) {
         overall: status?.overall || 'unknown',
         lastCheck: status?.lastCheck || null,
       },
-      integrations: 4,
+      integrations: 5,
       tests: 333,
     });
   });
