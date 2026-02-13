@@ -1,10 +1,12 @@
-// routes/register.js — POST /register
+// routes/register.js — POST /register + auto-test on registration
 
 const express = require('express');
 const logger = require('../lib/logger');
+const { notifyAdmin } = require('../lib/telegram-bot');
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const URL_REGEX = /^https?:\/\/.+/;
+const AUTO_TEST_TIMEOUT = 10000; // 10s
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
@@ -65,6 +67,11 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         logger.info('Bazaar', `Nouveau service enregistre : "${name}" (${data[0].id})`);
         logActivity('register', `Nouveau service : "${name}" (${data[0].id.slice(0, 8)})`);
 
+        // Auto-test: ping the registered URL (fire-and-forget)
+        autoTestService(data[0], supabase).catch(err => {
+            logger.error('AutoTest', `Auto-test failed for "${name}": ${err.message}`);
+        });
+
         res.status(201).json({
             success: true,
             message: `Service "${name}" enregistre avec succes !`,
@@ -73,6 +80,67 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
     });
 
     return router;
+}
+
+// --- Auto-test: ping registered URL and notify admin ---
+async function autoTestService(service, supabase) {
+    const { name, url, id } = service;
+    const start = Date.now();
+
+    let status = 'unknown';
+    let httpStatus = 0;
+    let latency = 0;
+    let errorMsg = null;
+
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), AUTO_TEST_TIMEOUT);
+
+        const res = await fetch(url, {
+            method: 'GET',
+            signal: controller.signal,
+            headers: { 'User-Agent': 'x402-bazaar-autotest/1.0' },
+        });
+        clearTimeout(timeoutId);
+
+        latency = Date.now() - start;
+        httpStatus = res.status;
+        // 200, 402, 400, 403 = endpoint exists and responds
+        status = (httpStatus >= 200 && httpStatus < 500) ? 'reachable' : 'error';
+    } catch (err) {
+        latency = Date.now() - start;
+        errorMsg = err.name === 'AbortError' ? 'Timeout (10s)' : err.message;
+        status = 'unreachable';
+    }
+
+    // Update service verified status in Supabase (add verified_at + verified_status columns if they exist)
+    try {
+        await supabase
+            .from('services')
+            .update({ verified_status: status, verified_at: new Date().toISOString() })
+            .eq('id', id);
+    } catch {
+        // Column might not exist yet, that's OK
+    }
+
+    // Notify admin via Telegram
+    const emoji = status === 'reachable' ? '\u2705' : '\uD83D\uDD34';
+    const text = [
+        `${emoji} *Nouveau service enregistre*`,
+        ``,
+        `*Nom:* ${name}`,
+        `*URL:* \`${url}\``,
+        `*Auto-test:* ${status}`,
+        `*HTTP:* ${httpStatus || 'N/A'}`,
+        `*Latence:* ${latency}ms`,
+        errorMsg ? `*Erreur:* ${errorMsg}` : null,
+        ``,
+        `*ID:* \`${id.slice(0, 8)}...\``,
+    ].filter(Boolean).join('\n');
+
+    await notifyAdmin(text);
+
+    logger.info('AutoTest', `Service "${name}" (${id.slice(0, 8)}): ${status} (HTTP ${httpStatus}, ${latency}ms)`);
 }
 
 module.exports = createRegisterRouter;

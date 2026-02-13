@@ -11,7 +11,8 @@ const logger = require('./lib/logger');
 const { NETWORK, NETWORK_LABEL, CHAINS, DEFAULT_CHAIN_KEY } = require('./lib/chains');
 const { createActivityLogger } = require('./lib/activity');
 const { createPaymentSystem } = require('./lib/payment');
-const { startMonitor, stopMonitor } = require('./lib/monitor');
+const { startMonitor, stopMonitor, getStatus } = require('./lib/monitor');
+const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -215,12 +216,16 @@ const serverInstance = app.listen(PORT, async () => {
 
     // Start monitoring (checks localhost to also keep Render alive)
     startMonitor(`http://localhost:${PORT}`, supabase);
+
+    // Start Telegram bot (interactive commands)
+    startTelegramBot(supabase, getStatus);
 });
 
 // --- GRACEFUL SHUTDOWN ---
 function gracefulShutdown(signal) {
     console.log(`\n[Shutdown] ${signal} received. Closing server...`);
     stopMonitor();
+    stopTelegramBot();
     serverInstance.close(() => {
         console.log('[Shutdown] HTTP server closed.');
         process.exit(0);

@@ -40,8 +40,10 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
 
         // Solde USDC du wallet serveur (on-chain)
         let walletBalance = null;
+        let balanceError = null;
+        const walletAddr = process.env.WALLET_ADDRESS;
         try {
-            const balanceCall = '0x70a08231' + '000000000000000000000000' + process.env.WALLET_ADDRESS.slice(2).toLowerCase();
+            const balanceCall = '0x70a08231' + '000000000000000000000000' + walletAddr.slice(2).toLowerCase();
             const balRes = await fetchWithTimeout(RPC_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -50,19 +52,32 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
                     params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
                 })
             });
-            const { result } = await balRes.json();
-            if (result) walletBalance = Number(BigInt(result)) / 1e6;
-        } catch { /* ignore */ }
+            const rpcResponse = await balRes.json();
+            if (rpcResponse.error) {
+                balanceError = rpcResponse.error.message || 'RPC error';
+                logger.error('Balance', `RPC error: ${JSON.stringify(rpcResponse.error)}`);
+            } else if (rpcResponse.result && rpcResponse.result !== '0x') {
+                walletBalance = Number(BigInt(rpcResponse.result)) / 1e6;
+            } else {
+                walletBalance = 0;
+            }
+        } catch (err) {
+            balanceError = err.message;
+            logger.error('Balance', `Failed to read USDC balance: ${err.message}`);
+        }
 
-        const walletAddr = process.env.WALLET_ADDRESS;
         res.json({
             totalServices: count || 0,
             totalPayments,
             totalRevenue: Math.round(totalRevenue * 100) / 100,
             walletBalance,
+            walletFull: walletAddr || null,
             wallet: walletAddr ? `${walletAddr.slice(0, 6)}...${walletAddr.slice(-4)}` : null,
             network: NETWORK_LABEL,
-            explorer: EXPLORER_URL
+            explorer: EXPLORER_URL,
+            usdcContract: USDC_CONTRACT,
+            rpcUrl: RPC_URL,
+            ...(balanceError && { balanceError }),
         });
     });
 
@@ -147,9 +162,15 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
                         params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
                     })
                 });
-                const { result } = await balRes.json();
-                if (result) walletBalance = Number(BigInt(result)) / 1e6;
-            } catch { /* ignore */ }
+                const rpcResponse = await balRes.json();
+                if (rpcResponse.result && rpcResponse.result !== '0x') {
+                    walletBalance = Number(BigInt(rpcResponse.result)) / 1e6;
+                } else {
+                    walletBalance = 0;
+                }
+            } catch (err) {
+                logger.error('Analytics', `Balance read failed: ${err.message}`);
+            }
 
             // 5. Recent activity (last 10)
             let recentActivity = [];
