@@ -2023,6 +2023,964 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         });
     });
 
+    // ============================================================
+    // BATCH 3 — NEW HIGH-VALUE APIs (session 21)
+    // ============================================================
+
+    // --- NEWS / RSS FEED API (0.005 USDC) ---
+    router.get('/api/news', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "News API"), async (req, res) => {
+        const topic = (req.query.topic || req.query.q || '').trim().slice(0, 100);
+        const lang = (req.query.lang || 'en').trim().slice(0, 5);
+
+        if (!topic) {
+            return res.status(400).json({ error: "Parameter 'topic' required. Ex: /api/news?topic=artificial+intelligence" });
+        }
+
+        try {
+            // Use Google News RSS feed (free, no API key)
+            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(topic)}&hl=${encodeURIComponent(lang)}&gl=US&ceid=US:en`;
+            const rssRes = await fetchWithTimeout(rssUrl, { headers: { 'User-Agent': 'x402-bazaar/1.0' } }, 8000);
+            const xml = await rssRes.text();
+
+            // Parse RSS XML with regex (no extra deps)
+            const items = [];
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+            let match;
+            while ((match = itemRegex.exec(xml)) !== null && items.length < 10) {
+                const itemXml = match[1];
+                const getTag = (tag) => {
+                    const m = itemXml.match(new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?<\\/${tag}>`, 's'));
+                    return m ? m[1].trim() : '';
+                };
+                items.push({
+                    title: getTag('title'),
+                    link: getTag('link'),
+                    source: getTag('source'),
+                    published: getTag('pubDate')
+                });
+            }
+
+            if (items.length === 0) {
+                return res.status(404).json({ error: 'No news found for this topic', topic });
+            }
+
+            logActivity('api_call', `News API: "${topic}" -> ${items.length} articles`);
+            res.json({ success: true, topic, language: lang, count: items.length, articles: items });
+        } catch (err) {
+            logger.error('News API', err.message);
+            return res.status(500).json({ error: 'News API request failed' });
+        }
+    });
+
+    // --- STOCK PRICE API (0.005 USDC) ---
+    router.get('/api/stocks', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "Stock Price API"), async (req, res) => {
+        const symbol = (req.query.symbol || '').trim().toUpperCase().slice(0, 10);
+
+        if (!symbol) {
+            return res.status(400).json({ error: "Parameter 'symbol' required. Ex: /api/stocks?symbol=AAPL" });
+        }
+        if (!/^[A-Z0-9.]{1,10}$/.test(symbol)) {
+            return res.status(400).json({ error: 'Invalid symbol format (letters, digits, dots only, max 10 chars)' });
+        }
+
+        try {
+            // Yahoo Finance v8 public endpoint (no API key)
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+            const apiRes = await fetchWithTimeout(url, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
+            }, 8000);
+            const data = await apiRes.json();
+
+            const result = data?.chart?.result?.[0];
+            if (!result) {
+                return res.status(404).json({ error: 'Symbol not found', symbol });
+            }
+
+            const meta = result.meta;
+            const quotes = result.indicators?.quote?.[0] || {};
+            const closes = quotes.close || [];
+            const lastPrice = meta.regularMarketPrice || closes[closes.length - 1];
+            const prevClose = meta.chartPreviousClose || meta.previousClose;
+            const change = lastPrice && prevClose ? +(lastPrice - prevClose).toFixed(2) : null;
+            const changePercent = lastPrice && prevClose ? +((change / prevClose) * 100).toFixed(2) : null;
+
+            logActivity('api_call', `Stock Price API: ${symbol} -> $${lastPrice}`);
+            res.json({
+                success: true,
+                symbol: meta.symbol || symbol,
+                name: meta.shortName || meta.longName || symbol,
+                currency: meta.currency || 'USD',
+                price: lastPrice,
+                previous_close: prevClose,
+                change,
+                change_percent: changePercent,
+                market_state: meta.marketState || 'UNKNOWN',
+                exchange: meta.exchangeName || 'UNKNOWN'
+            });
+        } catch (err) {
+            logger.error('Stock Price API', err.message);
+            return res.status(500).json({ error: 'Stock Price API request failed' });
+        }
+    });
+
+    // --- REDDIT API (0.005 USDC) ---
+    router.get('/api/reddit', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "Reddit API"), async (req, res) => {
+        const subreddit = (req.query.subreddit || req.query.sub || '').trim().replace(/^r\//, '').slice(0, 50);
+        const sort = ['hot', 'new', 'top', 'rising'].includes(req.query.sort) ? req.query.sort : 'hot';
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 25);
+
+        if (!subreddit) {
+            return res.status(400).json({ error: "Parameter 'subreddit' required. Ex: /api/reddit?subreddit=programming&sort=hot&limit=10" });
+        }
+        if (!/^[a-zA-Z0-9_]{2,50}$/.test(subreddit)) {
+            return res.status(400).json({ error: 'Invalid subreddit name' });
+        }
+
+        try {
+            const url = `https://www.reddit.com/r/${encodeURIComponent(subreddit)}/${sort}.json?limit=${limit}&raw_json=1`;
+            const apiRes = await fetchWithTimeout(url, {
+                headers: { 'User-Agent': 'x402-bazaar/1.0 (API marketplace)' }
+            }, 8000);
+            const data = await apiRes.json();
+
+            if (data.error || !data.data) {
+                return res.status(404).json({ error: 'Subreddit not found or private', subreddit });
+            }
+
+            const posts = (data.data.children || []).map(c => ({
+                title: c.data.title,
+                author: c.data.author,
+                score: c.data.score,
+                url: c.data.url,
+                permalink: `https://reddit.com${c.data.permalink}`,
+                comments: c.data.num_comments,
+                created_utc: c.data.created_utc,
+                selftext: (c.data.selftext || '').slice(0, 500)
+            }));
+
+            logActivity('api_call', `Reddit API: r/${subreddit} (${sort}) -> ${posts.length} posts`);
+            res.json({ success: true, subreddit, sort, count: posts.length, posts });
+        } catch (err) {
+            logger.error('Reddit API', err.message);
+            return res.status(500).json({ error: 'Reddit API request failed' });
+        }
+    });
+
+    // --- HACKER NEWS API (0.003 USDC) ---
+    router.get('/api/hn', paidEndpointLimiter, paymentMiddleware(8000, 0.003, "Hacker News API"), async (req, res) => {
+        const type = ['top', 'new', 'best', 'ask', 'show', 'job'].includes(req.query.type) ? req.query.type : 'top';
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 30);
+
+        try {
+            const idsUrl = `https://hacker-news.firebaseio.com/v0/${type}stories.json`;
+            const idsRes = await fetchWithTimeout(idsUrl, {}, 5000);
+            const ids = await idsRes.json();
+
+            const topIds = ids.slice(0, limit);
+            const stories = await Promise.all(topIds.map(async (id) => {
+                try {
+                    const storyRes = await fetchWithTimeout(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, {}, 3000);
+                    const story = await storyRes.json();
+                    return {
+                        id: story.id,
+                        title: story.title,
+                        url: story.url || null,
+                        author: story.by,
+                        score: story.score,
+                        comments: story.descendants || 0,
+                        time: story.time,
+                        hn_url: `https://news.ycombinator.com/item?id=${story.id}`
+                    };
+                } catch { return null; }
+            }));
+
+            const validStories = stories.filter(Boolean);
+            logActivity('api_call', `Hacker News API: ${type} -> ${validStories.length} stories`);
+            res.json({ success: true, type, count: validStories.length, stories: validStories });
+        } catch (err) {
+            logger.error('Hacker News API', err.message);
+            return res.status(500).json({ error: 'Hacker News API request failed' });
+        }
+    });
+
+    // --- YOUTUBE VIDEO INFO API (0.005 USDC) ---
+    router.get('/api/youtube', paidEndpointLimiter, paymentMiddleware(8000, 0.005, "YouTube Info API"), async (req, res) => {
+        const input = (req.query.url || req.query.id || '').trim().slice(0, 200);
+
+        if (!input) {
+            return res.status(400).json({ error: "Parameter 'url' or 'id' required. Ex: /api/youtube?url=https://youtube.com/watch?v=dQw4w9WgXcQ" });
+        }
+
+        // Extract video ID
+        let videoId = input;
+        const urlMatch = input.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/);
+        if (urlMatch) videoId = urlMatch[1];
+        if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId)) {
+            return res.status(400).json({ error: 'Invalid YouTube video ID or URL' });
+        }
+
+        try {
+            // Use oembed (free, no API key)
+            const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+            const apiRes = await fetchWithTimeout(oembedUrl, {}, 5000);
+            if (!apiRes.ok) {
+                return res.status(404).json({ error: 'Video not found or private', video_id: videoId });
+            }
+            const data = await apiRes.json();
+
+            logActivity('api_call', `YouTube Info API: ${videoId}`);
+            res.json({
+                success: true,
+                video_id: videoId,
+                title: data.title,
+                author: data.author_name,
+                author_url: data.author_url,
+                thumbnail: data.thumbnail_url,
+                width: data.width,
+                height: data.height,
+                watch_url: `https://www.youtube.com/watch?v=${videoId}`,
+                embed_url: `https://www.youtube.com/embed/${videoId}`
+            });
+        } catch (err) {
+            logger.error('YouTube Info API', err.message);
+            return res.status(500).json({ error: 'YouTube Info API request failed' });
+        }
+    });
+
+    // --- WHOIS DOMAIN API (0.005 USDC) ---
+    router.get('/api/whois', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "WHOIS API"), async (req, res) => {
+        const domain = (req.query.domain || '').trim().toLowerCase().slice(0, 253);
+
+        if (!domain) {
+            return res.status(400).json({ error: "Parameter 'domain' required. Ex: /api/whois?domain=example.com" });
+        }
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z]{2,})+$/.test(domain)) {
+            return res.status(400).json({ error: 'Invalid domain format' });
+        }
+
+        try {
+            // Use RDAP (successor to WHOIS, free, JSON)
+            const rdapUrl = `https://rdap.org/domain/${encodeURIComponent(domain)}`;
+            const apiRes = await fetchWithTimeout(rdapUrl, {
+                headers: { 'Accept': 'application/rdap+json' }
+            }, 10000);
+
+            if (!apiRes.ok) {
+                return res.status(404).json({ error: 'Domain not found in RDAP', domain });
+            }
+            const data = await apiRes.json();
+
+            const events = data.events || [];
+            const getEvent = (action) => (events.find(e => e.eventAction === action) || {}).eventDate || null;
+            const nameservers = (data.nameservers || []).map(ns => ns.ldhName).filter(Boolean);
+            const statuses = data.status || [];
+
+            logActivity('api_call', `WHOIS API: ${domain}`);
+            res.json({
+                success: true,
+                domain: data.ldhName || domain,
+                status: statuses,
+                registered: getEvent('registration'),
+                expires: getEvent('expiration'),
+                last_updated: getEvent('last changed'),
+                nameservers,
+                registrar: data.entities?.find(e => e.roles?.includes('registrar'))?.vcardArray?.[1]?.find(v => v[0] === 'fn')?.[3] || null
+            });
+        } catch (err) {
+            logger.error('WHOIS API', err.message);
+            return res.status(500).json({ error: 'WHOIS API request failed' });
+        }
+    });
+
+    // --- SSL CERTIFICATE CHECK API (0.003 USDC) ---
+    router.get('/api/ssl-check', paidEndpointLimiter, paymentMiddleware(10000, 0.003, "SSL Check API"), async (req, res) => {
+        const hostname = (req.query.domain || req.query.host || '').trim().toLowerCase().slice(0, 253);
+
+        if (!hostname) {
+            return res.status(400).json({ error: "Parameter 'domain' required. Ex: /api/ssl-check?domain=google.com" });
+        }
+        if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/.test(hostname)) {
+            return res.status(400).json({ error: 'Invalid domain format' });
+        }
+
+        try {
+            const tls = require('tls');
+            const socket = tls.connect(443, hostname, { servername: hostname, timeout: 8000 });
+
+            const result = await new Promise((resolve, reject) => {
+                socket.on('secureConnect', () => {
+                    const cert = socket.getPeerCertificate();
+                    socket.destroy();
+                    if (!cert || !cert.subject) {
+                        return reject(new Error('No certificate'));
+                    }
+                    const now = Date.now();
+                    const validFrom = new Date(cert.valid_from);
+                    const validTo = new Date(cert.valid_to);
+                    const daysRemaining = Math.floor((validTo - now) / 86400000);
+
+                    resolve({
+                        subject: cert.subject.CN || cert.subject.O || hostname,
+                        issuer: cert.issuer?.O || cert.issuer?.CN || 'Unknown',
+                        valid_from: validFrom.toISOString(),
+                        valid_to: validTo.toISOString(),
+                        days_remaining: daysRemaining,
+                        is_valid: daysRemaining > 0,
+                        serial_number: cert.serialNumber,
+                        fingerprint: cert.fingerprint256 || cert.fingerprint,
+                        san: (cert.subjectaltname || '').split(', ').map(s => s.replace('DNS:', ''))
+                    });
+                });
+                socket.on('error', reject);
+                socket.on('timeout', () => { socket.destroy(); reject(new Error('Connection timeout')); });
+            });
+
+            logActivity('api_call', `SSL Check API: ${hostname} -> ${result.days_remaining} days`);
+            res.json({ success: true, domain: hostname, certificate: result });
+        } catch (err) {
+            logger.error('SSL Check API', err.message);
+            return res.status(500).json({ error: 'SSL check failed', domain: hostname, details: err.message });
+        }
+    });
+
+    // --- REGEX TESTER API (0.001 USDC) ---
+    router.get('/api/regex', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Regex Tester API"), async (req, res) => {
+        const pattern = (req.query.pattern || '').slice(0, 500);
+        const text = (req.query.text || '').slice(0, 5000);
+        const flags = (req.query.flags || 'g').slice(0, 10);
+
+        if (!pattern || !text) {
+            return res.status(400).json({ error: "Parameters 'pattern' and 'text' required. Ex: /api/regex?pattern=\\d+&text=abc123def456&flags=g" });
+        }
+
+        try {
+            // Validate flags
+            if (!/^[gimsuy]*$/.test(flags)) {
+                return res.status(400).json({ error: 'Invalid flags. Allowed: g, i, m, s, u, y' });
+            }
+            const regex = new RegExp(pattern, flags);
+            const matches = [];
+            let m;
+            let safety = 0;
+            if (flags.includes('g')) {
+                while ((m = regex.exec(text)) !== null && safety < 100) {
+                    matches.push({ match: m[0], index: m.index, groups: m.slice(1) });
+                    safety++;
+                    if (m.index === regex.lastIndex) regex.lastIndex++;
+                }
+            } else {
+                m = regex.exec(text);
+                if (m) matches.push({ match: m[0], index: m.index, groups: m.slice(1) });
+            }
+
+            logActivity('api_call', `Regex Tester API: /${pattern}/${flags} -> ${matches.length} matches`);
+            res.json({ success: true, pattern, flags, text_length: text.length, match_count: matches.length, matches });
+        } catch (err) {
+            return res.status(400).json({ error: 'Invalid regex pattern', details: err.message });
+        }
+    });
+
+    // --- TEXT DIFF API (0.001 USDC) ---
+    router.get('/api/diff', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "Text Diff API"), async (req, res) => {
+        const text1 = (req.query.text1 || '');
+        const text2 = (req.query.text2 || '');
+
+        if (!text1 && !text2) {
+            return res.status(400).json({ error: "Parameters 'text1' and 'text2' required. Ex: /api/diff?text1=hello+world&text2=hello+earth" });
+        }
+        if (text1.length > 10000 || text2.length > 10000) {
+            return res.status(400).json({ error: 'Texts too long (max 10000 chars each)' });
+        }
+
+        // Simple line-by-line diff (no external deps)
+        const lines1 = text1.split('\n');
+        const lines2 = text2.split('\n');
+        const changes = [];
+        const maxLen = Math.max(lines1.length, lines2.length);
+
+        for (let i = 0; i < maxLen; i++) {
+            const l1 = lines1[i];
+            const l2 = lines2[i];
+            if (l1 === undefined) {
+                changes.push({ line: i + 1, type: 'added', content: l2 });
+            } else if (l2 === undefined) {
+                changes.push({ line: i + 1, type: 'removed', content: l1 });
+            } else if (l1 !== l2) {
+                changes.push({ line: i + 1, type: 'modified', old: l1, new: l2 });
+            }
+        }
+
+        const identical = changes.length === 0;
+        logActivity('api_call', `Text Diff API: ${lines1.length} vs ${lines2.length} lines -> ${changes.length} changes`);
+        res.json({
+            success: true,
+            identical,
+            lines_text1: lines1.length,
+            lines_text2: lines2.length,
+            changes_count: changes.length,
+            changes
+        });
+    });
+
+    // --- MATH EXPRESSION API (0.001 USDC) ---
+    router.get('/api/math', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Math Expression API"), async (req, res) => {
+        const expr = (req.query.expr || req.query.expression || '').trim().slice(0, 500);
+
+        if (!expr) {
+            return res.status(400).json({ error: "Parameter 'expr' required. Ex: /api/math?expr=2*pi*5+sqrt(16)" });
+        }
+
+        try {
+            // Safe math evaluation (no eval!) — support basic math + functions
+            const sanitized = expr
+                .replace(/\s+/g, '')
+                .replace(/pi/gi, String(Math.PI))
+                .replace(/e(?![a-z])/gi, String(Math.E))
+                .replace(/sqrt\(([^)]+)\)/gi, (_, n) => String(Math.sqrt(parseFloat(n))))
+                .replace(/abs\(([^)]+)\)/gi, (_, n) => String(Math.abs(parseFloat(n))))
+                .replace(/ceil\(([^)]+)\)/gi, (_, n) => String(Math.ceil(parseFloat(n))))
+                .replace(/floor\(([^)]+)\)/gi, (_, n) => String(Math.floor(parseFloat(n))))
+                .replace(/round\(([^)]+)\)/gi, (_, n) => String(Math.round(parseFloat(n))))
+                .replace(/log\(([^)]+)\)/gi, (_, n) => String(Math.log(parseFloat(n))))
+                .replace(/log10\(([^)]+)\)/gi, (_, n) => String(Math.log10(parseFloat(n))))
+                .replace(/sin\(([^)]+)\)/gi, (_, n) => String(Math.sin(parseFloat(n))))
+                .replace(/cos\(([^)]+)\)/gi, (_, n) => String(Math.cos(parseFloat(n))))
+                .replace(/tan\(([^)]+)\)/gi, (_, n) => String(Math.tan(parseFloat(n))))
+                .replace(/\^/g, '**');
+
+            // Only allow digits, operators, dots, parens
+            if (/[^0-9+\-*/.()e ]/.test(sanitized)) {
+                return res.status(400).json({ error: 'Invalid expression. Allowed: numbers, +, -, *, /, ^, (), pi, e, sqrt, abs, ceil, floor, round, log, sin, cos, tan' });
+            }
+
+            // Use Function constructor (safer than eval, no access to scope)
+            const result = new Function(`"use strict"; return (${sanitized})`)();
+
+            if (typeof result !== 'number' || !isFinite(result)) {
+                return res.status(400).json({ error: 'Expression resulted in invalid number (Infinity or NaN)' });
+            }
+
+            logActivity('api_call', `Math Expression API: ${expr} = ${result}`);
+            res.json({ success: true, expression: expr, result, result_formatted: result.toLocaleString('en-US', { maximumFractionDigits: 10 }) });
+        } catch (err) {
+            return res.status(400).json({ error: 'Invalid math expression', details: err.message });
+        }
+    });
+
+    // ============================================================
+    // BATCH 4 — UTILITY APIs (session 21)
+    // ============================================================
+
+    // --- UNIT CONVERTER API (0.001 USDC) ---
+    router.get('/api/unit-convert', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Unit Converter API"), async (req, res) => {
+        const value = parseFloat(req.query.value);
+        const from = (req.query.from || '').trim().toLowerCase();
+        const to = (req.query.to || '').trim().toLowerCase();
+
+        if (isNaN(value) || !from || !to) {
+            return res.status(400).json({ error: "Parameters 'value', 'from', 'to' required. Ex: /api/unit-convert?value=100&from=km&to=miles" });
+        }
+
+        // Conversion factors to base unit per category
+        const conversions = {
+            // Length (base: meters)
+            km: { base: 'm', factor: 1000 }, m: { base: 'm', factor: 1 }, cm: { base: 'm', factor: 0.01 },
+            mm: { base: 'm', factor: 0.001 }, miles: { base: 'm', factor: 1609.344 }, mi: { base: 'm', factor: 1609.344 },
+            yards: { base: 'm', factor: 0.9144 }, yd: { base: 'm', factor: 0.9144 },
+            feet: { base: 'm', factor: 0.3048 }, ft: { base: 'm', factor: 0.3048 },
+            inches: { base: 'm', factor: 0.0254 }, in: { base: 'm', factor: 0.0254 },
+            nm: { base: 'm', factor: 1852 },
+            // Weight (base: kg)
+            kg: { base: 'kg', factor: 1 }, g: { base: 'kg', factor: 0.001 }, mg: { base: 'kg', factor: 0.000001 },
+            lb: { base: 'kg', factor: 0.453592 }, lbs: { base: 'kg', factor: 0.453592 },
+            oz: { base: 'kg', factor: 0.0283495 }, ton: { base: 'kg', factor: 1000 },
+            // Temperature (special handling below)
+            c: { base: 'temp', factor: 0 }, f: { base: 'temp', factor: 0 }, k: { base: 'temp', factor: 0 },
+            celsius: { base: 'temp', factor: 0 }, fahrenheit: { base: 'temp', factor: 0 }, kelvin: { base: 'temp', factor: 0 },
+            // Volume (base: liters)
+            l: { base: 'l', factor: 1 }, ml: { base: 'l', factor: 0.001 },
+            gal: { base: 'l', factor: 3.78541 }, gallon: { base: 'l', factor: 3.78541 },
+            qt: { base: 'l', factor: 0.946353 }, pt: { base: 'l', factor: 0.473176 },
+            cup: { base: 'l', factor: 0.236588 }, floz: { base: 'l', factor: 0.0295735 },
+            // Speed (base: m/s)
+            'km/h': { base: 'speed', factor: 0.277778 }, 'mph': { base: 'speed', factor: 0.44704 },
+            'm/s': { base: 'speed', factor: 1 }, knots: { base: 'speed', factor: 0.514444 },
+            // Data (base: bytes)
+            b: { base: 'data', factor: 1 }, kb: { base: 'data', factor: 1024 },
+            mb: { base: 'data', factor: 1048576 }, gb: { base: 'data', factor: 1073741824 },
+            tb: { base: 'data', factor: 1099511627776 }
+        };
+
+        const fromUnit = conversions[from];
+        const toUnit = conversions[to];
+
+        if (!fromUnit || !toUnit) {
+            const supported = Object.keys(conversions).join(', ');
+            return res.status(400).json({ error: `Unknown unit. Supported: ${supported}` });
+        }
+
+        if (fromUnit.base !== toUnit.base) {
+            return res.status(400).json({ error: `Cannot convert between different unit types (${from} -> ${to})` });
+        }
+
+        let result;
+        const fromNorm = from.replace('celsius', 'c').replace('fahrenheit', 'f').replace('kelvin', 'k');
+        const toNorm = to.replace('celsius', 'c').replace('fahrenheit', 'f').replace('kelvin', 'k');
+
+        if (fromUnit.base === 'temp') {
+            // Temperature special conversion
+            let celsius;
+            if (fromNorm === 'c') celsius = value;
+            else if (fromNorm === 'f') celsius = (value - 32) * 5 / 9;
+            else if (fromNorm === 'k') celsius = value - 273.15;
+            else return res.status(400).json({ error: 'Invalid temperature unit' });
+
+            if (toNorm === 'c') result = celsius;
+            else if (toNorm === 'f') result = celsius * 9 / 5 + 32;
+            else if (toNorm === 'k') result = celsius + 273.15;
+            else return res.status(400).json({ error: 'Invalid temperature unit' });
+        } else {
+            // Standard conversion: value * fromFactor / toFactor
+            result = value * fromUnit.factor / toUnit.factor;
+        }
+
+        logActivity('api_call', `Unit Converter API: ${value} ${from} -> ${result} ${to}`);
+        res.json({ success: true, value, from, to, result: +result.toFixed(10), formula: `${value} ${from} = ${+result.toFixed(10)} ${to}` });
+    });
+
+    // --- CSV TO JSON API (0.001 USDC) ---
+    router.get('/api/csv-to-json', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "CSV to JSON API"), async (req, res) => {
+        const csv = (req.query.csv || '');
+        const delimiter = req.query.delimiter || ',';
+        const hasHeader = req.query.header !== 'false';
+
+        if (!csv) {
+            return res.status(400).json({ error: "Parameter 'csv' required. Ex: /api/csv-to-json?csv=name,age\\nAlice,30\\nBob,25" });
+        }
+        if (csv.length > 50000) {
+            return res.status(400).json({ error: 'CSV too large (max 50KB)' });
+        }
+
+        try {
+            const lines = csv.split('\n').map(l => l.trim()).filter(Boolean);
+            if (lines.length === 0) {
+                return res.status(400).json({ error: 'Empty CSV input' });
+            }
+
+            const parseLine = (line) => {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                for (let i = 0; i < line.length; i++) {
+                    if (line[i] === '"') { inQuotes = !inQuotes; }
+                    else if (line[i] === delimiter && !inQuotes) { result.push(current.trim()); current = ''; }
+                    else { current += line[i]; }
+                }
+                result.push(current.trim());
+                return result;
+            };
+
+            let data;
+            if (hasHeader && lines.length > 1) {
+                const headers = parseLine(lines[0]);
+                data = lines.slice(1).map(line => {
+                    const values = parseLine(line);
+                    const obj = {};
+                    headers.forEach((h, i) => { obj[h] = values[i] || ''; });
+                    return obj;
+                });
+            } else {
+                data = lines.map(line => parseLine(line));
+            }
+
+            logActivity('api_call', `CSV to JSON API: ${lines.length} lines -> ${data.length} records`);
+            res.json({ success: true, rows: data.length, columns: hasHeader ? parseLine(lines[0]).length : (data[0] || []).length, data });
+        } catch (err) {
+            return res.status(400).json({ error: 'Failed to parse CSV', details: err.message });
+        }
+    });
+
+    // --- JWT DECODE API (0.001 USDC) ---
+    router.get('/api/jwt-decode', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "JWT Decode API"), async (req, res) => {
+        const token = (req.query.token || '').trim().slice(0, 10000);
+
+        if (!token) {
+            return res.status(400).json({ error: "Parameter 'token' required. Ex: /api/jwt-decode?token=eyJhbGciOiJIUzI1NiIs..." });
+        }
+
+        const parts = token.split('.');
+        if (parts.length !== 3) {
+            return res.status(400).json({ error: 'Invalid JWT format (expected 3 parts separated by dots)' });
+        }
+
+        try {
+            const decodeBase64Url = (str) => {
+                const padded = str.replace(/-/g, '+').replace(/_/g, '/');
+                return JSON.parse(Buffer.from(padded, 'base64').toString('utf8'));
+            };
+
+            const header = decodeBase64Url(parts[0]);
+            const payload = decodeBase64Url(parts[1]);
+
+            const now = Math.floor(Date.now() / 1000);
+            let expired = null;
+            let expires_in = null;
+            if (payload.exp) {
+                expired = now > payload.exp;
+                expires_in = payload.exp - now;
+            }
+
+            logActivity('api_call', `JWT Decode API: alg=${header.alg}`);
+            res.json({
+                success: true,
+                header,
+                payload,
+                expired,
+                expires_in_seconds: expires_in,
+                issued_at: payload.iat ? new Date(payload.iat * 1000).toISOString() : null,
+                expires_at: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
+                note: 'Signature NOT verified (decode only, no secret key)'
+            });
+        } catch (err) {
+            return res.status(400).json({ error: 'Failed to decode JWT', details: err.message });
+        }
+    });
+
+    // --- CRON EXPRESSION PARSER API (0.001 USDC) ---
+    router.get('/api/cron-parse', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Cron Parser API"), async (req, res) => {
+        const expr = (req.query.expr || req.query.expression || '').trim().slice(0, 200);
+
+        if (!expr) {
+            return res.status(400).json({ error: "Parameter 'expr' required. Ex: /api/cron-parse?expr=0 9 * * 1-5" });
+        }
+
+        const parts = expr.split(/\s+/);
+        if (parts.length < 5 || parts.length > 6) {
+            return res.status(400).json({ error: 'Invalid cron expression. Expected 5 fields: minute hour day month weekday (optional: second)' });
+        }
+
+        const fieldNames = parts.length === 6
+            ? ['second', 'minute', 'hour', 'day_of_month', 'month', 'day_of_week']
+            : ['minute', 'hour', 'day_of_month', 'month', 'day_of_week'];
+
+        const descriptions = {
+            minute: { range: '0-59', special: ', - * /' },
+            hour: { range: '0-23', special: ', - * /' },
+            day_of_month: { range: '1-31', special: ', - * / ?' },
+            month: { range: '1-12 or JAN-DEC', special: ', - * /' },
+            day_of_week: { range: '0-7 or SUN-SAT (0=7=Sunday)', special: ', - * / ?' },
+            second: { range: '0-59', special: ', - * /' }
+        };
+
+        const fields = {};
+        fieldNames.forEach((name, i) => {
+            fields[name] = { value: parts[parts.length === 6 ? i : i], ...descriptions[name] };
+        });
+
+        // Human-readable description
+        const min = fields.minute?.value || parts[0];
+        const hour = fields.hour?.value || parts[1];
+        let description = '';
+        if (min === '0' && hour === '0') description = 'At midnight every day';
+        else if (min === '0' && hour !== '*') description = `At ${hour}:00`;
+        else if (min !== '*' && hour !== '*') description = `At ${hour}:${min.padStart(2, '0')}`;
+        else if (min === '*' && hour === '*') description = 'Every minute';
+        else if (min.startsWith('*/')) description = `Every ${min.slice(2)} minutes`;
+        else description = `Cron: ${expr}`;
+
+        const dow = fields.day_of_week?.value || parts[parts.length === 6 ? 5 : 4];
+        if (dow === '1-5') description += ' (weekdays only)';
+        else if (dow === '0,6' || dow === '6,0') description += ' (weekends only)';
+
+        logActivity('api_call', `Cron Parser API: ${expr}`);
+        res.json({ success: true, expression: expr, fields, description, field_count: parts.length });
+    });
+
+    // --- PASSWORD STRENGTH API (0.001 USDC) ---
+    router.get('/api/password-strength', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Password Strength API"), async (req, res) => {
+        const password = (req.query.password || req.query.pw || '').slice(0, 200);
+
+        if (!password) {
+            return res.status(400).json({ error: "Parameter 'password' required. Ex: /api/password-strength?password=MyP@ssw0rd!" });
+        }
+
+        const checks = {
+            length: password.length,
+            has_lowercase: /[a-z]/.test(password),
+            has_uppercase: /[A-Z]/.test(password),
+            has_digits: /\d/.test(password),
+            has_special: /[^a-zA-Z0-9]/.test(password),
+            has_spaces: /\s/.test(password),
+            is_common: ['password', '123456', 'qwerty', 'admin', 'letmein', 'welcome', 'monkey', 'dragon',
+                '12345678', 'abc123', 'password1', 'iloveyou', 'trustno1', 'sunshine', 'princess',
+                'football', 'charlie', 'shadow', 'master', '1234567890'].includes(password.toLowerCase())
+        };
+
+        // Score calculation (0-100)
+        let score = 0;
+        if (checks.length >= 8) score += 20;
+        if (checks.length >= 12) score += 10;
+        if (checks.length >= 16) score += 10;
+        if (checks.has_lowercase) score += 10;
+        if (checks.has_uppercase) score += 10;
+        if (checks.has_digits) score += 10;
+        if (checks.has_special) score += 15;
+        if (!checks.is_common) score += 15;
+
+        // Entropy estimation (bits)
+        let charsetSize = 0;
+        if (checks.has_lowercase) charsetSize += 26;
+        if (checks.has_uppercase) charsetSize += 26;
+        if (checks.has_digits) charsetSize += 10;
+        if (checks.has_special) charsetSize += 32;
+        const entropy = charsetSize > 0 ? +(checks.length * Math.log2(charsetSize)).toFixed(1) : 0;
+
+        let strength;
+        if (checks.is_common || score < 30) strength = 'very_weak';
+        else if (score < 50) strength = 'weak';
+        else if (score < 70) strength = 'fair';
+        else if (score < 90) strength = 'strong';
+        else strength = 'very_strong';
+
+        const suggestions = [];
+        if (checks.length < 12) suggestions.push('Use at least 12 characters');
+        if (!checks.has_uppercase) suggestions.push('Add uppercase letters');
+        if (!checks.has_digits) suggestions.push('Add numbers');
+        if (!checks.has_special) suggestions.push('Add special characters (!@#$%...)');
+        if (checks.is_common) suggestions.push('Avoid common passwords');
+
+        logActivity('api_call', `Password Strength API: strength=${strength}`);
+        res.json({ success: true, strength, score, entropy_bits: entropy, checks, suggestions });
+    });
+
+    // --- PHONE VALIDATE API (0.001 USDC) ---
+    router.get('/api/phone-validate', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Phone Validate API"), async (req, res) => {
+        const phone = (req.query.phone || req.query.number || '').trim().slice(0, 30);
+
+        if (!phone) {
+            return res.status(400).json({ error: "Parameter 'phone' required. Ex: /api/phone-validate?phone=+33612345678" });
+        }
+
+        // Strip all non-digit chars except leading +
+        const cleaned = phone.replace(/(?!^\+)\D/g, '');
+        const digits = cleaned.replace('+', '');
+
+        // Country code detection (common codes)
+        const countryCodes = {
+            '1': { country: 'US/CA', format: '+1 (XXX) XXX-XXXX', len: [10] },
+            '33': { country: 'FR', format: '+33 X XX XX XX XX', len: [9] },
+            '44': { country: 'GB', format: '+44 XXXX XXXXXX', len: [10] },
+            '49': { country: 'DE', format: '+49 XXX XXXXXXXX', len: [10, 11] },
+            '81': { country: 'JP', format: '+81 XX XXXX XXXX', len: [10] },
+            '86': { country: 'CN', format: '+86 XXX XXXX XXXX', len: [11] },
+            '91': { country: 'IN', format: '+91 XXXXX XXXXX', len: [10] },
+            '55': { country: 'BR', format: '+55 XX XXXXX XXXX', len: [10, 11] },
+            '7': { country: 'RU', format: '+7 XXX XXX XX XX', len: [10] },
+            '39': { country: 'IT', format: '+39 XXX XXX XXXX', len: [9, 10] },
+            '34': { country: 'ES', format: '+34 XXX XXX XXX', len: [9] },
+            '61': { country: 'AU', format: '+61 XXX XXX XXX', len: [9] }
+        };
+
+        let detectedCountry = null;
+        let expectedFormat = null;
+        const hasPlus = phone.startsWith('+');
+
+        if (hasPlus) {
+            for (const [code, info] of Object.entries(countryCodes).sort((a, b) => b[0].length - a[0].length)) {
+                if (digits.startsWith(code)) {
+                    const national = digits.slice(code.length);
+                    if (info.len.includes(national.length)) {
+                        detectedCountry = info.country;
+                        expectedFormat = info.format;
+                    }
+                    break;
+                }
+            }
+        }
+
+        const valid = digits.length >= 7 && digits.length <= 15 && /^\d+$/.test(digits);
+
+        logActivity('api_call', `Phone Validate API: ${detectedCountry || 'unknown'}`);
+        res.json({
+            success: true,
+            input: phone,
+            cleaned: hasPlus ? `+${digits}` : digits,
+            digits_only: digits,
+            digit_count: digits.length,
+            valid,
+            has_country_code: hasPlus,
+            country: detectedCountry,
+            expected_format: expectedFormat,
+            type: digits.length <= 8 ? 'landline' : 'mobile'
+        });
+    });
+
+    // --- URL PARSE API (0.001 USDC) ---
+    router.get('/api/url-parse', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "URL Parse API"), async (req, res) => {
+        const input = (req.query.url || '').trim().slice(0, 2000);
+
+        if (!input) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/url-parse?url=https://example.com:8080/path?q=test#section" });
+        }
+
+        try {
+            const parsed = new URL(input);
+            const params = {};
+            parsed.searchParams.forEach((v, k) => { params[k] = v; });
+
+            logActivity('api_call', `URL Parse API: ${parsed.hostname}`);
+            res.json({
+                success: true,
+                url: input,
+                protocol: parsed.protocol.replace(':', ''),
+                hostname: parsed.hostname,
+                port: parsed.port || (parsed.protocol === 'https:' ? '443' : '80'),
+                pathname: parsed.pathname,
+                search: parsed.search,
+                hash: parsed.hash,
+                origin: parsed.origin,
+                params,
+                param_count: Object.keys(params).length,
+                is_https: parsed.protocol === 'https:'
+            });
+        } catch (err) {
+            return res.status(400).json({ error: 'Invalid URL', details: err.message });
+        }
+    });
+
+    // --- URL SHORTENER API (0.003 USDC) ---
+    router.get('/api/url-shorten', paidEndpointLimiter, paymentMiddleware(5000, 0.003, "URL Shortener API"), async (req, res) => {
+        const url = (req.query.url || '').trim().slice(0, 2000);
+
+        if (!url) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/url-shorten?url=https://example.com/very-long-path" });
+        }
+
+        try {
+            new URL(url); // Validate URL
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        try {
+            const apiUrl = `https://is.gd/create.php?format=json&url=${encodeURIComponent(url)}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+            const data = await apiRes.json();
+
+            if (data.errorcode) {
+                return res.status(400).json({ error: 'URL shortening failed', details: data.errormessage });
+            }
+
+            logActivity('api_call', `URL Shortener API: ${url.slice(0, 50)}...`);
+            res.json({ success: true, original_url: url, short_url: data.shorturl });
+        } catch (err) {
+            logger.error('URL Shortener API', err.message);
+            return res.status(500).json({ error: 'URL Shortener API request failed' });
+        }
+    });
+
+    // --- HTML TO TEXT API (0.001 USDC) ---
+    router.get('/api/html-to-text', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "HTML to Text API"), async (req, res) => {
+        const html = (req.query.html || '');
+
+        if (!html) {
+            return res.status(400).json({ error: "Parameter 'html' required. Ex: /api/html-to-text?html=<h1>Title</h1><p>Content</p>" });
+        }
+        if (html.length > 100000) {
+            return res.status(400).json({ error: 'HTML too large (max 100KB)' });
+        }
+
+        try {
+            const $ = cheerio.load(html);
+            $('script, style, noscript').remove();
+            const text = $.text().replace(/\s+/g, ' ').trim();
+
+            // Also extract links and images
+            const links = [];
+            $('a[href]').each((_, el) => {
+                const href = $(el).attr('href');
+                const label = $(el).text().trim();
+                if (href && label) links.push({ text: label, href });
+            });
+
+            const images = [];
+            $('img[src]').each((_, el) => {
+                images.push({ src: $(el).attr('src'), alt: $(el).attr('alt') || '' });
+            });
+
+            logActivity('api_call', `HTML to Text API: ${html.length} chars -> ${text.length} chars`);
+            res.json({
+                success: true,
+                text,
+                text_length: text.length,
+                html_length: html.length,
+                links_count: links.length,
+                links: links.slice(0, 20),
+                images_count: images.length,
+                images: images.slice(0, 10)
+            });
+        } catch (err) {
+            return res.status(400).json({ error: 'Failed to parse HTML', details: err.message });
+        }
+    });
+
+    // --- HTTP STATUS CODE API (0.001 USDC) ---
+    router.get('/api/http-status', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "HTTP Status API"), async (req, res) => {
+        const code = parseInt(req.query.code || '');
+
+        if (!code || code < 100 || code > 599) {
+            return res.status(400).json({ error: "Parameter 'code' required (100-599). Ex: /api/http-status?code=404" });
+        }
+
+        const statuses = {
+            100: { name: 'Continue', description: 'The server has received the request headers and the client should proceed to send the request body.', category: 'Informational' },
+            101: { name: 'Switching Protocols', description: 'The server is switching protocols as requested by the client.', category: 'Informational' },
+            200: { name: 'OK', description: 'The request was successful.', category: 'Success' },
+            201: { name: 'Created', description: 'The request was successful and a new resource was created.', category: 'Success' },
+            204: { name: 'No Content', description: 'The request was successful but there is no content to return.', category: 'Success' },
+            301: { name: 'Moved Permanently', description: 'The resource has been permanently moved to a new URL.', category: 'Redirection' },
+            302: { name: 'Found', description: 'The resource has been temporarily moved to a different URL.', category: 'Redirection' },
+            304: { name: 'Not Modified', description: 'The resource has not been modified since the last request.', category: 'Redirection' },
+            307: { name: 'Temporary Redirect', description: 'The resource has been temporarily moved. The client should use the same HTTP method.', category: 'Redirection' },
+            308: { name: 'Permanent Redirect', description: 'The resource has been permanently moved. The client should use the same HTTP method.', category: 'Redirection' },
+            400: { name: 'Bad Request', description: 'The server could not understand the request due to invalid syntax.', category: 'Client Error' },
+            401: { name: 'Unauthorized', description: 'Authentication is required and has failed or not been provided.', category: 'Client Error' },
+            402: { name: 'Payment Required', description: 'Payment is required to access this resource. Used by x402 protocol for machine-to-machine payments.', category: 'Client Error' },
+            403: { name: 'Forbidden', description: 'The server understood the request but refuses to authorize it.', category: 'Client Error' },
+            404: { name: 'Not Found', description: 'The requested resource could not be found on the server.', category: 'Client Error' },
+            405: { name: 'Method Not Allowed', description: 'The HTTP method used is not allowed for this resource.', category: 'Client Error' },
+            408: { name: 'Request Timeout', description: 'The server timed out waiting for the request.', category: 'Client Error' },
+            409: { name: 'Conflict', description: 'The request conflicts with the current state of the resource.', category: 'Client Error' },
+            410: { name: 'Gone', description: 'The resource is no longer available and will not be available again.', category: 'Client Error' },
+            413: { name: 'Payload Too Large', description: 'The request body is larger than the server is willing to process.', category: 'Client Error' },
+            418: { name: "I'm a Teapot", description: 'The server refuses to brew coffee because it is a teapot (RFC 2324).', category: 'Client Error' },
+            422: { name: 'Unprocessable Entity', description: 'The request was well-formed but could not be followed due to semantic errors.', category: 'Client Error' },
+            429: { name: 'Too Many Requests', description: 'The user has sent too many requests in a given amount of time (rate limiting).', category: 'Client Error' },
+            500: { name: 'Internal Server Error', description: 'The server encountered an unexpected condition that prevented it from fulfilling the request.', category: 'Server Error' },
+            501: { name: 'Not Implemented', description: 'The server does not support the functionality required to fulfill the request.', category: 'Server Error' },
+            502: { name: 'Bad Gateway', description: 'The server received an invalid response from an upstream server.', category: 'Server Error' },
+            503: { name: 'Service Unavailable', description: 'The server is currently unable to handle the request (overloaded or down for maintenance).', category: 'Server Error' },
+            504: { name: 'Gateway Timeout', description: 'The server did not receive a timely response from an upstream server.', category: 'Server Error' }
+        };
+
+        const info = statuses[code];
+        if (!info) {
+            // Generic category
+            let category;
+            if (code < 200) category = 'Informational';
+            else if (code < 300) category = 'Success';
+            else if (code < 400) category = 'Redirection';
+            else if (code < 500) category = 'Client Error';
+            else category = 'Server Error';
+
+            logActivity('api_call', `HTTP Status API: ${code} (unknown)`);
+            return res.json({ success: true, code, name: 'Unknown', description: 'Non-standard or uncommon HTTP status code.', category });
+        }
+
+        logActivity('api_call', `HTTP Status API: ${code} ${info.name}`);
+        res.json({ success: true, code, ...info });
+    });
+
     return router;
 }
 

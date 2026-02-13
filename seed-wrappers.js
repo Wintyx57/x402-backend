@@ -6,7 +6,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const SERVER_WALLET = process.env.WALLET_ADDRESS;
 const BASE_URL = 'https://x402-api.onrender.com';
 
-// All 41 x402 Native wrapper APIs — real endpoints proxied via x402 payments
+// All 61 x402 Native wrapper APIs — real endpoints proxied via x402 payments
 const WRAPPER_SERVICES = [
     // --- HIGH-VALUE SERVICES (0.005 USDC) ---
     {
@@ -352,6 +352,170 @@ const WRAPPER_SERVICES = [
         price_usdc: 0.001,
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "development", "useragent", "browser", "parser", "live"]
+    },
+
+    // --- BATCH 3: DATA & SOCIAL (session 21) ---
+    {
+        name: "x402 News Feed",
+        description: "Search real-time news from Google News RSS. Returns top 10 articles with title, source, link and publication date. Usage: /api/news?topic=artificial+intelligence&lang=en",
+        url: `${BASE_URL}/api/news`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "data", "news", "rss", "search", "live"]
+    },
+    {
+        name: "x402 Stock Price",
+        description: "Real-time stock prices from Yahoo Finance. Returns price, change, market state, exchange. Usage: /api/stocks?symbol=AAPL",
+        url: `${BASE_URL}/api/stocks`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "finance", "stocks", "market", "trading", "live"]
+    },
+    {
+        name: "x402 Reddit Data",
+        description: "Fetch Reddit posts from any subreddit. Supports hot, new, top, rising sort. Returns title, score, author, comments. Usage: /api/reddit?subreddit=programming&sort=hot&limit=10",
+        url: `${BASE_URL}/api/reddit`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "social", "reddit", "community", "data", "live"]
+    },
+    {
+        name: "x402 Hacker News",
+        description: "Access Hacker News stories (top, new, best, ask, show, job). Returns title, URL, score, comments, author. Usage: /api/hn?type=top&limit=10",
+        url: `${BASE_URL}/api/hn`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "social", "hackernews", "tech", "news", "live"]
+    },
+    {
+        name: "x402 YouTube Info",
+        description: "Get YouTube video metadata from URL or video ID. Returns title, author, thumbnail, embed URL. Usage: /api/youtube?url=https://youtube.com/watch?v=dQw4w9WgXcQ",
+        url: `${BASE_URL}/api/youtube`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "social", "youtube", "video", "media", "live"]
+    },
+    {
+        name: "x402 WHOIS Lookup",
+        description: "Domain WHOIS via RDAP. Returns registration/expiration dates, nameservers, registrar, status. Usage: /api/whois?domain=example.com",
+        url: `${BASE_URL}/api/whois`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "whois", "domain", "dns", "live"]
+    },
+    {
+        name: "x402 SSL Certificate Check",
+        description: "Check SSL certificate details for any domain. Returns issuer, validity dates, days remaining, fingerprint, SAN. Usage: /api/ssl-check?domain=google.com",
+        url: `${BASE_URL}/api/ssl-check`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "security", "ssl", "tls", "certificate", "live"]
+    },
+    {
+        name: "x402 Regex Tester",
+        description: "Test regex patterns against text. Returns all matches with index and captured groups. Supports flags (g,i,m,s). Usage: /api/regex?pattern=\\d+&text=abc123def456&flags=g",
+        url: `${BASE_URL}/api/regex`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "regex", "pattern", "testing", "live"]
+    },
+    {
+        name: "x402 Text Diff",
+        description: "Compare two texts line by line. Shows added, removed, and modified lines. Usage: /api/diff?text1=hello+world&text2=hello+earth",
+        url: `${BASE_URL}/api/diff`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "diff", "compare", "text", "live"]
+    },
+    {
+        name: "x402 Math Expression",
+        description: "Evaluate math expressions safely. Supports +,-,*,/,^,pi,e,sqrt,sin,cos,tan,log,abs,ceil,floor,round. Usage: /api/math?expr=2*pi*5+sqrt(16)",
+        url: `${BASE_URL}/api/math`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "math", "calculator", "science", "live"]
+    },
+
+    // --- BATCH 4: UTILITY APIs (session 21) ---
+    {
+        name: "x402 Unit Converter",
+        description: "Convert between units: length (km, miles, ft), weight (kg, lb), temperature (C, F, K), volume, speed, data. Usage: /api/unit-convert?value=100&from=km&to=miles",
+        url: `${BASE_URL}/api/unit-convert`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "converter", "units", "math", "live"]
+    },
+    {
+        name: "x402 CSV to JSON",
+        description: "Convert CSV data to JSON. Supports custom delimiters and header row detection. Usage: /api/csv-to-json?csv=name,age\\nAlice,30\\nBob,25",
+        url: `${BASE_URL}/api/csv-to-json`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "csv", "json", "converter", "data", "live"]
+    },
+    {
+        name: "x402 JWT Decoder",
+        description: "Decode JWT tokens without verification. Returns header, payload, expiration status. Usage: /api/jwt-decode?token=eyJhbGciOiJIUzI1NiIs...",
+        url: `${BASE_URL}/api/jwt-decode`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "security", "jwt", "token", "auth", "live"]
+    },
+    {
+        name: "x402 Cron Parser",
+        description: "Parse cron expressions into human-readable descriptions. Shows field breakdown and schedule. Usage: /api/cron-parse?expr=0 9 * * 1-5",
+        url: `${BASE_URL}/api/cron-parse`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "cron", "scheduler", "parser", "live"]
+    },
+    {
+        name: "x402 Password Strength",
+        description: "Analyze password strength with score (0-100), entropy, checks and suggestions. Usage: /api/password-strength?password=MyP@ssw0rd!",
+        url: `${BASE_URL}/api/password-strength`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "security", "password", "strength", "analysis", "live"]
+    },
+    {
+        name: "x402 Phone Validator",
+        description: "Validate and analyze phone numbers. Detects country code, formats number, identifies mobile vs landline. Usage: /api/phone-validate?phone=+33612345678",
+        url: `${BASE_URL}/api/phone-validate`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "phone", "validator", "format", "live"]
+    },
+    {
+        name: "x402 URL Parser",
+        description: "Parse and analyze URLs. Returns protocol, hostname, port, path, query params, hash. Usage: /api/url-parse?url=https://example.com:8080/path?q=test",
+        url: `${BASE_URL}/api/url-parse`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "url", "parser", "web", "live"]
+    },
+    {
+        name: "x402 URL Shortener",
+        description: "Shorten any URL using is.gd service. Returns permanent short URL. Usage: /api/url-shorten?url=https://example.com/very-long-path",
+        url: `${BASE_URL}/api/url-shorten`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "url", "shortener", "link", "live"]
+    },
+    {
+        name: "x402 HTML to Text",
+        description: "Extract clean text from HTML. Removes scripts, styles. Also extracts links and images. Uses Cheerio. Usage: /api/html-to-text?html=<h1>Title</h1><p>Content</p>",
+        url: `${BASE_URL}/api/html-to-text`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "utility", "html", "text", "parser", "live"]
+    },
+    {
+        name: "x402 HTTP Status Codes",
+        description: "Look up HTTP status codes. Returns name, description, and category for any code 100-599. Usage: /api/http-status?code=404",
+        url: `${BASE_URL}/api/http-status`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "development", "http", "status", "reference", "live"]
     },
 ];
 

@@ -295,6 +295,10 @@ HACKATHON/
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
    - 361 tests total (271 unit + 90 e2e, node:test, zero deps)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
+   - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
+   - Rate limits optimized: paid requests (X-Payment-TxHash) skip rate limiting entirely
+   - /api/time: native Intl.DateTimeFormat (zero external dependency, replaced worldtimeapi.org)
+   - /api/json-validate: dual GET+POST support
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -306,7 +310,7 @@ HACKATHON/
    - Validation robuste /register (types, longueurs, format URL/wallet, prix 0-1000)
    - Body limit 10kb
    - RPC timeout 10s sur tous les appels on-chain
-   - Rate limiting : 3 tiers (general 100/15min, paid 30/min, register 10/hr)
+   - Rate limiting : 3 tiers (general 500/15min, paid 120/min, register 10/hr) — paid requests (X-Payment-TxHash) bypass rate limits
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
 
 3. **Frontend React — 17 pages deployees (+3 en cours)** :
@@ -483,6 +487,8 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 ### Historique des commits recents
 
 **Backend (x402-bazaar)** :
+- `b20193c` fix: replace worldtimeapi.org with native Intl.DateTimeFormat + add GET for json-validate
+- `b4e297c` feat: relax rate limits for paid requests (skip X-Payment-TxHash)
 - `c7cfadd` feat: add 12 new API wrappers (batch 2: hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent)
 - `f4cc4d7` fix: translate wrapper fallback 'auto' to 'en'
 - `2159d83` fix: trim whitespace in adminAuth token comparison
@@ -510,4 +516,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 361 tests, 6 integrations)*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 361 tests, 6 integrations, all 41 APIs MCP-verified)*

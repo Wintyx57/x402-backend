@@ -6,8 +6,8 @@ const { getStatus, getEndpoints } = require('../lib/monitor');
 describe('monitor — ENDPOINTS', () => {
     const endpoints = getEndpoints();
 
-    it('should return exactly 41 endpoints', () => {
-        assert.equal(endpoints.length, 41);
+    it('should return exactly 61 endpoints', () => {
+        assert.equal(endpoints.length, 61);
     });
 
     it('each endpoint should have path, method, and label', () => {
@@ -64,9 +64,9 @@ describe('monitor — ENDPOINTS', () => {
         assert.deepStrictEqual(postPaths, ['/api/code', '/api/json-validate']);
     });
 
-    it('GET endpoints should be 39', () => {
+    it('GET endpoints should be 59', () => {
         const getEndpointsArr = endpoints.filter(ep => ep.method === 'GET');
-        assert.equal(getEndpointsArr.length, 39);
+        assert.equal(getEndpointsArr.length, 59);
     });
 
     it('labels should be non-empty strings', () => {
