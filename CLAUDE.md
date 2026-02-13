@@ -158,7 +158,7 @@ HACKATHON/
 │   │   ├── payment.js    # Payment verification (with budget integration)
 │   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
 │   │   ├── monitor.js    # Monitoring engine (61 endpoints, 5min checks, Telegram alerts)
-│   │   └── telegram-bot.js # Interactive Telegram bot (6 commands, polling, secured by chat_id)
+│   │   └── telegram-bot.js # Interactive Telegram bot (11 commands, polling, secured by chat_id)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
@@ -289,7 +289,7 @@ HACKATHON/
    - Monitoring: 61 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
    - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
    - GPT Actions: Custom GPT with 30 operations (OpenAPI 3.1 spec)
-   - Telegram bot: @x402_monitoradmin_bot (6 interactive commands, polling, secured by chat_id)
+   - Telegram bot: @x402_monitoradmin_bot (11 interactive commands, polling, secured by chat_id)
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
@@ -445,6 +445,11 @@ VITE_NETWORK=mainnet
 - [x] Register.jsx enhanced: category dropdown (7 cats), HTTP method toggle, live preview card, readiness checklist, i18n ~30 keys EN+FR
 - [x] Backend values sync: monitoring.js, dashboard.html, openapi.json, telegram-bot.js, server.js, e2e.test.js
 
+*P1.7 — Telegram Expansion + Analytics + Wallet (session 24):*
+- [x] Telegram bot 6→11 commands: +/uptime, /top, /revenue, /search, /endpoint. Enriched /stats, /recent (tx links), /services (tags)
+- [x] Analytics.jsx: fix monitoring color (operational=green), chart.js bar+doughnut, activity feed, error handling+retry
+- [x] Wallet: featuredWalletIds (MetaMask/Coinbase/Trust/Rainbow), allWallets HIDE, disabled analytics/onramp/swaps, enableWalletConnect mobile
+
 *P2 — Scale (long terme):*
 - [ ] Solana support (multi-chain)
 - [ ] Batch payments / Subscription tiers
@@ -521,4 +526,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 P1.6 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 416 tests, 6 integrations, 61 APIs, enhanced Register with live preview, a11y audit 9.5/10)*
+*Derniere mise a jour: 13/02/2026 — Phase 1-3 COMPLETE + P1.7 (Telegram 11 cmds, Analytics charts, wallet mobile optimized, 416 tests, 6 integrations, 61 APIs)*
