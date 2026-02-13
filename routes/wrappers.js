@@ -890,28 +890,40 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         }
 
         try {
-            const apiUrl = `https://worldtimeapi.org/api/timezone/${encodeURIComponent(timezone)}`;
-            const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
-            const data = await apiRes.json();
+            const now = new Date();
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: timezone,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false, timeZoneName: 'longOffset'
+            });
+            const parts = formatter.formatToParts(now);
+            const get = (type) => (parts.find(p => p.type === type) || {}).value || '';
+            const dateStr = `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}`;
+            const offsetStr = get('timeZoneName').replace('GMT', '') || '+00:00';
 
-            if (data.error) {
-                return res.status(404).json({ error: 'Timezone not found', timezone });
-            }
+            const shortFmt = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'short' });
+            const shortParts = shortFmt.formatToParts(now);
+            const abbreviation = (shortParts.find(p => p.type === 'timeZoneName') || {}).value || '';
+
+            const dayOfWeek = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'long' }).format(now);
 
             logActivity('api_call', `World Time API: ${timezone}`);
 
             res.json({
                 success: true,
-                timezone: data.timezone,
-                datetime: data.datetime,
-                utc_offset: data.utc_offset,
-                day_of_week: data.day_of_week,
-                week_number: data.week_number,
-                abbreviation: data.abbreviation,
-                dst: data.dst
+                timezone,
+                datetime: `${dateStr}${offsetStr}`,
+                utc_offset: offsetStr,
+                day_of_week: dayOfWeek,
+                abbreviation,
+                unix_timestamp: Math.floor(now.getTime() / 1000)
             });
         } catch (err) {
             logger.error('World Time API', err.message);
+            if (err.message.includes('Invalid time zone')) {
+                return res.status(400).json({ error: 'Invalid timezone', timezone });
+            }
             return res.status(500).json({ error: 'World Time API request failed' });
         }
     });
@@ -1933,11 +1945,17 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
     });
 
     // --- JSON VALIDATOR API (0.001 USDC) ---
-    router.post('/api/json-validate', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "JSON Validator API"), async (req, res) => {
-        const input = req.body && req.body.json !== undefined ? req.body.json : null;
+    function handleJsonValidate(req, res) {
+        // Support both GET (?json=...) and POST ({json: ...})
+        let input;
+        if (req.method === 'GET') {
+            input = req.query.json !== undefined ? req.query.json : null;
+        } else {
+            input = req.body && req.body.json !== undefined ? req.body.json : null;
+        }
 
         if (input === null) {
-            return res.status(400).json({ error: "Body parameter 'json' required. POST with {\"json\": \"your string here\"}" });
+            return res.status(400).json({ error: "Parameter 'json' required. GET: /api/json-validate?json={...} or POST with {\"json\": \"...\"}" });
         }
 
         const raw = typeof input === 'string' ? input : JSON.stringify(input);
@@ -1970,7 +1988,10 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
             result.error_message = errorMsg;
         }
         res.json(result);
-    });
+    }
+
+    router.get('/api/json-validate', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "JSON Validator API"), handleJsonValidate);
+    router.post('/api/json-validate', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "JSON Validator API"), handleJsonValidate);
 
     // --- USER AGENT PARSER API (0.001 USDC) ---
     router.get('/api/useragent', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "User Agent Parser API"), async (req, res) => {
