@@ -278,7 +278,7 @@ HACKATHON/
 
 1. **Backend production** (Render, mainnet Base) :
    - `/health` → 200 OK, `"network": "Base"`
-   - 41 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, +14 autres
+   - 61 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, news, stocks, reddit, hn, youtube, whois, ssl-check, regex, diff, math, unit-convert, csv-to-json, jwt-decode, cron-parse, password-strength, phone-validate, url-parse, url-shorten, html-to-text, http-status, +14 autres
    - Health-check endpoint pour monitoring des services
    - Analytics endpoint enrichi (walletBalance, recentActivity, avgPrice, activeServicesCount)
    - Dashboard admin `/dashboard` avec wallet balance hero, 5 stat cards, activity feed, glassmorphism
@@ -293,7 +293,7 @@ HACKATHON/
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
-   - 361 tests total (271 unit + 90 e2e, node:test, zero deps)
+   - 416 tests total (326 unit + 90 e2e, node:test, zero deps)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
    - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
    - Rate limits optimized: paid requests (X-Payment-TxHash) skip rate limiting entirely
@@ -516,4 +516,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 361 tests, 6 integrations, all 41 APIs MCP-verified)*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 416 tests, 6 integrations, 61 APIs all MCP-verified)*
