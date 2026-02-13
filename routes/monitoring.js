@@ -90,10 +90,14 @@ function createMonitoringRouter(supabase) {
     }
   });
 
-  // GET /api/public-stats — Public stats for homepage (no auth required)
+  // GET /api/public-stats — Public stats for homepage + analytics (no auth required)
   router.get('/api/public-stats', async (req, res) => {
     let servicesCount = 0;
     let totalApiCalls = 0;
+    let totalPayments = 0;
+    let topEndpoints = [];
+    let recentCallCount24h = 0;
+    let uptimePercent = null;
 
     try {
       const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
@@ -105,6 +109,57 @@ function createMonitoringRouter(supabase) {
       totalApiCalls = count || 0;
     } catch { /* ignore */ }
 
+    try {
+      const { count } = await supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'payment');
+      totalPayments = count || 0;
+    } catch { /* ignore */ }
+
+    // Top endpoints by call count (last 1000 calls)
+    try {
+      const { data: calls } = await supabase
+        .from('activity')
+        .select('detail')
+        .eq('type', 'api_call')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (calls) {
+        const counts = {};
+        for (const c of calls) {
+          const match = c.detail?.match(/^(\w[\w\s/]+?)(?:\s*[:.])/);
+          const ep = match ? match[1].trim() : (c.detail || 'Unknown');
+          counts[ep] = (counts[ep] || 0) + 1;
+        }
+        topEndpoints = Object.entries(counts)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 8)
+          .map(([endpoint, count]) => ({ endpoint, count }));
+      }
+    } catch { /* ignore */ }
+
+    // Recent calls in last 24h
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { count } = await supabase
+        .from('activity')
+        .select('*', { count: 'exact', head: true })
+        .eq('type', 'api_call')
+        .gte('created_at', since);
+      recentCallCount24h = count || 0;
+    } catch { /* ignore */ }
+
+    // Average uptime from monitoring checks (last 24h)
+    try {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: checks } = await supabase
+        .from('monitoring_checks')
+        .select('status')
+        .gte('checked_at', since);
+      if (checks && checks.length > 0) {
+        const online = checks.filter(c => c.status === 'online').length;
+        uptimePercent = parseFloat(((online / checks.length) * 100).toFixed(1));
+      }
+    } catch { /* ignore */ }
+
     const status = getStatus();
     const onlineCount = status?.onlineCount || 0;
     const totalEndpoints = status?.totalCount || 41;
@@ -114,13 +169,17 @@ function createMonitoringRouter(supabase) {
       services: servicesCount,
       nativeEndpoints: 41,
       apiCalls: totalApiCalls,
+      totalPayments,
+      recentCallCount24h,
+      uptimePercent,
+      topEndpoints,
       monitoring: {
         online: onlineCount,
         total: totalEndpoints,
         overall: status?.overall || 'unknown',
         lastCheck: status?.lastCheck || null,
       },
-      integrations: 5,
+      integrations: 6,
       tests: 333,
     });
   });

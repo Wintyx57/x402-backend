@@ -306,23 +306,27 @@ HACKATHON/
    - Rate limiting : 3 tiers (general 100/15min, paid 30/min, register 10/hr)
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
 
-3. **Frontend React — 15 pages deployees** :
+3. **Frontend React — 17 pages deployees (+3 en cours)** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
    - CountUp animations sur les stats
    - Compatible With section (5 logos)
    - How it works 3-step section
    - CTA glow effect
-   - i18n FR/EN avec toggle (137 clés pour blog bilingue)
+   - i18n FR/EN avec toggle (137+ cles pour blog bilingue)
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - 15 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy
+   - 17 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground
+   - 3 pages CREEES mais PAS ENCORE WIREES : /analytics, /compare, /for-providers
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
+   - Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen)
    - Filtres avances (chain, prix), badges enrichis, health check
-   - FAQ, Demos, About avec section securite
+   - FAQ, Demos, About avec section securite + SLA
+   - Terms of Service /terms, Privacy /privacy
+   - Cost Calculator dans Pricing
    - Blog 100% bilingue FR/EN
    - SEO complet (sitemap.xml, robots.txt, JSON-LD)
-   - Google Search Console intégré
+   - Google Search Console integre
 
 4. **CLI** (npm x402-bazaar@3.0.0) :
    - `npx x402-bazaar init` — setup complet en 1 commande (avec --setup pour mode guide interactif)
@@ -400,7 +404,7 @@ VITE_NETWORK=mainnet
 - [x] Milestone 5: Marketing (landing page, thread Twitter, HN, Reddit, DoraHacks, video script)
 - [x] Milestone 6: Ecosysteme (x402-langchain, guide LangChain, section securite, backend refactoring, SEO, tests)
 
-**Phase 2 — A definir:**
+**Phase 2 — COMPLETE:**
 - [x] Atteindre 40+ services natifs (FAIT: 41 endpoints)
 - [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
 - [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx, Telegram @x402_monitoradmin_bot, Supabase monitoring_checks — 13/02/2026)
@@ -408,10 +412,37 @@ VITE_NETWORK=mainnet
 - [x] Tests unitaires backend (254 unit tests — 13/02/2026)
 - [x] Telegram bot interactif (6 commandes, polling, secured by chat_id — 13/02/2026)
 - [x] Auto-test on registration (ping URL + Telegram notification — 13/02/2026)
-- [x] Public stats endpoint (GET /api/public-stats, no auth — 13/02/2026)
+- [x] Public stats endpoint enrichi (GET /api/public-stats: topEndpoints, uptimePercent, totalPayments — 13/02/2026)
 - [x] Dashboard System Info panel (monitoring, tests, integrations — 13/02/2026)
 - [x] ServiceCard verified badge ("Tested" for auto-tested services — 13/02/2026)
-- [ ] Landing page A/B testing
+- [x] Trust Layer P0: Terms of Service, SLA section, Cost Calculator, Playground
+- [x] Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen — 13/02/2026)
+
+**Phase 3 — EN COURS (session 18, 13/02/2026):**
+
+*P0 — Trust & Analytics (PARTIELLEMENT FAIT):*
+- [x] Backend: /api/public-stats enrichi (topEndpoints, uptimePercent, totalPayments, recentCallCount24h)
+- [x] Frontend: Analytics.jsx CREE (page /analytics avec stats, monitoring, top endpoints)
+- [ ] **WIRING**: Ajouter route /analytics dans App.jsx, liens Navbar + Footer
+- [ ] **TRADUCTIONS**: Ajouter cles analytics manquantes (totalApiCalls, last24h, nativeLabel, etc.)
+- [ ] FAQ expansion: 8 nouvelles questions critiques (q11-q18: refund, company, data, gas, vs RapidAPI, autonomous, revenue share, response time)
+
+*P1 — Marketing Pages (PAGES CREEES, PAS WIREES):*
+- [x] Frontend: Compare.jsx CREE (page /compare vs RapidAPI — table comparison, 12 features, 6 advantages)
+- [x] Frontend: ForProviders.jsx CREE (page /for-providers — 5 etapes, 6 benefits, spec JSON, flow diagram)
+- [ ] **WIRING**: Ajouter routes /compare + /for-providers dans App.jsx
+- [ ] **NAVBAR**: Ajouter liens dans marketplaceLinks ou devLinks
+- [ ] **FOOTER**: Ajouter liens dans sections Product/Resources
+- [ ] **TRADUCTIONS**: Ajouter sections `compare` et `forProviders` (EN+FR, ~80 cles total)
+
+*P2 — Product Features (PAS COMMENCE):*
+- [ ] Budget Guardian (backend: max spend caps par agent, alerts 50/75/90%)
+- [ ] Quality Score / Badges dynamiques (Gold/Silver/Bronze par API basees uptime + response time)
+
+*P3 — Scale (PAS COMMENCE):*
+- [ ] Solana support (multi-chain)
+- [ ] Batch payments / Subscription tiers
+- [ ] Provider outreach + first external provider
 
 **Maintenance:**
 - [x] Google Search Console integre
