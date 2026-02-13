@@ -90,6 +90,41 @@ function createMonitoringRouter(supabase) {
     }
   });
 
+  // GET /api/public-stats — Public stats for homepage (no auth required)
+  router.get('/api/public-stats', async (req, res) => {
+    let servicesCount = 0;
+    let totalApiCalls = 0;
+
+    try {
+      const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
+      servicesCount = count || 0;
+    } catch { /* ignore */ }
+
+    try {
+      const { count } = await supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'api_call');
+      totalApiCalls = count || 0;
+    } catch { /* ignore */ }
+
+    const status = getStatus();
+    const onlineCount = status?.onlineCount || 0;
+    const totalEndpoints = status?.totalCount || 41;
+
+    res.json({
+      success: true,
+      services: servicesCount,
+      nativeEndpoints: 41,
+      apiCalls: totalApiCalls,
+      monitoring: {
+        online: onlineCount,
+        total: totalEndpoints,
+        overall: status?.overall || 'unknown',
+        lastCheck: status?.lastCheck || null,
+      },
+      integrations: 4,
+      tests: 333,
+    });
+  });
+
   // GET /api/status/history?endpoint=/api/weather&limit=50 — Check history for one endpoint
   router.get('/api/status/history', async (req, res) => {
     const endpoint = req.query.endpoint;

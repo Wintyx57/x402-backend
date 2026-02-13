@@ -499,6 +499,71 @@
             </div>
         </div>
 
+        <!-- SYSTEM INFO ROW -->
+        <div class="grid-2 fade-in" style="animation-delay:0.28s">
+            <div class="glass" style="padding:20px">
+                <div style="font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#FF9900" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                    </svg>
+                    Monitoring & Quality
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#34D399" id="sys-monitoring">41/41</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Endpoints Online</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#fff">333</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Tests Passing</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#60A5FA">41</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Native APIs</div>
+                    </div>
+                    <div>
+                        <div style="font-size:24px;font-weight:700;color:#FBBF24">4</div>
+                        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px">Integrations</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass" style="padding:20px">
+                <div style="font-size:13px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px;display:flex;align-items:center;gap:8px">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#FF9900" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-2.56a4.5 4.5 0 00-1.242-7.244l4.5-4.5a4.5 4.5 0 016.364 6.364l-1.757 1.757" />
+                    </svg>
+                    Integrations
+                </div>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34D399"></span>
+                        <span style="font-size:13px;color:#e0e6ed;flex:1">MCP Server (Claude/Cursor)</span>
+                        <span style="font-size:11px;color:#34D399;font-weight:600">v2.1.0</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34D399"></span>
+                        <span style="font-size:13px;color:#e0e6ed;flex:1">ChatGPT Custom GPT</span>
+                        <span style="font-size:11px;color:#34D399;font-weight:600">30 ops</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34D399"></span>
+                        <span style="font-size:13px;color:#e0e6ed;flex:1">CLI npm (x402-bazaar)</span>
+                        <span style="font-size:11px;color:#34D399;font-weight:600">v3.0.0</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34D399"></span>
+                        <span style="font-size:13px;color:#e0e6ed;flex:1">Telegram Bot</span>
+                        <span style="font-size:11px;color:#34D399;font-weight:600" id="sys-telegram">Active</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,0.03);border-radius:8px">
+                        <span style="width:8px;height:8px;border-radius:50%;background:#34D399"></span>
+                        <span style="font-size:13px;color:#e0e6ed;flex:1">LangChain (Python)</span>
+                        <span style="font-size:11px;color:#34D399;font-weight:600">v0.1.0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- SERVICES + ACTIVITY -->
         <div class="grid-main">
             <!-- SERVICES TABLE -->
@@ -694,9 +759,23 @@
             } catch (e) { console.error('Services refresh error:', e); }
         }
 
+        async function refreshMonitoring() {
+            try {
+                const res = await fetch('/api/public-stats');
+                const d = await res.json();
+                if (d.monitoring) {
+                    const el = document.getElementById('sys-monitoring');
+                    if (el) {
+                        el.textContent = `${d.monitoring.online}/${d.monitoring.total}`;
+                        el.style.color = d.monitoring.online === d.monitoring.total ? '#34D399' : '#FBBF24';
+                    }
+                }
+            } catch { /* ignore */ }
+        }
+
         // Refresh loop
         async function refresh() {
-            await Promise.all([refreshAnalytics(), refreshServices()]);
+            await Promise.all([refreshAnalytics(), refreshServices(), refreshMonitoring()]);
         }
 
         (async () => {
