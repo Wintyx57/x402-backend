@@ -18,8 +18,8 @@
 
 | Repository | Description |
 |------------|-------------|
-| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 8 native wrappers, MCP server |
-| **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 14 pages, glassmorphism UI, wallet connect, i18n FR/EN |
+| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 41 native wrappers, MCP server |
+| **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 15 pages, glassmorphism UI, wallet connect, i18n FR/EN |
 | **[x402-langchain](https://github.com/Wintyx57/x402-langchain)** | Python package — LangChain tools for x402 Bazaar (pip install) |
 | **[x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)** | FastAPI template — Monetize any Python function with x402 in 5 minutes |
 | **[CLI: npx x402-bazaar](https://www.npmjs.com/package/x402-bazaar)** | One-line setup for Claude Desktop, Cursor, VS Code |
@@ -35,7 +35,7 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 ## Key Features
 
 - **HTTP 402 Protocol** -- Standard-compliant payment flow. Call an endpoint, get a `402` with payment details, pay USDC, retry with tx hash, done.
-- **8 Native API Wrappers** -- Web search, URL scraper, Twitter/X data & search, weather, crypto prices, jokes, and AI image generation (DALL-E 3) -- all behind micropayments.
+- **41 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 30+ more -- all behind micropayments.
 - **70+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
 - **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
 - **Multi-Chain** -- Base (mainnet) + SKALE Europa (zero gas fees via sFUEL).
@@ -97,18 +97,30 @@ Agent                          x402 Bazaar                     Base / SKALE
 | `/search?q=` | GET | 0.05 USDC | Search services by keyword |
 | `/register` | POST | 1.00 USDC | Register a new service |
 
-### Native API Wrappers (x402-powered)
+### Native API Wrappers (41 endpoints, x402-powered)
 
 | Route | Cost | Source | Description |
 |-------|------|--------|-------------|
 | `/api/search?q=` | 0.005 USDC | DuckDuckGo | Clean web search results for LLMs |
 | `/api/scrape?url=` | 0.005 USDC | Cheerio + Turndown | Any URL to clean Markdown |
-| `/api/twitter?user=` | 0.005 USDC | fxtwitter | Twitter/X profiles and tweets |
+| `/api/twitter?user=\|tweet=\|search=` | 0.005 USDC | fxtwitter | Twitter/X profiles, tweets, search |
 | `/api/weather?city=` | 0.02 USDC | Open-Meteo | Weather data for any city |
 | `/api/crypto?coin=` | 0.02 USDC | CoinGecko | Cryptocurrency prices (USD/EUR) |
 | `/api/joke` | 0.01 USDC | Official Joke API | Random joke |
 | `/api/image?prompt=` | 0.05 USDC | DALL-E 3 | AI image generation (1024x1024) |
-| `/api/twitter?search=` | 0.005 USDC | DuckDuckGo | Twitter/X keyword search |
+| `/api/wikipedia?q=` | 0.005 USDC | Wikipedia API | Article summaries |
+| `/api/dictionary?word=` | 0.005 USDC | Free Dictionary | English definitions |
+| `/api/countries?name=` | 0.005 USDC | REST Countries | Country data |
+| `/api/github?user=\|repo=` | 0.005 USDC | GitHub API | Profiles and repo stats |
+| `/api/npm?package=` | 0.005 USDC | NPM Registry | Package metadata |
+| `/api/ip?address=` | 0.005 USDC | ip-api.com | IP geolocation |
+| `/api/translate?text=&to=` | 0.005 USDC | MyMemory | Translate 90+ languages |
+| `/api/summarize?text=` | 0.01 USDC | GPT-4o-mini | AI text summarization |
+| `/api/code` | 0.005 USDC | Piston API | Execute code in 50+ languages |
+| `/api/sentiment?text=` | 0.005 USDC | GPT-4o-mini | Sentiment analysis |
+| `/api/dns?domain=` | 0.003 USDC | Node DNS | DNS record lookup |
+| `/api/currency?from=&to=` | 0.005 USDC | Frankfurter | Currency conversion (ECB) |
+| ...and 22 more | 0.003-0.005 | Various | See [API_WRAPPERS.md](API_WRAPPERS.md) |
 
 ### Dashboard (Free)
 
@@ -187,7 +199,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 npm start            # Start the server
 npm run mcp          # Start the MCP server
 npm run seed         # Seed 75+ services into Supabase
-npm run seed:wrappers # Register the 8 native wrappers
+npm run seed:wrappers # Register the 41 native wrappers
 npm run demo         # Run the autonomous agent demo
 npm run demo:live    # Hackathon live demo with terminal UI
 ```

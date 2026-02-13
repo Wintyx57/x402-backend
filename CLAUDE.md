@@ -46,7 +46,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 │     ├── [x] 3b.1 Twitter Search: /api/twitter?search=keyword (DuckDuckGo site:twitter.com)
 │     ├── [x] 3b.2 Image Generation: /api/image?prompt=... via DALL-E 3 reel (0.05 USDC)
 │     ├── [x] 3b.3 8 nouveaux wrappers: translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email
-│     ├── [x] 3b.4 Total: 29 endpoints natifs enregistres dans Supabase (seed-wrappers.js)
+│     ├── [x] 3b.4 Total: 41 endpoints natifs enregistres dans Supabase (seed-wrappers.js)
 │     └── [x] 3b.5 Mettre a jour route GET / avec la liste complete
 │
 ├── [x] Milestone 4: Refonte /docs — Page documentation centralisee — COMPLET 12/02/2026
@@ -77,7 +77,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
       ├── [x] 6.3 Section securite visible sur About.jsx (6 features securite)
       ├── [x] 6.4 Backend refactoring en modules (routes/, lib/)
       ├── [x] 6.5 SEO complet (sitemap.xml, robots.txt, useSEO hook, JSON-LD, Google Search Console)
-      ├── [x] 6.6 75 tests e2e (node:test, zero deps)
+      ├── [x] 6.6 79 tests e2e (node:test, zero deps)
       └── [ ] 6.7 (Optionnel) Auto-GPT plugin — non prioritaire
 ```
 
@@ -167,7 +167,7 @@ HACKATHON/
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
-│   │   └── e2e.test.js   # 75 tests e2e (node:test, zero deps)
+│   │   └── e2e.test.js   # 79 tests e2e (node:test, zero deps)
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
@@ -206,7 +206,7 @@ HACKATHON/
     │   └── og-image.png  # Image OG pour partage social
     ├── src/
     │   ├── main.jsx      # Entry point (WagmiProvider, QueryClient, BrowserRouter, LanguageProvider)
-    │   ├── App.jsx       # Router (14 routes)
+    │   ├── App.jsx       # Router (15 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
     │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia, injected + coinbaseWallet connectors)
@@ -279,7 +279,8 @@ HACKATHON/
    - Backend refactoring en modules (routes/, lib/)
    - Monitoring: 41 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
    - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
-   - 75 tests e2e (node:test, zero deps)
+   - GPT Actions: Custom GPT with 30 operations (OpenAPI 3.1 spec)
+   - 320 tests total (241 unit + 79 e2e, node:test, zero deps)
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -303,7 +304,7 @@ HACKATHON/
    - i18n FR/EN avec toggle (137 clés pour blog bilingue)
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - 14 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status
+   - 15 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
    - Filtres avances (chain, prix), badges enrichis, health check
@@ -392,7 +393,7 @@ VITE_NETWORK=mainnet
 - [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
 - [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx, Telegram @x402_monitoradmin_bot, Supabase monitoring_checks — 13/02/2026)
 - [ ] Auto-GPT plugin
-- [ ] Tests unitaires backend
+- [x] Tests unitaires backend (241 unit tests — 13/02/2026)
 - [ ] Landing page A/B testing
 
 **Maintenance:**
@@ -423,7 +424,7 @@ cd x402-bazaar && node seed-services.js   # Re-seeder la base
 cd x402-bazaar && node seed-wrappers.js   # Re-seeder les wrappers natifs
 cd x402-bazaar && node demo-agent.js      # Lancer l'agent demo
 cd x402-bazaar && node setup-activity.js  # Verifier la table activity
-cd x402-bazaar && npm test                # Lancer les 75 tests e2e
+cd x402-bazaar && npm test                # Lancer les 79 tests e2e
 
 # Frontend
 cd x402-frontend && npm run dev           # Dev server (localhost:5173)

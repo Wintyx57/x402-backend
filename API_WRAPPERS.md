@@ -2,7 +2,7 @@
 
 ## Overview
 
-x402 Bazaar includes **29 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
+x402 Bazaar includes **41 native API wrapper endpoints** that proxy external APIs behind x402 micropayments. No API keys needed -- just pay USDC and get data.
 
 ## High-Value Endpoints
 
