@@ -697,3 +697,47 @@ describe('CORS', () => {
     assert.ok(corsHeader !== null, 'CORS header should be present');
   });
 });
+
+// ============================
+// 13. MONITORING / STATUS
+// ============================
+
+describe('Monitoring & Status', () => {
+  it('GET /api/status should return 200 with overall status', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/status`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.success, true);
+    assert.ok(['operational', 'degraded', 'major_outage', 'unknown'].includes(data.overall),
+      `overall should be a valid status, got: ${data.overall}`);
+  });
+
+  it('GET /api/status/uptime should return 200 with uptime data', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/status/uptime?period=24h`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.success, true);
+    assert.strictEqual(data.period, '24h');
+    assert.ok(Array.isArray(data.endpoints), 'endpoints should be an array');
+  });
+
+  it('GET /api/status/history should return 400 without endpoint param', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/status/history`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 400);
+    assert.ok(data.error);
+  });
+
+  it('GET /api/status/history?endpoint=/api/weather should return 200', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/status/history?endpoint=/api/weather`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.success, true);
+    assert.strictEqual(data.endpoint, '/api/weather');
+    assert.ok(Array.isArray(data.checks), 'checks should be an array');
+  });
+});

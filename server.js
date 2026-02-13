@@ -11,6 +11,7 @@ const logger = require('./lib/logger');
 const { NETWORK, NETWORK_LABEL, CHAINS, DEFAULT_CHAIN_KEY } = require('./lib/chains');
 const { createActivityLogger } = require('./lib/activity');
 const { createPaymentSystem } = require('./lib/payment');
+const { startMonitor, stopMonitor } = require('./lib/monitor');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -18,6 +19,7 @@ const createServicesRouter = require('./routes/services');
 const createRegisterRouter = require('./routes/register');
 const createDashboardRouter = require('./routes/dashboard');
 const createWrappersRouter = require('./routes/wrappers');
+const createMonitoringRouter = require('./routes/monitoring');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -104,7 +106,7 @@ const generalLimiter = rateLimit({
     max: 200,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health',
+    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status'),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
@@ -121,6 +123,7 @@ const paidEndpointLimiter = rateLimit({
     max: 30,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.headers['x-monitor'] === 'internal',
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
 });
 
@@ -174,6 +177,7 @@ app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpo
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+app.use(createMonitoringRouter(supabase));
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
@@ -204,12 +208,17 @@ const serverInstance = app.listen(PORT, async () => {
     console.log(`Networks: ${activeNetworks} (${NETWORK})`);
     console.log(`Database: Supabase (PostgreSQL)`);
     console.log(`Services registered: ${count}`);
-    console.log(`Dashboard: http://localhost:${PORT}/dashboard\n`);
+    console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
+    console.log(`Monitoring: checking 41 endpoints every 5 min\n`);
+
+    // Start monitoring (checks localhost to also keep Render alive)
+    startMonitor(`http://localhost:${PORT}`, supabase);
 });
 
 // --- GRACEFUL SHUTDOWN ---
 function gracefulShutdown(signal) {
     console.log(`\n[Shutdown] ${signal} received. Closing server...`);
+    stopMonitor();
     serverInstance.close(() => {
         console.log('[Shutdown] HTTP server closed.');
         process.exit(0);
