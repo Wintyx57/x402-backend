@@ -682,6 +682,18 @@ Get random dog images by breed (or random if no breed specified).
 | `/api/readability` | 0.005 USDC | Direct fetch + Cheerio | 30/min |
 | `/api/sentiment` | 0.005 USDC | OpenAI GPT-4o-mini | 30/min |
 | `/api/validate-email` | 0.003 USDC | Node DNS MX (built-in) | 30/min |
+| `/api/hash` | 0.003 USDC | Node crypto (built-in) | 30/min |
+| `/api/uuid` | 0.003 USDC | Node crypto (built-in) | 30/min |
+| `/api/base64` | 0.003 USDC | Node Buffer (built-in) | 30/min |
+| `/api/password` | 0.003 USDC | Node crypto (built-in) | 30/min |
+| `/api/currency` | 0.005 USDC | Frankfurter (ECB) | 30/min |
+| `/api/timestamp` | 0.003 USDC | Node Date (built-in) | 30/min |
+| `/api/lorem` | 0.003 USDC | Built-in generator | 30/min |
+| `/api/headers` | 0.003 USDC | Direct fetch (built-in) | 30/min |
+| `/api/markdown` | 0.003 USDC | Built-in converter | 30/min |
+| `/api/color` | 0.003 USDC | Built-in converter | 30/min |
+| `/api/json-validate` | 0.003 USDC | Built-in JSON parser | 30/min |
+| `/api/useragent` | 0.003 USDC | Built-in parser | 30/min |
 
 ---
 
@@ -899,6 +911,322 @@ Validate email addresses with format check and DNS MX record verification.
 2. Domain extraction
 3. DNS MX record lookup
 4. Final validation = format valid AND MX records exist
+
+---
+
+## Batch 2 — Utility Endpoints (Added 2026-02-12)
+
+### 31. Hash Generator API
+
+**Endpoint:** `GET /api/hash?text={text}&algo={algorithm}`
+**Price:** 0.003 USDC
+**Source:** Node.js crypto (built-in)
+
+Hash text with MD5, SHA-1, SHA-256, or SHA-512.
+
+**Parameters:**
+- `text` (required): Text to hash (max 10000 chars)
+- `algo` (optional): Algorithm — `md5`, `sha1`, `sha256` (default), `sha512`
+
+**Response:**
+```json
+{
+  "success": true,
+  "hash": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+  "algorithm": "sha256",
+  "input_length": 5
+}
+```
+
+---
+
+### 32. UUID Generator API
+
+**Endpoint:** `GET /api/uuid?count={count}`
+**Price:** 0.003 USDC
+**Source:** Node.js crypto (built-in)
+
+Generate cryptographically random UUID v4 identifiers.
+
+**Parameters:**
+- `count` (optional): Number of UUIDs (1-100, default: 1)
+
+**Response:**
+```json
+{
+  "success": true,
+  "uuids": ["550e8400-e29b-41d4-a716-446655440000"],
+  "count": 1
+}
+```
+
+---
+
+### 33. Base64 Encode/Decode API
+
+**Endpoint:** `GET /api/base64?text={text}&mode={encode|decode}`
+**Price:** 0.003 USDC
+**Source:** Node.js Buffer (built-in)
+
+Encode or decode Base64 strings.
+
+**Parameters:**
+- `text` (required): Text to encode/decode (max 50000 chars)
+- `mode` (optional): `encode` (default) or `decode`
+
+**Response:**
+```json
+{
+  "success": true,
+  "result": "aGVsbG8=",
+  "mode": "encode",
+  "input_length": 5,
+  "output_length": 8
+}
+```
+
+---
+
+### 34. Password Generator API
+
+**Endpoint:** `GET /api/password?length={length}&symbols={true|false}`
+**Price:** 0.003 USDC
+**Source:** Node.js crypto (built-in)
+
+Generate secure random passwords with configurable options.
+
+**Parameters:**
+- `length` (optional): Password length (8-128, default: 16)
+- `symbols` (optional): Include symbols (default: true)
+- `numbers` (optional): Include numbers (default: true)
+- `uppercase` (optional): Include uppercase (default: true)
+
+**Response:**
+```json
+{
+  "success": true,
+  "password": "k9#Tm2$xQ7pL!wR4",
+  "length": 16,
+  "options": { "symbols": true, "numbers": true, "uppercase": true }
+}
+```
+
+---
+
+### 35. Currency Converter API
+
+**Endpoint:** `GET /api/currency?from={code}&to={code}&amount={amount}`
+**Price:** 0.005 USDC
+**Source:** Frankfurter API (ECB rates, free, no key)
+
+Convert between 30+ currencies using European Central Bank rates.
+
+**Parameters:**
+- `from` (required): Source currency code (ISO 4217, e.g., "USD")
+- `to` (required): Target currency code (e.g., "EUR")
+- `amount` (optional): Amount to convert (default: 1)
+
+**Response:**
+```json
+{
+  "success": true,
+  "from": "USD",
+  "to": "EUR",
+  "amount": 100,
+  "converted": 92.15,
+  "rate": 0.9215,
+  "date": "2026-02-13"
+}
+```
+
+---
+
+### 36. Timestamp Converter API
+
+**Endpoint:** `GET /api/timestamp?ts={unix}` or `GET /api/timestamp?date={iso}`
+**Price:** 0.003 USDC
+**Source:** Node.js Date (built-in)
+
+Convert between Unix timestamps and human-readable dates. Without parameters, returns current time.
+
+**Parameters (all optional):**
+- `ts`: Unix timestamp (seconds or milliseconds)
+- `date`: ISO 8601 date string (e.g., "2026-01-15T12:00:00Z")
+
+**Response:**
+```json
+{
+  "success": true,
+  "timestamp": 1739448000,
+  "timestamp_ms": 1739448000000,
+  "iso": "2026-02-13T12:00:00.000Z",
+  "utc": "Fri, 13 Feb 2026 12:00:00 GMT"
+}
+```
+
+---
+
+### 37. Lorem Ipsum Generator API
+
+**Endpoint:** `GET /api/lorem?paragraphs={count}`
+**Price:** 0.003 USDC
+**Source:** Built-in generator
+
+Generate placeholder text for design and development.
+
+**Parameters:**
+- `paragraphs` (optional): Number of paragraphs (1-20, default: 3)
+
+**Response:**
+```json
+{
+  "success": true,
+  "paragraphs": ["Lorem ipsum dolor sit amet..."],
+  "count": 3,
+  "total_words": 150
+}
+```
+
+---
+
+### 38. HTTP Headers Inspector API
+
+**Endpoint:** `GET /api/headers?url={url}`
+**Price:** 0.003 USDC
+**Source:** Direct fetch (built-in)
+
+Inspect HTTP response headers of any URL. SSRF protected.
+
+**Parameters:**
+- `url` (required): Target URL (HTTP/HTTPS only)
+
+**Response:**
+```json
+{
+  "success": true,
+  "url": "https://example.com",
+  "status": 200,
+  "headers": {
+    "content-type": "text/html; charset=UTF-8",
+    "server": "ECAcc",
+    "x-cache": "HIT"
+  }
+}
+```
+
+---
+
+### 39. Markdown to HTML API
+
+**Endpoint:** `GET /api/markdown?text={markdown}`
+**Price:** 0.003 USDC
+**Source:** Built-in converter
+
+Convert Markdown text to HTML. Supports headings, bold, italic, code, links, and lists.
+
+**Parameters:**
+- `text` (required): Markdown text (max 50000 chars)
+
+**Response:**
+```json
+{
+  "success": true,
+  "html": "<p><strong>bold</strong> and <em>italic</em></p>",
+  "input_length": 22,
+  "output_length": 48
+}
+```
+
+---
+
+### 40. Color Converter API
+
+**Endpoint:** `GET /api/color?hex={hex}` or `GET /api/color?rgb={r,g,b}`
+**Price:** 0.003 USDC
+**Source:** Built-in converter
+
+Convert between hex, RGB, and HSL color formats.
+
+**Parameters (one required):**
+- `hex`: Hex color without # (e.g., "ff5733")
+- `rgb`: RGB values comma-separated (e.g., "255,87,51")
+
+**Response:**
+```json
+{
+  "success": true,
+  "hex": "#ff5733",
+  "rgb": { "r": 255, "g": 87, "b": 51 },
+  "hsl": { "h": 11, "s": 100, "l": 60 },
+  "css_rgb": "rgb(255, 87, 51)",
+  "css_hsl": "hsl(11, 100%, 60%)"
+}
+```
+
+---
+
+### 41. JSON Validator API
+
+**Endpoint:** `POST /api/json-validate`
+**Price:** 0.003 USDC
+**Source:** Built-in JSON parser
+
+Validate and format JSON strings. Reports errors with position.
+
+**Body (JSON):**
+```json
+{
+  "json": "{\"key\": \"value\"}"
+}
+```
+
+**Response (valid):**
+```json
+{
+  "success": true,
+  "valid": true,
+  "input_length": 16,
+  "formatted": "{\n  \"key\": \"value\"\n}",
+  "type": "object",
+  "keys_count": 1
+}
+```
+
+**Response (invalid):**
+```json
+{
+  "success": true,
+  "valid": false,
+  "input_length": 10,
+  "error_message": "Unexpected token } in JSON at position 8"
+}
+```
+
+---
+
+### 42. User-Agent Parser API
+
+**Endpoint:** `GET /api/useragent?ua={user_agent_string}`
+**Price:** 0.003 USDC
+**Source:** Built-in parser
+
+Parse User-Agent strings to detect browser, OS, mobile, and bot status.
+
+**Parameters:**
+- `ua` (optional): User-Agent string to parse. If omitted, uses the request's own User-Agent header.
+
+**Response:**
+```json
+{
+  "success": true,
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36...",
+  "browser": "Chrome/120.0",
+  "os": "Windows NT 10.0",
+  "is_mobile": false,
+  "is_bot": false,
+  "engine": "WebKit"
+}
+```
 
 ---
 

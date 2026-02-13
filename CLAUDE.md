@@ -295,7 +295,7 @@ HACKATHON/
    - Rate limiting : 3 tiers (general 100/15min, paid 30/min, register 10/hr)
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
 
-3. **Frontend React — 14 pages deployees** :
+3. **Frontend React — 15 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
    - CountUp animations sur les stats
    - Compatible With section (5 logos)
@@ -382,7 +382,7 @@ VITE_NETWORK=mainnet
 - [x] Milestone 1b: CLI reference sur toutes les pages du site
 - [x] Milestone 2: Config Generator (CLI + page /config)
 - [x] Milestone 3: 6 wrappers API natifs (search, scrape, twitter, weather, crypto, joke)
-- [x] Milestone 3b: 2 wrappers avances + 8 nouveaux (total: 29 endpoints natifs)
+- [x] Milestone 3b: 2 wrappers avances + 32 nouveaux (total: 41 endpoints natifs)
 - [x] Milestone 4: Refonte /docs — documentation centralisee avec sidebar + scroll-spy
 - [x] Milestone 4b: UX/UI & Trust Layer (FAQ, Demos, Dashboard, badges, health check, filtres)
 - [x] Milestone 5: Marketing (landing page, thread Twitter, HN, Reddit, DoraHacks, video script)

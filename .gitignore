@@ -7,3 +7,4 @@ agent-seed.json
 *.seed.json
 nul
 dist/
+setup-monitoring.js
