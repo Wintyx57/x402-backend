@@ -790,3 +790,120 @@ describe('OpenAPI Spec (GPT Actions)', () => {
     assert.strictEqual(data.servers[0].url, 'https://x402-api.onrender.com');
   });
 });
+
+// ============================
+// 8. BUDGET GUARDIAN
+// ============================
+describe('Budget Guardian API', () => {
+  const TEST_WALLET = '0x1234567890abcdef1234567890abcdef12345678';
+
+  it('POST /api/budget should set a budget', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: 10, period: 'daily' }),
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(data.budget);
+    assert.strictEqual(data.budget.max_budget_usdc, 10);
+    assert.strictEqual(data.budget.period, 'daily');
+    assert.strictEqual(data.budget.spent_usdc, 0);
+  });
+
+  it('GET /api/budget/:wallet should return budget status', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(data.budget);
+    assert.strictEqual(data.budget.max_budget_usdc, 10);
+    assert.strictEqual(data.budget.remaining_usdc, 10);
+    assert.strictEqual(data.budget.used_percent, 0);
+  });
+
+  it('GET /api/budget/:wallet with no budget should return null', async () => {
+    const nobudget = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${nobudget}`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.budget, null);
+  });
+
+  it('POST /api/budget should reject invalid wallet', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: 'not-a-wallet', max_budget_usdc: 10 }),
+    });
+
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('POST /api/budget should reject invalid period', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: 5, period: 'yearly' }),
+    });
+
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('POST /api/budget should reject negative amount', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: -5 }),
+    });
+
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('POST /api/budget/check should validate spending capability', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet: TEST_WALLET, amount_usdc: 0.01 }),
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.allowed, true);
+  });
+
+  it('GET /api/budgets should list all budgets', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budgets`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(data.count >= 1);
+    assert.ok(Array.isArray(data.budgets));
+  });
+
+  it('DELETE /api/budget/:wallet should remove budget', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.removed, true);
+  });
+
+  it('GET /api/budget/:wallet after delete should return null', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.budget, null);
+  });
+
+  it('GET /api/budget/:invalid should reject bad wallet', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/not-valid`);
+
+    assert.strictEqual(res.status, 400);
+  });
+});

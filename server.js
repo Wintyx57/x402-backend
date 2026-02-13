@@ -13,6 +13,7 @@ const { createActivityLogger } = require('./lib/activity');
 const { createPaymentSystem } = require('./lib/payment');
 const { startMonitor, stopMonitor, getStatus } = require('./lib/monitor');
 const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
+const { BudgetManager } = require('./lib/budget');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -21,6 +22,7 @@ const createRegisterRouter = require('./routes/register');
 const createDashboardRouter = require('./routes/dashboard');
 const createWrappersRouter = require('./routes/wrappers');
 const createMonitoringRouter = require('./routes/monitoring');
+const createBudgetRouter = require('./routes/budget');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -47,8 +49,11 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 // --- Activity logger ---
 const logActivity = createActivityLogger(supabase);
 
-// --- Payment system ---
-const { paymentMiddleware } = createPaymentSystem(supabase, logActivity);
+// --- Budget Guardian ---
+const budgetManager = new BudgetManager();
+
+// --- Payment system (with budget integration) ---
+const { paymentMiddleware } = createPaymentSystem(supabase, logActivity, budgetManager);
 
 // --- Express app ---
 const app = express();
@@ -96,8 +101,9 @@ app.use(cors({
         if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
         callback(new Error('CORS not allowed'));
     },
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain']
+    methods: ['GET', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token'],
+    exposedHeaders: ['X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert']
 }));
 
 // --- BODY LIMITS ---
@@ -181,6 +187,7 @@ app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerL
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
+app.use(createBudgetRouter(budgetManager, logActivity));
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
