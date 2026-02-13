@@ -8,6 +8,12 @@ const logger = require('../lib/logger');
 function createHealthRouter(supabase) {
     const router = express.Router();
 
+    // --- OpenAPI spec for GPT Actions ---
+    const openApiSpec = require('../openapi.json');
+    router.get('/.well-known/openapi.json', (req, res) => {
+        res.json(openApiSpec);
+    });
+
     // --- ERC-8004 Agent Registration JSON ---
     router.get('/.well-known/agent-registration.json', (req, res) => {
         const agentId = process.env.ERC8004_AGENT_ID || null;

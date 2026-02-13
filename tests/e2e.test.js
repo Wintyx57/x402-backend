@@ -741,3 +741,52 @@ describe('Monitoring & Status', () => {
     assert.ok(Array.isArray(data.checks), 'checks should be an array');
   });
 });
+
+// ============================
+// 14. OPENAPI SPEC (GPT Actions)
+// ============================
+
+describe('OpenAPI Spec (GPT Actions)', () => {
+  it('GET /.well-known/openapi.json should return valid OpenAPI 3.1 spec', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/.well-known/openapi.json`);
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.openapi, '3.1.0');
+    assert.ok(data.info);
+    assert.strictEqual(data.info.title, 'x402 Bazaar API');
+    assert.ok(data.paths);
+    assert.ok(data.components);
+  });
+
+  it('OpenAPI spec should list all 41 paid endpoints', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/.well-known/openapi.json`);
+    const data = await res.json();
+
+    const paths = Object.keys(data.paths);
+    // Free: /, /health, /api/status, /api/status/uptime, /api/services, /api/agent/{agentId}
+    // Paid: 41 wrapper endpoints
+    assert.ok(paths.length >= 47, `Expected at least 47 paths, got ${paths.length}`);
+    assert.ok(data.paths['/api/weather'], 'Missing /api/weather');
+    assert.ok(data.paths['/api/crypto'], 'Missing /api/crypto');
+    assert.ok(data.paths['/api/image'], 'Missing /api/image');
+    assert.ok(data.paths['/api/search'], 'Missing /api/search');
+  });
+
+  it('OpenAPI spec should have PaymentRequired schema', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/.well-known/openapi.json`);
+    const data = await res.json();
+
+    assert.ok(data.components.schemas.PaymentRequired, 'Missing PaymentRequired schema');
+    assert.ok(data.components.responses.PaymentRequired, 'Missing PaymentRequired response ref');
+  });
+
+  it('OpenAPI spec should have correct server URL', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/.well-known/openapi.json`);
+    const data = await res.json();
+
+    assert.ok(data.servers);
+    assert.ok(data.servers.length > 0);
+    assert.strictEqual(data.servers[0].url, 'https://x402-api.onrender.com');
+  });
+});

@@ -76,6 +76,8 @@ const PROD_ORIGINS = [
     'https://x402bazaar.org',
     'https://www.x402bazaar.org',
     'https://x402-frontend-one.vercel.app',
+    'https://chatgpt.com',
+    'https://chat.openai.com',
 ].filter(Boolean);
 
 const DEV_ORIGINS = [
