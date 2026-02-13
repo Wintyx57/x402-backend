@@ -77,7 +77,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
       ├── [x] 6.3 Section securite visible sur About.jsx (6 features securite)
       ├── [x] 6.4 Backend refactoring en modules (routes/, lib/)
       ├── [x] 6.5 SEO complet (sitemap.xml, robots.txt, useSEO hook, JSON-LD, Google Search Console)
-      ├── [x] 6.6 37 tests e2e (node:test, zero deps)
+      ├── [x] 6.6 71 tests e2e (node:test, zero deps)
       └── [ ] 6.7 (Optionnel) Auto-GPT plugin — non prioritaire
 ```
 
@@ -165,7 +165,7 @@ HACKATHON/
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
-│   │   └── e2e.test.js   # 37 tests e2e (node:test, zero deps)
+│   │   └── e2e.test.js   # 71 tests e2e (node:test, zero deps)
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
@@ -275,7 +275,7 @@ HACKATHON/
    - Verification on-chain des paiements USDC sur Base mainnet
    - 70+ services en base Supabase
    - Backend refactoring en modules (routes/, lib/)
-   - 37 tests e2e (node:test, zero deps)
+   - 71 tests e2e (node:test, zero deps)
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -416,7 +416,7 @@ cd x402-bazaar && node seed-services.js   # Re-seeder la base
 cd x402-bazaar && node seed-wrappers.js   # Re-seeder les wrappers natifs
 cd x402-bazaar && node demo-agent.js      # Lancer l'agent demo
 cd x402-bazaar && node setup-activity.js  # Verifier la table activity
-cd x402-bazaar && npm test                # Lancer les 37 tests e2e
+cd x402-bazaar && npm test                # Lancer les 71 tests e2e
 
 # Frontend
 cd x402-frontend && npm run dev           # Dev server (localhost:5173)
