@@ -162,12 +162,12 @@ function createMonitoringRouter(supabase) {
 
     const status = getStatus();
     const onlineCount = status?.onlineCount || 0;
-    const totalEndpoints = status?.totalCount || 41;
+    const totalEndpoints = status?.totalCount || 61;
 
     res.json({
       success: true,
       services: servicesCount,
-      nativeEndpoints: 41,
+      nativeEndpoints: 61,
       apiCalls: totalApiCalls,
       totalPayments,
       recentCallCount24h,
@@ -180,7 +180,7 @@ function createMonitoringRouter(supabase) {
         lastCheck: status?.lastCheck || null,
       },
       integrations: 6,
-      tests: 333,
+      tests: 416,
     });
   });
 

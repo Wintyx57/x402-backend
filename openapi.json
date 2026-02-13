@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "x402 Bazaar API",
-    "description": "The decentralized API marketplace where AI agents pay with USDC via HTTP 402 protocol. Free endpoints return data directly. Paid endpoints return HTTP 402 with payment details (wallet address, amount in USDC, supported chains). To use paid endpoints, send USDC on Base to the specified wallet, then retry with X-Payment-TxHash header. 41 total endpoints available — this schema covers the 30 most popular ones.",
+    "description": "The decentralized API marketplace where AI agents pay with USDC via HTTP 402 protocol. Free endpoints return data directly. Paid endpoints return HTTP 402 with payment details (wallet address, amount in USDC, supported chains). To use paid endpoints, send USDC on Base to the specified wallet, then retry with X-Payment-TxHash header. 61 total endpoints available — this schema covers the 30 most popular ones.",
     "version": "2.0.0",
     "contact": {
       "name": "x402 Bazaar",
@@ -24,7 +24,7 @@
       "get": {
         "operationId": "getMarketplaceInfo",
         "summary": "Get marketplace info",
-        "description": "Returns marketplace name, description, total services count, all 41 available endpoints with prices, and protocol info. Free endpoint.",
+        "description": "Returns marketplace name, description, total services count, all 61 available endpoints with prices, and protocol info. Free endpoint.",
         "responses": {
           "200": {
             "description": "Marketplace information",
@@ -50,7 +50,7 @@
       "get": {
         "operationId": "getMonitoringStatus",
         "summary": "Real-time monitoring status",
-        "description": "Returns the current status of all 41 API endpoints (online/offline, latency, HTTP status). Free endpoint.",
+        "description": "Returns the current status of all 61 API endpoints (online/offline, latency, HTTP status). Free endpoint.",
         "responses": {
           "200": {
             "description": "Monitoring status for all endpoints",
@@ -470,7 +470,7 @@
           "description": { "type": "string" },
           "network": { "type": "string", "example": "Base" },
           "total_services": { "type": "integer", "example": 70 },
-          "endpoints": { "type": "object", "description": "Map of all 41 endpoint paths to descriptions with prices" },
+          "endpoints": { "type": "object", "description": "Map of all 61 endpoint paths to descriptions with prices" },
           "protocol": { "type": "string", "example": "x402 - HTTP 402 Payment Required" }
         }
       },

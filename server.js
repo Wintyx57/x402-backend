@@ -219,7 +219,7 @@ const serverInstance = app.listen(PORT, async () => {
     console.log(`Database: Supabase (PostgreSQL)`);
     console.log(`Services registered: ${count}`);
     console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
-    console.log(`Monitoring: checking 41 endpoints every 5 min\n`);
+    console.log(`Monitoring: checking 61 endpoints every 5 min\n`);
 
     // Start monitoring (checks localhost to also keep Render alive)
     startMonitor(`http://localhost:${PORT}`, supabase);
