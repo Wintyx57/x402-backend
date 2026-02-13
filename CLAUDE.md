@@ -212,7 +212,7 @@ HACKATHON/
     │   └── og-image.png  # Image OG pour partage social
     ├── src/
     │   ├── main.jsx      # Entry point (WagmiProvider, QueryClient, BrowserRouter, LanguageProvider)
-    │   ├── App.jsx       # Router (15 routes)
+    │   ├── App.jsx       # Router (20 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
     │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia, injected + coinbaseWallet connectors)
@@ -316,7 +316,7 @@ HACKATHON/
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
    - 17 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground
-   - 3 pages CREEES mais PAS ENCORE WIREES : /analytics, /compare, /for-providers
+   - 3 pages wirees et live : /analytics, /compare, /for-providers
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
    - Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen)
@@ -418,28 +418,22 @@ VITE_NETWORK=mainnet
 - [x] Trust Layer P0: Terms of Service, SLA section, Cost Calculator, Playground
 - [x] Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen — 13/02/2026)
 
-**Phase 3 — EN COURS (session 18, 13/02/2026):**
+**Phase 3 — COMPLETE (session 19, 13/02/2026):**
 
-*P0 — Trust & Analytics (PARTIELLEMENT FAIT):*
+*P0 — Trust & Analytics — COMPLETE:*
 - [x] Backend: /api/public-stats enrichi (topEndpoints, uptimePercent, totalPayments, recentCallCount24h)
-- [x] Frontend: Analytics.jsx CREE (page /analytics avec stats, monitoring, top endpoints)
-- [ ] **WIRING**: Ajouter route /analytics dans App.jsx, liens Navbar + Footer
-- [ ] **TRADUCTIONS**: Ajouter cles analytics manquantes (totalApiCalls, last24h, nativeLabel, etc.)
-- [ ] FAQ expansion: 8 nouvelles questions critiques (q11-q18: refund, company, data, gas, vs RapidAPI, autonomous, revenue share, response time)
+- [x] Frontend: Analytics.jsx, Compare.jsx, ForProviders.jsx — 3 pages wirees + live
+- [x] App.jsx: 20 routes (17 + analytics + compare + for-providers)
+- [x] Navbar + Footer: liens analytics, compare, for-providers
+- [x] translations.js: ~160 cles EN+FR (compare, forProviders, analytics extras)
+- [x] FAQ expansion: 18 questions (q1-q18) + JSON-LD schema enrichi
 
-*P1 — Marketing Pages (PAGES CREEES, PAS WIREES):*
-- [x] Frontend: Compare.jsx CREE (page /compare vs RapidAPI — table comparison, 12 features, 6 advantages)
-- [x] Frontend: ForProviders.jsx CREE (page /for-providers — 5 etapes, 6 benefits, spec JSON, flow diagram)
-- [ ] **WIRING**: Ajouter routes /compare + /for-providers dans App.jsx
-- [ ] **NAVBAR**: Ajouter liens dans marketplaceLinks ou devLinks
-- [ ] **FOOTER**: Ajouter liens dans sections Product/Resources
-- [ ] **TRADUCTIONS**: Ajouter sections `compare` et `forProviders` (EN+FR, ~80 cles total)
-
-*P2 — Product Features (PAS COMMENCE):*
+*P1 — Product Features — COMPLETE:*
+- [x] Quality Score badges dynamiques (Gold/Silver/Bronze par API basees uptime 7j)
+- [x] Home.jsx: CTA "View Analytics" dans hero
 - [ ] Budget Guardian (backend: max spend caps par agent, alerts 50/75/90%)
-- [ ] Quality Score / Badges dynamiques (Gold/Silver/Bronze par API basees uptime + response time)
 
-*P3 — Scale (PAS COMMENCE):*
+*P2 — Scale (long terme):*
 - [ ] Solana support (multi-chain)
 - [ ] Batch payments / Subscription tiers
 - [ ] Provider outreach + first external provider
@@ -513,4 +507,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 quasi-complete (41 wrappers, CLI v3.0.0, Monitoring, Telegram bot, 333 tests, 5 integrations)*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, quality badges, 333 tests, 6 integrations)*
