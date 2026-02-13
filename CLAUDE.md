@@ -155,7 +155,8 @@ HACKATHON/
 │   │   ├── chains.js     # Config networks (Base, SKALE)
 │   │   ├── activity.js   # Activity tracking
 │   │   ├── payment.js    # Payment verification
-│   │   └── monitor.js    # Monitoring engine (41 endpoints, 5min checks, Telegram alerts)
+│   │   ├── monitor.js    # Monitoring engine (41 endpoints, 5min checks, Telegram alerts)
+│   │   └── telegram-bot.js # Interactive Telegram bot (6 commands, polling, secured by chat_id)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
@@ -167,7 +168,8 @@ HACKATHON/
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
-│   │   └── e2e.test.js   # 79 tests e2e (node:test, zero deps)
+│   │   ├── e2e.test.js   # 79 tests e2e (node:test, zero deps)
+│   │   └── telegram-bot.test.js # 13 tests (bot, register, dashboard, balance parsing)
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
@@ -280,7 +282,11 @@ HACKATHON/
    - Monitoring: 41 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
    - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
    - GPT Actions: Custom GPT with 30 operations (OpenAPI 3.1 spec)
-   - 320 tests total (241 unit + 79 e2e, node:test, zero deps)
+   - Telegram bot: @x402_monitoradmin_bot (6 interactive commands, polling, secured by chat_id)
+   - Auto-test on registration: ping URL + Telegram notification + verified_status update
+   - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
+   - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
+   - 333 tests total (254 unit + 79 e2e, node:test, zero deps)
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -393,7 +399,12 @@ VITE_NETWORK=mainnet
 - [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
 - [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx, Telegram @x402_monitoradmin_bot, Supabase monitoring_checks — 13/02/2026)
 - [ ] Auto-GPT plugin
-- [x] Tests unitaires backend (241 unit tests — 13/02/2026)
+- [x] Tests unitaires backend (254 unit tests — 13/02/2026)
+- [x] Telegram bot interactif (6 commandes, polling, secured by chat_id — 13/02/2026)
+- [x] Auto-test on registration (ping URL + Telegram notification — 13/02/2026)
+- [x] Public stats endpoint (GET /api/public-stats, no auth — 13/02/2026)
+- [x] Dashboard System Info panel (monitoring, tests, integrations — 13/02/2026)
+- [x] ServiceCard verified badge ("Tested" for auto-tested services — 13/02/2026)
 - [ ] Landing page A/B testing
 
 **Maintenance:**
@@ -465,4 +476,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 partiel (41 wrappers, CLI v3.0.0, Monitoring), CLAUDE.md synchronise avec ROADMAP.md*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 quasi-complete (41 wrappers, CLI v3.0.0, Monitoring, Telegram bot, 333 tests, 5 integrations)*

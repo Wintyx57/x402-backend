@@ -44,6 +44,11 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.
 - **Budget Control** -- Per-session spending caps for AI agents (configurable `MAX_BUDGET_USDC`).
 - **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection.
+- **333 Tests** -- 254 unit + 79 e2e, all passing (node:test, zero deps).
+- **Real-Time Monitoring** -- 41 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
+- **Telegram Bot** -- Interactive admin bot with 6 commands (/balance, /stats, /status, /recent, /services, /help).
+- **Auto-Test on Registration** -- New services are pinged automatically, with Telegram notification on result.
+- **Public Stats** -- `GET /api/public-stats` (no auth) for frontend homepage counters.
 
 ## Quick Start
 
@@ -122,14 +127,22 @@ Agent                          x402 Bazaar                     Base / SKALE
 | `/api/currency?from=&to=` | 0.005 USDC | Frankfurter | Currency conversion (ECB) |
 | ...and 22 more | 0.003-0.005 | Various | See [API_WRAPPERS.md](API_WRAPPERS.md) |
 
-### Dashboard (Free)
+### Monitoring & Status (Free)
 
 | Route | Description |
 |-------|-------------|
-| `/dashboard` | Admin UI -- stats, services, activity log |
+| `/api/status` | Live monitoring status for all 41 endpoints |
+| `/api/status/uptime` | Uptime percentages by endpoint |
+| `/api/status/history` | Check history (last 24h) |
+| `/api/public-stats` | Public stats (services, API calls, monitoring, integrations) |
+
+### Dashboard (Admin, requires `X-Admin-Token`)
+
+| Route | Description |
+|-------|-------------|
+| `/dashboard` | Admin UI -- stats, services, activity log, System Info |
 | `/api/stats` | JSON stats (services, payments, revenue, wallet balance) |
-| `/api/services` | Service list for dashboard |
-| `/api/activity` | Recent activity log |
+| `/api/analytics` | Enriched analytics (balance, recent activity, avg price) |
 
 ### Payment Headers
 
@@ -191,7 +204,10 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 | `COINBASE_API_SECRET` | CDP API secret |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_KEY` | Supabase anon key |
-| `OPENAI_API_KEY` | OpenAI key (demo agent only) |
+| `OPENAI_API_KEY` | OpenAI key (for /api/image, /api/summarize, /api/sentiment) |
+| `ADMIN_TOKEN` | Secret token for dashboard access |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for monitoring alerts + interactive commands |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID to receive notifications |
 
 ## Scripts
 
