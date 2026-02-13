@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 12/02/2026 — PHASE 1 COMPLETE)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 13/02/2026 — PHASE 1 COMPLETE + MONITORING)
 
 ### Vue d'ensemble
 
@@ -77,7 +77,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
       ├── [x] 6.3 Section securite visible sur About.jsx (6 features securite)
       ├── [x] 6.4 Backend refactoring en modules (routes/, lib/)
       ├── [x] 6.5 SEO complet (sitemap.xml, robots.txt, useSEO hook, JSON-LD, Google Search Console)
-      ├── [x] 6.6 71 tests e2e (node:test, zero deps)
+      ├── [x] 6.6 75 tests e2e (node:test, zero deps)
       └── [ ] 6.7 (Optionnel) Auto-GPT plugin — non prioritaire
 ```
 
@@ -148,12 +148,14 @@ HACKATHON/
 │   │   ├── services.js   # GET /api/services, GET /api/services/:id, POST /api/services/activity
 │   │   ├── register.js   # POST /api/register, POST /api/image, POST /api/search, etc.
 │   │   ├── dashboard.js  # GET /dashboard (admin), GET /api/analytics (enrichi)
-│   │   └── wrappers.js   # GET /api/[wrapper]
+│   │   ├── wrappers.js   # GET /api/[wrapper]
+│   │   └── monitoring.js # GET /api/status, /api/status/uptime, /api/status/history (public)
 │   ├── lib/              # Logique metier
 │   │   ├── logger.js     # Winston logger
 │   │   ├── chains.js     # Config networks (Base, SKALE)
 │   │   ├── activity.js   # Activity tracking
-│   │   └── payment.js    # Payment verification
+│   │   ├── payment.js    # Payment verification
+│   │   └── monitor.js    # Monitoring engine (41 endpoints, 5min checks, Telegram alerts)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
@@ -165,7 +167,7 @@ HACKATHON/
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
-│   │   └── e2e.test.js   # 71 tests e2e (node:test, zero deps)
+│   │   └── e2e.test.js   # 75 tests e2e (node:test, zero deps)
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
 │                          #       cheerio, turndown, zod
@@ -204,7 +206,7 @@ HACKATHON/
     │   └── og-image.png  # Image OG pour partage social
     ├── src/
     │   ├── main.jsx      # Entry point (WagmiProvider, QueryClient, BrowserRouter, LanguageProvider)
-    │   ├── App.jsx       # Router (13 routes)
+    │   ├── App.jsx       # Router (14 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
     │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia, injected + coinbaseWallet connectors)
@@ -275,7 +277,9 @@ HACKATHON/
    - Verification on-chain des paiements USDC sur Base mainnet
    - 70+ services en base Supabase
    - Backend refactoring en modules (routes/, lib/)
-   - 71 tests e2e (node:test, zero deps)
+   - Monitoring: 41 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
+   - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
+   - 75 tests e2e (node:test, zero deps)
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -290,7 +294,7 @@ HACKATHON/
    - Rate limiting : 3 tiers (general 100/15min, paid 30/min, register 10/hr)
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
 
-3. **Frontend React — 13 pages deployees** :
+3. **Frontend React — 14 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
    - CountUp animations sur les stats
    - Compatible With section (5 logos)
@@ -299,7 +303,7 @@ HACKATHON/
    - i18n FR/EN avec toggle (137 clés pour blog bilingue)
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - 13 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos (Analytics supprime du frontend public)
+   - 14 routes : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
    - Filtres avances (chain, prix), badges enrichis, health check
@@ -383,7 +387,7 @@ VITE_NETWORK=mainnet
 **Phase 2 — A definir:**
 - [x] Atteindre 40+ services natifs (FAIT: 41 endpoints)
 - [x] CLI v3 (paiement automatique via wallet) (FAIT: v3.0.0 avec auto-payment USDC)
-- [ ] Monitoring et alertes (uptime, erreurs)
+- [x] Monitoring et alertes — DONE (lib/monitor.js, routes/monitoring.js, Status.jsx — 13/02/2026)
 - [ ] Auto-GPT plugin
 - [ ] Tests unitaires backend
 - [ ] Landing page A/B testing
@@ -416,7 +420,7 @@ cd x402-bazaar && node seed-services.js   # Re-seeder la base
 cd x402-bazaar && node seed-wrappers.js   # Re-seeder les wrappers natifs
 cd x402-bazaar && node demo-agent.js      # Lancer l'agent demo
 cd x402-bazaar && node setup-activity.js  # Verifier la table activity
-cd x402-bazaar && npm test                # Lancer les 71 tests e2e
+cd x402-bazaar && npm test                # Lancer les 75 tests e2e
 
 # Frontend
 cd x402-frontend && npm run dev           # Dev server (localhost:5173)
@@ -457,4 +461,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 12/02/2026 — Phase 1 COMPLETE + Phase 2 partiel (41 wrappers, CLI v3.0.0), CLAUDE.md synchronise avec ROADMAP.md*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 partiel (41 wrappers, CLI v3.0.0, Monitoring), CLAUDE.md synchronise avec ROADMAP.md*
