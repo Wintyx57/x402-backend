@@ -149,12 +149,14 @@ HACKATHON/
 │   │   ├── register.js   # POST /api/register, POST /api/image, POST /api/search, etc.
 │   │   ├── dashboard.js  # GET /dashboard (admin), GET /api/analytics (enrichi)
 │   │   ├── wrappers.js   # GET /api/[wrapper]
-│   │   └── monitoring.js # GET /api/status, /api/status/uptime, /api/status/history (public)
+│   │   ├── monitoring.js # GET /api/status, /api/status/uptime, /api/status/history (public)
+│   │   └── budget.js    # Budget Guardian: POST/GET/DELETE /api/budget, GET /api/budgets, POST /api/budget/check
 │   ├── lib/              # Logique metier
 │   │   ├── logger.js     # Winston logger
 │   │   ├── chains.js     # Config networks (Base, SKALE)
 │   │   ├── activity.js   # Activity tracking
-│   │   ├── payment.js    # Payment verification
+│   │   ├── payment.js    # Payment verification (with budget integration)
+│   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
 │   │   ├── monitor.js    # Monitoring engine (41 endpoints, 5min checks, Telegram alerts)
 │   │   └── telegram-bot.js # Interactive Telegram bot (6 commands, polling, secured by chat_id)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
@@ -291,7 +293,8 @@ HACKATHON/
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
-   - 333 tests total (254 unit + 79 e2e, node:test, zero deps)
+   - 361 tests total (271 unit + 90 e2e, node:test, zero deps)
+   - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
 
 2. **Securite (audit 12/02/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
@@ -431,7 +434,7 @@ VITE_NETWORK=mainnet
 *P1 — Product Features — COMPLETE:*
 - [x] Quality Score badges dynamiques (Gold/Silver/Bronze par API basees uptime 7j)
 - [x] Home.jsx: CTA "View Analytics" dans hero
-- [ ] Budget Guardian (backend: max spend caps par agent, alerts 50/75/90%)
+- [x] Budget Guardian (backend: max spend caps par agent, alerts 50/75/90%) — DONE session 20
 
 *P2 — Scale (long terme):*
 - [ ] Solana support (multi-chain)
@@ -507,4 +510,4 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, quality badges, 333 tests, 6 integrations)*
+*Derniere mise a jour: 13/02/2026 — Phase 1 COMPLETE + Phase 2 COMPLETE + Phase 3 COMPLETE (20 routes, 18 FAQ, Budget Guardian, quality badges, 361 tests, 6 integrations)*
