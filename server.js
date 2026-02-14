@@ -221,11 +221,27 @@ const serverInstance = app.listen(PORT, async () => {
     console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
     console.log(`Monitoring: checking 61 endpoints every 5 min\n`);
 
-    // Start monitoring (checks localhost to also keep Render alive)
+    // Start monitoring (checks localhost endpoints)
     startMonitor(`http://localhost:${PORT}`, supabase);
 
     // Start Telegram bot (interactive commands)
     startTelegramBot(supabase, getStatus);
+
+    // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
+    // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
+    const externalUrl = process.env.RENDER_EXTERNAL_URL;
+    if (externalUrl) {
+        const KEEP_ALIVE_INTERVAL = 10 * 60 * 1000; // 10 minutes
+        setInterval(async () => {
+            try {
+                const res = await fetch(`${externalUrl}/health`);
+                logger.info('KeepAlive', `Ping ${externalUrl}/health -> ${res.status}`);
+            } catch (err) {
+                logger.warn('KeepAlive', `Ping failed: ${err.message}`);
+            }
+        }, KEEP_ALIVE_INTERVAL);
+        logger.info('KeepAlive', `Self-ping every 10min to ${externalUrl}`);
+    }
 });
 
 // --- GRACEFUL SHUTDOWN ---
