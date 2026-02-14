@@ -72,6 +72,11 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             logger.error('AutoTest', `Auto-test failed for "${name}": ${err.message}`);
         });
 
+        // Notify Community Agent webhook (fire-and-forget)
+        notifyCommunityAgent({ name, description, price }).catch(err => {
+            logger.error('Webhook', `Community agent webhook failed: ${err.message}`);
+        });
+
         res.status(201).json({
             success: true,
             message: `Service "${name}" enregistre avec succes !`,
@@ -141,6 +146,35 @@ async function autoTestService(service, supabase) {
     await notifyAdmin(text);
 
     logger.info('AutoTest', `Service "${name}" (${id.slice(0, 8)}): ${status} (HTTP ${httpStatus}, ${latency}ms)`);
+}
+
+// --- Notify Community Agent of new API registration ---
+const COMMUNITY_AGENT_WEBHOOK = process.env.COMMUNITY_AGENT_WEBHOOK_URL || '';
+const WEBHOOK_TIMEOUT = 5000;
+
+async function notifyCommunityAgent({ name, description, price }) {
+    if (!COMMUNITY_AGENT_WEBHOOK) return;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+
+    try {
+        const res = await fetch(COMMUNITY_AGENT_WEBHOOK, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                apiName: name,
+                apiDescription: description || '',
+                apiPrice: `${price} USDC`
+            }),
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        logger.info('Webhook', `Community agent notified for "${name}" (HTTP ${res.status})`);
+    } catch (err) {
+        clearTimeout(timeoutId);
+        throw err;
+    }
 }
 
 module.exports = createRegisterRouter;
