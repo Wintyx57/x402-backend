@@ -20,7 +20,7 @@ const createHealthRouter = require('./routes/health');
 const createServicesRouter = require('./routes/services');
 const createRegisterRouter = require('./routes/register');
 const createDashboardRouter = require('./routes/dashboard');
-const createWrappersRouter = require('./routes/wrappers');
+const createWrappersRouter = require('./routes/wrappers/index');
 const createMonitoringRouter = require('./routes/monitoring');
 const createBudgetRouter = require('./routes/budget');
 
