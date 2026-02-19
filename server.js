@@ -150,14 +150,27 @@ app.use(generalLimiter);
 function adminAuth(req, res, next) {
     const expected = (process.env.ADMIN_TOKEN || '').trim();
     if (!expected) {
-        return next();
+        return res.status(503).json({ error: 'Admin not configured', message: 'ADMIN_TOKEN environment variable is not set.' });
     }
     const token = (req.headers['x-admin-token'] || '').trim();
-    if (!token || token !== expected) {
+    if (!token || !timingSafeCompare(token, expected)) {
         logger.warn('AdminAuth', `Rejected: received ${token.length} chars, expected ${expected.length} chars`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     next();
+}
+
+// S4 — Timing-safe token comparison to prevent timing attacks
+function timingSafeCompare(a, b) {
+    const crypto = require('crypto');
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) {
+        // Compare against itself to maintain constant time, then return false
+        crypto.timingSafeEqual(bufA, bufA);
+        return false;
+    }
+    return crypto.timingSafeEqual(bufA, bufB);
 }
 
 // --- REQUEST LOGGING ---

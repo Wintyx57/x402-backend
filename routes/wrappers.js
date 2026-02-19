@@ -4,6 +4,7 @@ const express = require('express');
 const dns = require('dns');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
+const { evaluate } = require('mathjs');
 const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
 
@@ -2431,30 +2432,8 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
         }
 
         try {
-            // Safe math evaluation (no eval!) — support basic math + functions
-            const sanitized = expr
-                .replace(/\s+/g, '')
-                .replace(/pi/gi, String(Math.PI))
-                .replace(/e(?![a-z])/gi, String(Math.E))
-                .replace(/sqrt\(([^)]+)\)/gi, (_, n) => String(Math.sqrt(parseFloat(n))))
-                .replace(/abs\(([^)]+)\)/gi, (_, n) => String(Math.abs(parseFloat(n))))
-                .replace(/ceil\(([^)]+)\)/gi, (_, n) => String(Math.ceil(parseFloat(n))))
-                .replace(/floor\(([^)]+)\)/gi, (_, n) => String(Math.floor(parseFloat(n))))
-                .replace(/round\(([^)]+)\)/gi, (_, n) => String(Math.round(parseFloat(n))))
-                .replace(/log\(([^)]+)\)/gi, (_, n) => String(Math.log(parseFloat(n))))
-                .replace(/log10\(([^)]+)\)/gi, (_, n) => String(Math.log10(parseFloat(n))))
-                .replace(/sin\(([^)]+)\)/gi, (_, n) => String(Math.sin(parseFloat(n))))
-                .replace(/cos\(([^)]+)\)/gi, (_, n) => String(Math.cos(parseFloat(n))))
-                .replace(/tan\(([^)]+)\)/gi, (_, n) => String(Math.tan(parseFloat(n))))
-                .replace(/\^/g, '**');
-
-            // Only allow digits, operators, dots, parens
-            if (/[^0-9+\-*/.()e ]/.test(sanitized)) {
-                return res.status(400).json({ error: 'Invalid expression. Allowed: numbers, +, -, *, /, ^, (), pi, e, sqrt, abs, ceil, floor, round, log, sin, cos, tan' });
-            }
-
-            // Use Function constructor (safer than eval, no access to scope)
-            const result = new Function(`"use strict"; return (${sanitized})`)();
+            // Safe math evaluation using mathjs (no eval/new Function)
+            const result = evaluate(expr);
 
             if (typeof result !== 'number' || !isFinite(result)) {
                 return res.status(400).json({ error: 'Expression resulted in invalid number (Infinity or NaN)' });

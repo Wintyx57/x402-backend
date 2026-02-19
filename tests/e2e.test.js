@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 
 // Configuration
 const BASE_URL = 'https://x402-api.onrender.com';
-const ADMIN_TOKEN = 'Ce2b2b53945@';
+// ADMIN_TOKEN must be set via environment variable for admin endpoint tests
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || 'test-admin-token';
 const TIMEOUT = 30000; // 30s pour les cold starts Render
 
 // Helper pour faire des requetes avec timeout
