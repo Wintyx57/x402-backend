@@ -8,6 +8,8 @@ const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
 
 const logger = require('./lib/logger');
+const correlationId = require('./lib/correlationId');
+const { scheduleRetention } = require('./lib/retention');
 const { NETWORK, NETWORK_LABEL, CHAINS, DEFAULT_CHAIN_KEY } = require('./lib/chains');
 const { createActivityLogger } = require('./lib/activity');
 const { createPaymentSystem } = require('./lib/payment');
@@ -146,6 +148,9 @@ const registerLimiter = rateLimit({
 
 app.use(generalLimiter);
 
+// --- CORRELATION IDs ---
+app.use(correlationId);
+
 // --- ADMIN AUTH MIDDLEWARE ---
 function adminAuth(req, res, next) {
     const expected = (process.env.ADMIN_TOKEN || '').trim();
@@ -178,13 +183,13 @@ app.use((req, res, next) => {
     const start = Date.now();
     res.on('finish', () => {
         const duration = Date.now() - start;
-        const log = `${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`;
+        const extra = { method: req.method, url: req.originalUrl, status: res.statusCode, ms: duration, correlationId: req.correlationId };
         if (res.statusCode >= 500) {
-            logger.error('HTTP', log);
+            logger.error('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
         } else if (res.statusCode >= 400) {
-            logger.warn('HTTP', log);
+            logger.warn('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
         } else {
-            logger.info('HTTP', log);
+            logger.info('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
         }
     });
     next();
@@ -226,19 +231,16 @@ const serverInstance = app.listen(PORT, async () => {
     const activeNetworks = Object.entries(CHAINS)
         .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
         .map(([, cfg]) => cfg.label).join(', ');
-    console.log(`\nx402 Bazaar active on http://localhost:${PORT}`);
-    console.log(`Wallet: ${maskedWallet}`);
-    console.log(`Networks: ${activeNetworks} (${NETWORK})`);
-    console.log(`Database: Supabase (PostgreSQL)`);
-    console.log(`Services registered: ${count}`);
-    console.log(`Dashboard: http://localhost:${PORT}/dashboard`);
-    console.log(`Monitoring: checking 61 endpoints every 5 min\n`);
+    logger.info('server', `x402 Bazaar active on http://localhost:${PORT}`, { port: PORT, wallet: maskedWallet, networks: activeNetworks, services: count });
 
     // Start monitoring (checks localhost endpoints)
     startMonitor(`http://localhost:${PORT}`, supabase);
 
     // Start Telegram bot (interactive commands)
     startTelegramBot(supabase, getStatus);
+
+    // Data retention: purge old activity + monitoring_checks automatically
+    scheduleRetention(supabase);
 
     // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
     // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
@@ -259,15 +261,15 @@ const serverInstance = app.listen(PORT, async () => {
 
 // --- GRACEFUL SHUTDOWN ---
 function gracefulShutdown(signal) {
-    console.log(`\n[Shutdown] ${signal} received. Closing server...`);
+    logger.info('server', `${signal} received — shutting down`);
     stopMonitor();
     stopTelegramBot();
     serverInstance.close(() => {
-        console.log('[Shutdown] HTTP server closed.');
+        logger.info('server', 'HTTP server closed');
         process.exit(0);
     });
     setTimeout(() => {
-        console.error('[Shutdown] Forcing exit after timeout');
+        logger.error('server', 'Forcing exit after shutdown timeout');
         process.exit(1);
     }, 10000);
 }
