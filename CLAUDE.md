@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 13/02/2026 — PHASE 1 COMPLETE + MONITORING)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 14/02/2026 — PHASE 1-3 COMPLETE + Community Agent LIVE)
 
 ### Vue d'ensemble
 
@@ -192,6 +192,14 @@ HACKATHON/
 │   ├── src/x402_bazaar/   # X402BazaarPlugin (AutoGPTPluginTemplate) + X402Client
 │   └── setup.py           # v0.1.0
 │
+├── x402-community-agent/  # Community Agent — AI social media manager (GitHub: Wintyx57/x402-community-agent)
+│   ├── dashboard.js       # HTTP server (port 3500), 15 API routes, scheduler engine, queue manager
+│   ├── agent.js           # CLI agent (strategies, content gen, publishing)
+│   ├── lib/               # content-gen.js, platforms.js, x402-client.js
+│   ├── public/index.html  # SPA 6 pages (Dashboard, Automatisation, Studio, Config, Historique, Journaux)
+│   ├── data/              # settings.json, history.json, queue.json (persistent)
+│   └── package.json       # deps: dotenv, viem
+│
 ├── x402-fast-monetization-template/  # Template Python pour creer un wrapper x402 (FastAPI)
 │   ├── main.py            # Serveur FastAPI avec decorateur @x402_paywall
 │   ├── x402_middleware.py # Middleware x402 (verification paiements, 402 response)
@@ -217,7 +225,7 @@ HACKATHON/
     │   ├── App.jsx       # Router (20 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
-    │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia, injected + coinbaseWallet connectors)
+    │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia + SKALE Europa, RainbowKit wallets)
     │   ├── i18n/
     │   │   ├── translations.js    # EN + FR (137 clés i18n pour blog complet)
     │   │   └── LanguageContext.jsx # React Context + useTranslation() hook + localStorage persistence
@@ -230,6 +238,7 @@ HACKATHON/
     │   │   ├── ServiceCard.jsx    # Glass card avec glow hover + badges enrichis + i18n
     │   │   ├── DocsSidebar.jsx    # Sidebar sticky /docs avec scroll-spy
     │   │   ├── CategoryIcon.jsx   # Icones par categorie de service
+    │   │   ├── ChainSelector.jsx  # Toggle Base / SKALE Europa (useSwitchChain wagmi)
     │   │   ├── ScrollToTop.jsx    # Reset scroll on route change
     │   │   └── LanguageToggle.jsx # Toggle pill FR/EN
     │   └── pages/
@@ -526,4 +535,43 @@ cd x402-bazaar && git push origin main    # Push -> Render auto-deploy
 - `404bd08` feat: CLI v2.0.0 — add list, search, call, wallet commands
 - Publie sur npm: x402-bazaar@3.0.0 (12/02/2026)
 
-*Derniere mise a jour: 13/02/2026 — Phase 1-3 COMPLETE + P1.7 (Telegram 11 cmds, Analytics charts, wallet mobile optimized, 416 tests, 6 integrations, 61 APIs)*
+---
+
+## Phase 4 — Community Agent & Growth (EN COURS)
+
+### P0 — Agent Community Manager Multi-Reseaux
+Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfooding).
+**Repo:** `x402-community-agent/` (GitHub: Wintyx57/x402-community-agent)
+
+**Sprint 1 — 8 nouvelles APIs de posting:**
+- `/api/twitter-post`, `/api/reddit-post`, `/api/linkedin-post`, `/api/devto-post`
+- `/api/discord-webhook`, `/api/telegram-channel`, `/api/farcaster-post`, `/api/hn-post`
+
+**Sprint 2 — Agent core (PARTIELLEMENT FAIT — session 27):**
+- [x] Dashboard V2: SPA 6 pages + 15 API routes (port 3500)
+- [x] Scheduler engine (60s tick, per-day/hour, deduplication)
+- [x] Auto-publish per platform + manual → awaiting_approval queue
+- [x] Content queue persistante + auto-retry (exponential backoff 5/30/60min, max 3)
+- [x] Webhook /api/webhook/new-api + real-time dashboard (15s refresh)
+- [x] Settings management avec credential redaction (mergeSettings)
+- [ ] Configurer vrais credentials plateformes
+- [ ] Integrer webhook dans backend x402 registration flow
+- [ ] Content generation finale avec x402 APIs
+
+**Sprint 3 — Go live** (deploy Render, validation manuelle puis autonomie progressive)
+
+### P0.5 — SKALE Europa: Tester paiement reel
+- [x] ChainSelector component (Base / SKALE toggle) — frontend LIVE (commit da38722)
+- [x] sFUEL claim OK (0.0001 sFUEL sur wallet, sfuelstation.com)
+- [x] Backend supporte SKALE (payment.js verifie on-chain, X-Payment-Chain: skale)
+- [ ] Bridge USDC Base → SKALE Europa via Meson.fi (a retenter)
+- [ ] Tester paiement x402 reel sur SKALE (0 gas)
+- **Note**: Meson supporte USDT+USDC sur SKALE Europa, mais x402 n'accepte que USDC
+
+### P1 — Scale & Polish
+- Scale APIs 61→100, Agent SDK JS/TS, Ratings & Reviews, Landing refonte
+
+### P2 — Growth
+- Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
+
+*Derniere mise a jour: 19/02/2026 — Phase 1-3 COMPLETE + P1.9 (RainbowKit) + Phase 4 EN COURS + ChainSelector LIVE + SKALE sFUEL OK*
