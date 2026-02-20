@@ -187,6 +187,16 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         }
 
         try {
+            // SECURITY: DNS rebinding check — block internal IPs
+            try {
+                const { address } = await dns.promises.lookup(domain);
+                if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address)) {
+                    return res.status(400).json({ error: 'Internal IPs not allowed' });
+                }
+            } catch {
+                return res.status(400).json({ error: 'Could not resolve domain' });
+            }
+
             const [rdapRes, dnsRes, pageRes] = await Promise.allSettled([
                 fetchWithTimeout(`https://rdap.org/domain/${domain}`, {}, 8000)
                     .then(r => r.json()).catch(() => null),
@@ -377,6 +387,16 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         }
 
         try {
+            // SECURITY: DNS rebinding check — block internal IPs
+            try {
+                const { address } = await dns.promises.lookup(domain);
+                if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address)) {
+                    return res.status(400).json({ error: 'Internal IPs not allowed' });
+                }
+            } catch {
+                return res.status(400).json({ error: 'Could not resolve domain' });
+            }
+
             const orgName = domain.split('.')[0];
             const [rdapRes, dnsRes, githubRes, pageRes] = await Promise.allSettled([
                 fetchWithTimeout(`https://rdap.org/domain/${domain}`, {}, 6000)

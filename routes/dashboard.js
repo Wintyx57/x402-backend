@@ -6,7 +6,7 @@ const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
 const { fetchWithTimeout } = require('../lib/payment');
 
-function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
+function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, adminAuthLimiter) {
     const router = express.Router();
 
     // Servir le dashboard HTML (auth handled client-side via API calls)
@@ -15,7 +15,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
     });
 
     // API stats (protected by admin auth)
-    router.get('/api/stats', dashboardApiLimiter, adminAuth, async (req, res) => {
+    router.get('/api/stats', dashboardApiLimiter, adminAuthLimiter, adminAuth, async (req, res) => {
         let count = 0;
         try {
             const result = await supabase.from('services').select('*', { count: 'exact', head: true });
@@ -82,7 +82,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter) {
     });
 
     // --- ANALYTICS (aggregated data for charts, protected by admin auth) ---
-    router.get('/api/analytics', dashboardApiLimiter, adminAuth, async (req, res) => {
+    router.get('/api/analytics', dashboardApiLimiter, adminAuthLimiter, adminAuth, async (req, res) => {
         try {
             // 1. Get all payments for daily volume + cumulative revenue
             const { data: payments } = await supabase

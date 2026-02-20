@@ -51,8 +51,8 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 // --- Activity logger ---
 const logActivity = createActivityLogger(supabase);
 
-// --- Budget Guardian ---
-const budgetManager = new BudgetManager();
+// --- Budget Guardian (Supabase-persisted) ---
+const budgetManager = new BudgetManager(supabase);
 
 // --- Payment system (with budget integration) ---
 const { paymentMiddleware } = createPaymentSystem(supabase, logActivity, budgetManager);
@@ -117,7 +117,7 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status') || req.headers['x-payment-txhash'],
+    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status'),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
@@ -134,7 +134,7 @@ const paidEndpointLimiter = rateLimit({
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.headers['x-monitor'] === 'internal' || req.headers['x-payment-txhash'],
+    skip: (req) => req.headers['x-monitor'] === 'internal',
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
 });
 
@@ -144,6 +144,15 @@ const registerLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests', message: 'Registration rate limit exceeded. Try again in 1 hour.' }
+});
+
+const adminAuthLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: { error: 'Too many requests', message: 'Too many admin auth attempts. Try again in 5 minutes.' }
 });
 
 app.use(generalLimiter);
@@ -202,7 +211,7 @@ app.use((req, res, next) => {
 app.use(createHealthRouter(supabase));
 app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
-app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter));
+app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity));
@@ -232,6 +241,9 @@ const serverInstance = app.listen(PORT, async () => {
         .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
         .map(([, cfg]) => cfg.label).join(', ');
     logger.info('server', `x402 Bazaar active on http://localhost:${PORT}`, { port: PORT, wallet: maskedWallet, networks: activeNetworks, services: count });
+
+    // Load budgets from Supabase (non-blocking — table may not exist yet)
+    budgetManager.loadFromDb().catch(() => {});
 
     // Start monitoring (checks localhost endpoints)
     startMonitor(`http://localhost:${PORT}`, supabase);
