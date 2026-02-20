@@ -20,6 +20,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ADMIN_TOKEN: test-admin-token
 
   security:
     runs-on: ubuntu-latest
