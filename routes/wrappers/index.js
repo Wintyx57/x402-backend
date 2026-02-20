@@ -9,6 +9,9 @@ const createValidationRouter = require('./validation');
 const createToolsRouter = require('./tools');
 const createAiRouter = require('./ai');
 const createMiscRouter = require('./misc');
+const createFinanceRouter = require('./finance');
+const createAdvancedRouter = require('./advanced');
+const createUtilsRouter = require('./utils');
 
 function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
@@ -21,6 +24,9 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
     router.use(createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
     router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
     router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createFinanceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createAdvancedRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createUtilsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 
     return router;
 }
