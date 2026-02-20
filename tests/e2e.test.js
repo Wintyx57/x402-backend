@@ -908,3 +908,69 @@ describe('Budget Guardian API', () => {
     assert.strictEqual(res.status, 400);
   });
 });
+
+// ============================
+// INTELLIGENCE APIs (should return 402 or 429 without payment)
+// ============================
+
+describe('Intelligence APIs (should return 402 or 429 without payment)', () => {
+  const assert402or429 = (res) => {
+    assert.ok(res.status === 402 || res.status === 429, `Expected 402 or 429, got ${res.status}`);
+  };
+
+  it('POST /api/contract-risk should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/contract-risk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'This agreement grants unlimited liability to the user.' })
+    });
+    assert402or429(res);
+  });
+
+  it('POST /api/email-parse should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/email-parse`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'Hi, I am John from Acme Corp. I would like to buy your product.' })
+    });
+    assert402or429(res);
+  });
+
+  it('POST /api/code-review should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/code-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'function add(a, b) { return a + b; }', language: 'javascript' })
+    });
+    assert402or429(res);
+  });
+
+  it('POST /api/table-insights should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/table-insights`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ csv: 'name,age,salary\nAlice,30,50000\nBob,25,45000' })
+    });
+    assert402or429(res);
+  });
+
+  it('GET /api/domain-report should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/domain-report?domain=example.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/seo-audit should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/seo-audit?url=https://example.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/lead-score should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/lead-score?domain=stripe.com`);
+    assert402or429(res);
+  });
+
+  it('GET /api/crypto-intelligence should return 402 or 429', async () => {
+    const res = await fetchWithTimeout(`${BASE_URL}/api/crypto-intelligence?symbol=bitcoin`);
+    assert402or429(res);
+  });
+});
