@@ -517,6 +517,72 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "development", "http", "status", "reference", "live"]
     },
+
+    // --- INTELLIGENCE APIs (high-value, GPT-4o-mini + multi-source aggregation) ---
+    {
+        name: "x402 Contract Risk Analyzer",
+        description: "Send any contract or Terms of Service text, get back risky clauses flagged with severity (high/medium/low), category, and explanation. Detects unlimited liability, IP transfers, non-compete, forced arbitration and more. Usage: POST /api/contract-risk {text: '...'}",
+        url: `${BASE_URL}/api/contract-risk`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "legal", "contract", "risk", "gpt4o", "live"]
+    },
+    {
+        name: "x402 Email CRM Parser",
+        description: "Send a raw email, get structured CRM data back: sender name, company, phone, intent, sentiment, urgency, key topics and suggested follow-up action. Ready to insert into your CRM. Usage: POST /api/email-parse {email: '...'}",
+        url: `${BASE_URL}/api/email-parse`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "email", "crm", "parse", "gpt4o", "live"]
+    },
+    {
+        name: "x402 AI Code Review",
+        description: "Submit any code snippet and get a structured review: bugs, security issues, performance problems and style issues — each with line number, severity, and fix suggestion. Plus an overall quality score. Usage: POST /api/code-review {code: '...', language: 'python'}",
+        url: `${BASE_URL}/api/code-review`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "code", "review", "security", "gpt4o", "development", "live"]
+    },
+    {
+        name: "x402 Table & CSV Insights",
+        description: "Upload CSV or table data and get AI-generated insights, anomaly detection, trends and actionable recommendations — no data science setup required. Usage: POST /api/table-insights {csv: 'col1,col2\\nval1,val2'}",
+        url: `${BASE_URL}/api/table-insights`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "ai", "data", "csv", "analytics", "insights", "gpt4o", "live"]
+    },
+    {
+        name: "x402 Domain Intelligence Report",
+        description: "One domain → full intelligence report: WHOIS/RDAP registration data, DNS records (A, MX, NS, TXT), SSL status, tech stack detection and trust score. Saves 5+ separate API calls. Usage: /api/domain-report?domain=stripe.com",
+        url: `${BASE_URL}/api/domain-report`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "intelligence", "domain", "whois", "dns", "ssl", "tech", "live"]
+    },
+    {
+        name: "x402 SEO Audit",
+        description: "Full SEO audit of any URL: title/description length, H1 tags, canonical, OG tags, missing alt attributes, schema.org, internal/external links. Returns score /100 with grade A-F and prioritized issues. Usage: /api/seo-audit?url=https://example.com",
+        url: `${BASE_URL}/api/seo-audit`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "seo", "audit", "marketing", "web", "live"]
+    },
+    {
+        name: "x402 Lead Scoring",
+        description: "Give a company domain, get a sales lead score (0-100, grade A-F) based on 7 signals: domain age, email setup (MX records), SSL, DNS health, GitHub presence, tech stack. Usage: /api/lead-score?domain=stripe.com",
+        url: `${BASE_URL}/api/lead-score`,
+        price_usdc: 0.01,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "sales", "lead", "scoring", "crm", "intelligence", "live"]
+    },
+    {
+        name: "x402 Crypto Intelligence",
+        description: "Full intelligence report for any cryptocurrency: price, market cap, 24h/7d change, volume, ATH, GitHub developer activity (stars, forks, commits), community size (Twitter, Telegram, Reddit). Powered by CoinGecko. Usage: /api/crypto-intelligence?symbol=bitcoin",
+        url: `${BASE_URL}/api/crypto-intelligence`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "crypto", "intelligence", "defi", "finance", "coingecko", "live"]
+    },
 ];
 
 async function seedWrappers() {
