@@ -9,6 +9,7 @@ const createValidationRouter = require('./validation');
 const createToolsRouter = require('./tools');
 const createAiRouter = require('./ai');
 const createMiscRouter = require('./misc');
+const createIntelligenceRouter = require('./intelligence');
 
 function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
@@ -21,6 +22,7 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
     router.use(createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
     router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
     router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 
     return router;
 }
