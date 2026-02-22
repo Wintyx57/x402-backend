@@ -6,7 +6,7 @@ const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
 const { fetchWithTimeout } = require('../lib/payment');
 
-function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, adminAuthLimiter) {
+function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter) {
     const router = express.Router();
 
     // Servir le dashboard HTML (auth handled client-side via API calls)

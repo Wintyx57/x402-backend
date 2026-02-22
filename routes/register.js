@@ -149,7 +149,9 @@ async function autoTestService(service, supabase) {
 }
 
 // --- Notify Community Agent of new API registration ---
-const COMMUNITY_AGENT_WEBHOOK = process.env.COMMUNITY_AGENT_WEBHOOK_URL || '';
+// Auto-derive webhook URL from COMMUNITY_AGENT_URL if explicit env not set
+const COMMUNITY_AGENT_WEBHOOK = process.env.COMMUNITY_AGENT_WEBHOOK_URL ||
+    (process.env.COMMUNITY_AGENT_URL ? `${process.env.COMMUNITY_AGENT_URL.replace(/\/$/, '')}/api/webhook/new-api` : '');
 const WEBHOOK_TIMEOUT = 5000;
 
 async function notifyCommunityAgent({ name, description, price }) {

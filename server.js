@@ -16,6 +16,7 @@ const { createPaymentSystem } = require('./lib/payment');
 const { startMonitor, stopMonitor, getStatus } = require('./lib/monitor');
 const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
 const { BudgetManager } = require('./lib/budget');
+const { startAgent, stopAgent } = require('./lib/agent-process');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -25,6 +26,8 @@ const createDashboardRouter = require('./routes/dashboard');
 const createWrappersRouter = require('./routes/wrappers/index');
 const createMonitoringRouter = require('./routes/monitoring');
 const createBudgetRouter = require('./routes/budget');
+const { createCommunityAgentRouter } = require('./routes/community-agent');
+const createStreamRouter = require('./routes/stream');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -215,6 +218,8 @@ app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAut
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity));
+app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
+app.use(createStreamRouter(adminAuth));
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
@@ -251,6 +256,11 @@ const serverInstance = app.listen(PORT, async () => {
     // Start Telegram bot (interactive commands)
     startTelegramBot(supabase, getStatus);
 
+    // Start Community Agent companion process (port 3500)
+    if (process.env.COMMUNITY_AGENT_URL || process.env.ENABLE_COMMUNITY_AGENT !== 'false') {
+        startAgent();
+    }
+
     // Data retention: purge old activity + monitoring_checks automatically
     scheduleRetention(supabase);
 
@@ -272,10 +282,11 @@ const serverInstance = app.listen(PORT, async () => {
 });
 
 // --- GRACEFUL SHUTDOWN ---
-function gracefulShutdown(signal) {
+async function gracefulShutdown(signal) {
     logger.info('server', `${signal} received — shutting down`);
     stopMonitor();
     stopTelegramBot();
+    await stopAgent().catch(() => {});
     serverInstance.close(() => {
         logger.info('server', 'HTTP server closed');
         process.exit(0);
