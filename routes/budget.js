@@ -8,12 +8,10 @@ const VALID_PERIODS = ['daily', 'weekly', 'monthly'];
 function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     const router = express.Router();
 
-    // All budget endpoints require admin authentication
-    router.use('/api/budget', adminAuth);
-    router.use('/api/budgets', adminAuth);
+    // All budget endpoints require admin authentication (applied per-route, not router-wide)
 
     // POST /api/budget — Set or update a budget for a wallet
-    router.post('/api/budget', (req, res) => {
+    router.post('/api/budget', adminAuth, (req, res) => {
         const { wallet, max_budget_usdc, period } = req.body;
 
         if (!wallet || max_budget_usdc == null) {
@@ -46,7 +44,7 @@ function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     });
 
     // GET /api/budget/:wallet — Get budget status
-    router.get('/api/budget/:wallet', (req, res) => {
+    router.get('/api/budget/:wallet', adminAuth, (req, res) => {
         const { wallet } = req.params;
         if (!WALLET_REGEX.test(wallet)) {
             return res.status(400).json({ error: 'Invalid wallet address format' });
@@ -64,7 +62,7 @@ function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     });
 
     // DELETE /api/budget/:wallet — Remove budget cap
-    router.delete('/api/budget/:wallet', (req, res) => {
+    router.delete('/api/budget/:wallet', adminAuth, (req, res) => {
         const { wallet } = req.params;
         const removed = budgetManager.removeBudget(wallet);
         if (removed) {
@@ -77,7 +75,7 @@ function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     });
 
     // GET /api/budgets — List all active budgets
-    router.get('/api/budgets', (req, res) => {
+    router.get('/api/budgets', adminAuth, (req, res) => {
         const budgets = budgetManager.getAllBudgets();
         res.json({
             count: budgets.length,
@@ -93,7 +91,7 @@ function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     });
 
     // POST /api/budget/check — Pre-flight check (can this wallet afford this call?)
-    router.post('/api/budget/check', (req, res) => {
+    router.post('/api/budget/check', adminAuth, (req, res) => {
         const { wallet, amount_usdc } = req.body;
         if (!wallet || amount_usdc == null) {
             return res.status(400).json({

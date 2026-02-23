@@ -120,15 +120,17 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status'),
+    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status') || isValidAdminToken(req),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
 const dashboardApiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 60,
+    max: 200, // Increased from 60 to handle CI test load (97 E2E tests + 35 budget tests)
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => isValidAdminToken(req),
+    skipSuccessfulRequests: true, // Don't count 2xx/3xx responses
     message: { error: 'Too many requests', message: 'Dashboard API rate limit exceeded.' }
 });
 
@@ -163,6 +165,27 @@ app.use(generalLimiter);
 // --- CORRELATION IDs ---
 app.use(correlationId);
 
+// S4 — Timing-safe token comparison to prevent timing attacks
+function timingSafeCompare(a, b) {
+    const crypto = require('crypto');
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) {
+        // Compare against itself to maintain constant time, then return false
+        crypto.timingSafeEqual(bufA, bufA);
+        return false;
+    }
+    return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Helper — Check if request has valid ADMIN_TOKEN (used for rate-limit bypass in CI)
+function isValidAdminToken(req) {
+    const expected = (process.env.ADMIN_TOKEN || '').trim();
+    if (!expected) return false;
+    const token = (req.headers['x-admin-token'] || '').trim();
+    return token && timingSafeCompare(token, expected);
+}
+
 // --- ADMIN AUTH MIDDLEWARE ---
 function adminAuth(req, res, next) {
     const expected = (process.env.ADMIN_TOKEN || '').trim();
@@ -175,19 +198,6 @@ function adminAuth(req, res, next) {
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     next();
-}
-
-// S4 — Timing-safe token comparison to prevent timing attacks
-function timingSafeCompare(a, b) {
-    const crypto = require('crypto');
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) {
-        // Compare against itself to maintain constant time, then return false
-        crypto.timingSafeEqual(bufA, bufA);
-        return false;
-    }
-    return crypto.timingSafeEqual(bufA, bufB);
 }
 
 // --- REQUEST LOGGING ---
