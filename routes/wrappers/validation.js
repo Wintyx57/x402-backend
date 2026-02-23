@@ -41,7 +41,8 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
             const mxRecords = await dnsPromises.resolveMx(domain);
             mxValid = mxRecords && mxRecords.length > 0;
         } catch (err) {
-            // MX lookup failed
+            // MX lookup failed — expected for domains without mail servers
+            console.error(`MX lookup failed for ${domain}:`, err.message);
         }
 
         const isValid = formatValid && mxValid;

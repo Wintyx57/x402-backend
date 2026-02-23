@@ -17,8 +17,9 @@ async function ensureMigrationsTable() {
             filename TEXT UNIQUE NOT NULL,
             applied_at TIMESTAMPTZ DEFAULT NOW()
         );`
-    }).catch(() => {
+    }).catch(err => {
         // Table might already exist or rpc not available — try direct SQL via supabase
+        console.warn('[migrations] ensureMigrationsTable via rpc failed (expected if table exists):', err.message);
     });
 }
 
@@ -60,7 +61,7 @@ async function run() {
         // Execute via Supabase (each statement separately)
         const statements = sql.split(';').map(s => s.trim()).filter(Boolean);
         for (const stmt of statements) {
-            const { error } = await supabase.rpc('exec_sql', { sql: stmt }).catch(() => ({ error: { message: 'rpc not available' } }));
+            const { error } = await supabase.rpc('exec_sql', { sql: stmt }).catch(() => ({ error: { message: 'rpc not available' } })); // intentionally converts to error object — logged below
             if (error) {
                 console.warn(`[migrations] Warning for "${stmt.slice(0, 60)}...": ${error.message}`);
                 console.warn('[migrations] Note: Run this SQL manually in Supabase SQL Editor if needed.');

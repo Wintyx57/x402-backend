@@ -46,7 +46,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
                 try {
                     const parsed = new URL(rawHref, 'https://duckduckgo.com');
                     url = parsed.searchParams.get('uddg') || rawHref;
-                } catch {}
+                } catch { /* intentionally silent — malformed URLs fall back to rawHref */ }
                 if (url.startsWith('//')) url = 'https:' + url;
 
                 if (title && url) {

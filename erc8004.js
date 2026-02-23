@@ -83,7 +83,7 @@ async function verifyAgent(agentId) {
                 abi: IDENTITY_ABI,
                 functionName: 'getAgentWallet',
                 args: [id],
-            }).catch(() => null),
+            }).catch(() => null), // intentionally silent — getAgentWallet may not exist for all tokens
         ]);
 
         return { exists: true, owner, agentURI, wallet };

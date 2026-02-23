@@ -217,7 +217,7 @@ app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerL
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
-app.use(createBudgetRouter(budgetManager, logActivity));
+app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createStreamRouter(adminAuth));
 
@@ -238,7 +238,7 @@ const serverInstance = app.listen(PORT, async () => {
     try {
         const result = await supabase.from('services').select('*', { count: 'exact', head: true });
         count = result.count || 0;
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('server', `Failed to count services at startup: ${err.message}`); }
     const maskedWallet = process.env.WALLET_ADDRESS
         ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
         : 'NOT SET';
@@ -248,7 +248,9 @@ const serverInstance = app.listen(PORT, async () => {
     logger.info('server', `x402 Bazaar active on http://localhost:${PORT}`, { port: PORT, wallet: maskedWallet, networks: activeNetworks, services: count });
 
     // Load budgets from Supabase (non-blocking — table may not exist yet)
-    budgetManager.loadFromDb().catch(() => {});
+    budgetManager.loadFromDb().catch(err => {
+        logger.warn('Budget', `Failed to load budgets from DB (table may not exist yet): ${err.message}`);
+    });
 
     // Start monitoring (checks localhost endpoints)
     startMonitor(`http://localhost:${PORT}`, supabase);
@@ -286,7 +288,9 @@ async function gracefulShutdown(signal) {
     logger.info('server', `${signal} received — shutting down`);
     stopMonitor();
     stopTelegramBot();
-    await stopAgent().catch(() => {});
+    await stopAgent().catch(err => {
+        logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
+    });
     serverInstance.close(() => {
         logger.info('server', 'HTTP server closed');
         process.exit(0);

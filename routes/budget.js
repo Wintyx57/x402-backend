@@ -5,8 +5,12 @@ const express = require('express');
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const VALID_PERIODS = ['daily', 'weekly', 'monthly'];
 
-function createBudgetRouter(budgetManager, logActivity) {
+function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     const router = express.Router();
+
+    // All budget endpoints require admin authentication
+    router.use('/api/budget', adminAuth);
+    router.use('/api/budgets', adminAuth);
 
     // POST /api/budget — Set or update a budget for a wallet
     router.post('/api/budget', (req, res) => {

@@ -36,7 +36,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 totalPayments = payments.length;
                 totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
             }
-        } catch { /* ignore */ }
+        } catch (err) { logger.warn('Dashboard', `Failed to fetch payment stats: ${err.message}`); }
 
         // Solde USDC du wallet serveur (on-chain)
         let walletBalance = null;
@@ -187,7 +187,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                     time: a.created_at,
                     txHash: a.tx_hash
                 }));
-            } catch { /* ignore */ }
+            } catch (err) { logger.warn('Analytics', `Failed to fetch recent activity: ${err.message}`); }
 
             // 6. Average price of paid services
             let avgPrice = 0;
@@ -199,7 +199,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 if (svcData && svcData.length > 0) {
                     avgPrice = Math.round((svcData.reduce((sum, s) => sum + Number(s.price_usdc), 0) / svcData.length) * 1000) / 1000;
                 }
-            } catch { /* ignore */ }
+            } catch (err) { logger.warn('Analytics', `Failed to compute avg price: ${err.message}`); }
 
             res.json({
                 dailyVolume,

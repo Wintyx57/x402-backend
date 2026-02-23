@@ -113,7 +113,7 @@ async function main() {
     console.log(`Serveur : ${SERVER_URL}\n`);
 
     // Health check
-    const health = await fetch(`${SERVER_URL}/health`).catch(() => null);
+    const health = await fetch(`${SERVER_URL}/health`).catch(() => null); // intentionally silent — checked below
     if (!health || health.status !== 200) {
         console.error('❌ Serveur inaccessible. Lance le serveur avec: node server.js');
         process.exit(1);

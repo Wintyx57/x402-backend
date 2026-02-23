@@ -1,6 +1,7 @@
 // routes/monitoring.js — Public status API endpoints
 
 const express = require('express');
+const logger = require('../lib/logger');
 const { getStatus, getEndpoints } = require('../lib/monitor');
 
 function createMonitoringRouter(supabase) {
@@ -102,17 +103,17 @@ function createMonitoringRouter(supabase) {
     try {
       const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
       servicesCount = count || 0;
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to count services: ${err.message}`); }
 
     try {
       const { count } = await supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'api_call');
       totalApiCalls = count || 0;
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to count API calls: ${err.message}`); }
 
     try {
       const { count } = await supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'payment');
       totalPayments = count || 0;
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to count payments: ${err.message}`); }
 
     // Top endpoints by call count (last 1000 calls)
     try {
@@ -134,7 +135,7 @@ function createMonitoringRouter(supabase) {
           .slice(0, 8)
           .map(([endpoint, count]) => ({ endpoint, count }));
       }
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to compute top endpoints: ${err.message}`); }
 
     // Recent calls in last 24h
     try {
@@ -145,7 +146,7 @@ function createMonitoringRouter(supabase) {
         .eq('type', 'api_call')
         .gte('created_at', since);
       recentCallCount24h = count || 0;
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to count 24h calls: ${err.message}`); }
 
     // Average uptime from monitoring checks (last 24h)
     try {
@@ -158,7 +159,7 @@ function createMonitoringRouter(supabase) {
         const online = checks.filter(c => c.status === 'online').length;
         uptimePercent = parseFloat(((online / checks.length) * 100).toFixed(1));
       }
-    } catch { /* ignore */ }
+    } catch (err) { logger.warn('PublicStats', `Failed to compute uptime: ${err.message}`); }
 
     const status = getStatus();
     const onlineCount = status?.onlineCount || 0;

@@ -770,7 +770,7 @@
                         el.style.color = d.monitoring.online === d.monitoring.total ? '#34D399' : '#FBBF24';
                     }
                 }
-            } catch { /* ignore */ }
+            } catch (e) { console.error('Monitoring refresh error:', e); }
         }
 
         // Refresh loop

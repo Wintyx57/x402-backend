@@ -197,14 +197,15 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                 return res.status(400).json({ error: 'Could not resolve domain' });
             }
 
+            // Parallel data gathering — individual failures are expected and intentionally silent
             const [rdapRes, dnsRes, pageRes] = await Promise.allSettled([
                 fetchWithTimeout(`https://rdap.org/domain/${domain}`, {}, 8000)
-                    .then(r => r.json()).catch(() => null),
+                    .then(r => r.json()).catch(() => null), // intentionally silent — RDAP may be unavailable
                 Promise.all([
-                    dns.promises.resolve4(domain).catch(() => []),
-                    dns.promises.resolveMx(domain).catch(() => []),
-                    dns.promises.resolveNs(domain).catch(() => []),
-                    dns.promises.resolveTxt(domain).catch(() => []),
+                    dns.promises.resolve4(domain).catch(() => []), // intentionally silent — record type may not exist
+                    dns.promises.resolveMx(domain).catch(() => []), // intentionally silent
+                    dns.promises.resolveNs(domain).catch(() => []), // intentionally silent
+                    dns.promises.resolveTxt(domain).catch(() => []), // intentionally silent
                 ]),
                 fetchWithTimeout(`https://${domain}`, {
                     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
@@ -213,7 +214,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                     ssl: r.url.startsWith('https://'),
                     headers: Object.fromEntries([...r.headers.entries()].slice(0, 20)),
                     html: (await r.text()).slice(0, 15000)
-                })).catch(() => null),
+                })).catch(() => null), // intentionally silent — site may be unreachable
             ]);
 
             const rdap = rdapRes.status === 'fulfilled' ? rdapRes.value : null;
@@ -398,23 +399,24 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
             }
 
             const orgName = domain.split('.')[0];
+            // Parallel data gathering — individual failures are expected and intentionally silent
             const [rdapRes, dnsRes, githubRes, pageRes] = await Promise.allSettled([
                 fetchWithTimeout(`https://rdap.org/domain/${domain}`, {}, 6000)
-                    .then(r => r.json()).catch(() => null),
+                    .then(r => r.json()).catch(() => null), // intentionally silent — RDAP may be unavailable
                 Promise.all([
-                    dns.promises.resolve4(domain).catch(() => []),
-                    dns.promises.resolveMx(domain).catch(() => []),
+                    dns.promises.resolve4(domain).catch(() => []), // intentionally silent — record type may not exist
+                    dns.promises.resolveMx(domain).catch(() => []), // intentionally silent
                 ]),
                 fetchWithTimeout(`https://api.github.com/orgs/${orgName}`, {
                     headers: { 'User-Agent': 'x402-bazaar' }
-                }, 5000).then(r => r.status === 200 ? r.json() : null).catch(() => null),
+                }, 5000).then(r => r.status === 200 ? r.json() : null).catch(() => null), // intentionally silent — org may not exist
                 fetchWithTimeout(`https://${domain}`, {
                     headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
                 }, 6000).then(r => ({
                     ssl: r.url.startsWith('https://'),
                     status: r.status,
                     server: r.headers.get('server') || r.headers.get('x-powered-by') || null,
-                })).catch(() => null),
+                })).catch(() => null), // intentionally silent — site may be unreachable
             ]);
 
             const rdap = rdapRes.status === 'fulfilled' ? rdapRes.value : null;
