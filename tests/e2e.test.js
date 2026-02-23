@@ -801,7 +801,7 @@ describe('Budget Guardian API', () => {
   it('POST /api/budget should set a budget', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
       body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: 10, period: 'daily' }),
     });
     const data = await res.json();
@@ -814,7 +814,9 @@ describe('Budget Guardian API', () => {
   });
 
   it('GET /api/budget/:wallet should return budget status', async () => {
-    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`, {
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
+    });
     const data = await res.json();
 
     assert.strictEqual(res.status, 200);
@@ -826,7 +828,9 @@ describe('Budget Guardian API', () => {
 
   it('GET /api/budget/:wallet with no budget should return null', async () => {
     const nobudget = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${nobudget}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${nobudget}`, {
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
+    });
     const data = await res.json();
 
     assert.strictEqual(res.status, 200);
@@ -836,7 +840,7 @@ describe('Budget Guardian API', () => {
   it('POST /api/budget should reject invalid wallet', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
       body: JSON.stringify({ wallet: 'not-a-wallet', max_budget_usdc: 10 }),
     });
 
@@ -846,7 +850,7 @@ describe('Budget Guardian API', () => {
   it('POST /api/budget should reject invalid period', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
       body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: 5, period: 'yearly' }),
     });
 
@@ -856,7 +860,7 @@ describe('Budget Guardian API', () => {
   it('POST /api/budget should reject negative amount', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
       body: JSON.stringify({ wallet: TEST_WALLET, max_budget_usdc: -5 }),
     });
 
@@ -866,7 +870,7 @@ describe('Budget Guardian API', () => {
   it('POST /api/budget/check should validate spending capability', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget/check`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': ADMIN_TOKEN },
       body: JSON.stringify({ wallet: TEST_WALLET, amount_usdc: 0.01 }),
     });
     const data = await res.json();
@@ -876,7 +880,9 @@ describe('Budget Guardian API', () => {
   });
 
   it('GET /api/budgets should list all budgets', async () => {
-    const res = await fetchWithTimeout(`${BASE_URL}/api/budgets`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budgets`, {
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
+    });
     const data = await res.json();
 
     assert.strictEqual(res.status, 200);
@@ -887,6 +893,7 @@ describe('Budget Guardian API', () => {
   it('DELETE /api/budget/:wallet should remove budget', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`, {
       method: 'DELETE',
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
     });
     const data = await res.json();
 
@@ -895,7 +902,9 @@ describe('Budget Guardian API', () => {
   });
 
   it('GET /api/budget/:wallet after delete should return null', async () => {
-    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/${TEST_WALLET}`, {
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
+    });
     const data = await res.json();
 
     assert.strictEqual(res.status, 200);
@@ -903,7 +912,9 @@ describe('Budget Guardian API', () => {
   });
 
   it('GET /api/budget/:invalid should reject bad wallet', async () => {
-    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/not-valid`);
+    const res = await fetchWithTimeout(`${BASE_URL}/api/budget/not-valid`, {
+      headers: { 'X-Admin-Token': ADMIN_TOKEN },
+    });
 
     assert.strictEqual(res.status, 400);
   });
