@@ -18,11 +18,10 @@ const SSE_KEEPALIVE_MS = 20000;
 function createStreamRouter(adminAuth) {
   const router = express.Router();
 
-  // All stream routes require admin auth
-  router.use(adminAuth);
+  // All stream routes require admin auth (applied per-route, not globally)
 
   // GET /admin/stream/logs — backend structured logs (real-time)
-  router.get('/admin/stream/logs', (req, res) => {
+  router.get('/admin/stream/logs', adminAuth, (req, res) => {
     // SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -50,7 +49,7 @@ function createStreamRouter(adminAuth) {
   });
 
   // GET /admin/stream/monitoring — monitoring transitions (real-time)
-  router.get('/admin/stream/monitoring', (req, res) => {
+  router.get('/admin/stream/monitoring', adminAuth, (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Accel-Buffering', 'no');
