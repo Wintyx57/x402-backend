@@ -126,7 +126,7 @@ const generalLimiter = rateLimit({
 
 const dashboardApiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 200, // Increased from 60 to handle CI test load (97 E2E tests + 35 budget tests)
+    max: 500, // Increased from 60 → 200 → 500 to handle parallel CI runs + test requests without token
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => isValidAdminToken(req),
