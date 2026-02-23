@@ -93,8 +93,9 @@ describe('Dashboard Module', () => {
         const mockSupabase = { from: () => ({ select: () => Promise.resolve({ data: [], count: 0 }) }) };
         const mockAdminAuth = (req, res, next) => next();
         const mockLimiter = (req, res, next) => next();
+        const mockAdminAuthLimiter = (req, res, next) => next();
 
-        const router = createDashboardRouter(mockSupabase, mockAdminAuth, mockLimiter);
+        const router = createDashboardRouter(mockSupabase, mockAdminAuth, mockLimiter, mockAdminAuthLimiter);
         assert.ok(router);
         assert.strictEqual(typeof router, 'function');
     });
