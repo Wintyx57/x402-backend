@@ -269,7 +269,7 @@ const serverInstance = app.listen(PORT, async () => {
     startTelegramBot(supabase, getStatus);
 
     // Start Community Agent companion process (port 3500)
-    if (process.env.COMMUNITY_AGENT_URL || process.env.ENABLE_COMMUNITY_AGENT !== 'false') {
+    if (process.env.COMMUNITY_AGENT_URL || process.env.ENABLE_COMMUNITY_AGENT === 'true') {
         startAgent();
     }
 
