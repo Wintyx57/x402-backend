@@ -26,6 +26,9 @@
   "author": "Wintyx57",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@coinbase/coinbase-sdk": "^0.25.0",
     "@modelcontextprotocol/sdk": "^1.26.0",

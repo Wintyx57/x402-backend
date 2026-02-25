@@ -42,7 +42,7 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
             mxValid = mxRecords && mxRecords.length > 0;
         } catch (err) {
             // MX lookup failed — expected for domains without mail servers
-            console.error(`MX lookup failed for ${domain}:`, err.message);
+            logger.warn('EmailValidation', `MX lookup failed for ${domain}: ${err.message}`);
         }
 
         const isValid = formatValid && mxValid;
@@ -307,6 +307,8 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
     });
 
     // --- REGEX TESTER API (0.001 USDC) ---
+    // ReDoS protection: reject patterns > 100 chars or containing catastrophic backtracking structures
+    const REDOS_PATTERN = /(\(.+\+\))\+|(\(.+\*\))\*/;
     router.get('/api/regex', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Regex Tester API"), async (req, res) => {
         const pattern = (req.query.pattern || '').slice(0, 500);
         const text = (req.query.text || '').slice(0, 5000);
@@ -314,6 +316,15 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
 
         if (!pattern || !text) {
             return res.status(400).json({ error: "Parameters 'pattern' and 'text' required. Ex: /api/regex?pattern=\\d+&text=abc123def456&flags=g" });
+        }
+
+        // ReDoS guard — reject before instantiating RegExp
+        if (pattern.length > 100) {
+            return res.status(400).json({ error: 'Pattern too long (max 100 characters)' });
+        }
+        if (REDOS_PATTERN.test(pattern)) {
+            logger.warn('Regex', `Rejected potentially catastrophic pattern: ${pattern.slice(0, 50)}`);
+            return res.status(400).json({ error: 'Pattern rejected: contains potentially catastrophic backtracking structure' });
         }
 
         try {

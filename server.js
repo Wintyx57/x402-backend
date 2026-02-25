@@ -114,13 +114,21 @@ app.use(cors({
 // --- BODY LIMITS ---
 app.use(express.json({ limit: '10kb' }));
 
+// Helper — Check if request comes from the internal monitor (localhost self-ping only)
+// Prevents unauthenticated X-Monitor header from bypassing rate limits from external IPs
+function isInternalMonitor(req) {
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    const isLocalhost = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    return isLocalhost && req.headers['x-monitor'] === 'internal';
+}
+
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.headers['x-monitor'] === 'internal' || req.path.startsWith('/api/status') || isValidAdminToken(req),
+    skip: (req) => req.path === '/health' || isInternalMonitor(req) || req.path.startsWith('/api/status') || isValidAdminToken(req),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
@@ -139,7 +147,7 @@ const paidEndpointLimiter = rateLimit({
     max: 120,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.headers['x-monitor'] === 'internal',
+    skip: (req) => isInternalMonitor(req),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
 });
 
@@ -194,7 +202,7 @@ function adminAuth(req, res, next) {
     }
     const token = (req.headers['x-admin-token'] || '').trim();
     if (!token || !timingSafeCompare(token, expected)) {
-        logger.warn('AdminAuth', `Rejected: received ${token.length} chars, expected ${expected.length} chars`);
+        logger.warn('AdminAuth', `Rejected: received ${token.length} chars`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     next();
