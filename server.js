@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
+const swaggerUi = require('swagger-ui-express');
 
 const logger = require('./lib/logger');
 const correlationId = require('./lib/correlationId');
@@ -238,6 +239,10 @@ app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createStreamRouter(adminAuth));
+
+// --- SWAGGER UI ---
+const openApiSpec = require('./openapi.json');
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customSiteTitle: 'x402 Bazaar API Docs' }));
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {

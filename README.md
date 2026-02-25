@@ -12,6 +12,8 @@
   </p>
 </p>
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-424%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
+
 ---
 
 ## Ecosystem

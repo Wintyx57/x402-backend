@@ -1,35 +1,45 @@
-# Contributing to x402 Bazaar
+# Contributing to x402 Bazaar Backend
 
-Thanks for your interest in contributing to x402 Bazaar!
+Thanks for your interest in contributing!
 
-## Quick Start
+## Getting Started
 
-1. Fork the repo
-2. Clone your fork
-3. Install dependencies: `npm install`
-4. Copy `.env.example` to `.env` and fill in your values
-5. Start the server: `npm run dev`
+1. Fork and clone the repo
+2. Install dependencies: `npm install`
+3. Copy environment config: `cp .env.example .env`
+4. Fill in required env vars (see .env.example for docs)
+5. Start the server: `node server.js`
+6. Run tests: `npm test`
+
+## Development
+
+- **Runtime**: Node.js >= 18
+- **Tests**: `node:test` (zero external dependencies)
+- **Linting**: Follow existing code style
+- **Logging**: Use `logger.*` from `lib/logger.js`, never `console.log`
+
+## Making Changes
+
+1. Create a feature branch: `git checkout -b feat/my-feature`
+2. Make your changes
+3. Add tests if applicable
+4. Run the test suite: `npm test`
+5. Commit with a descriptive message
+6. Open a Pull Request
 
 ## Adding a New API Wrapper
 
-1. Create your endpoint in `server.js` following the existing pattern
-2. Add payment middleware with appropriate pricing
-3. Add input validation and rate limiting
-4. Update the discovery route (`GET /`)
-5. Add to `seed-wrappers.js`
-6. Document in `API_WRAPPERS.md`
-
-## Code Style
-
-- Use `const` over `let` where possible
-- Add input validation for all user inputs
-- Never expose `err.message` to clients
-- Follow existing patterns for error responses
+1. Add your route handler in `routes/wrappers/` (pick the right category file)
+2. Register the endpoint in `seed-wrappers.js`
+3. Add a test in `tests/`
+4. Update `API_WRAPPERS.md`
 
 ## Reporting Issues
 
-- Use GitHub Issues with the provided templates
-- Include reproduction steps and environment details
+Please include:
+- Steps to reproduce
+- Expected vs actual behavior
+- Node.js version and OS
 
 ## License
 

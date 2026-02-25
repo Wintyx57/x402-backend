@@ -55,10 +55,19 @@ function createHealthRouter(supabase) {
 
     // --- HEALTH CHECK ---
     router.get('/health', (req, res) => {
+        const { version } = require('../package.json');
         const supportedNetworks = Object.entries(CHAINS)
             .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
             .map(([key, cfg]) => ({ network: key, label: cfg.label, chainId: cfg.chainId }));
-        res.json({ status: 'ok', network: NETWORK_LABEL, networks: supportedNetworks, timestamp: new Date().toISOString() });
+        res.json({
+            status: 'ok',
+            network: NETWORK_LABEL,
+            networks: supportedNetworks,
+            timestamp: new Date().toISOString(),
+            version,
+            uptime_seconds: Math.floor(process.uptime()),
+            node_version: process.version,
+        });
     });
 
     // --- ROUTE PUBLIQUE (Gratuite) ---
@@ -76,6 +85,7 @@ function createHealthRouter(supabase) {
             description: "Place de marche autonome de services IA - Protocole x402",
             network: NETWORK_LABEL,
             total_services: count,
+            api_docs: "/api-docs",
             endpoints: {
                 "GET /services":  "Liste complete des services (0.05 USDC)",
                 "GET /search?q=": "Recherche de services par mot-cle (0.05 USDC)",
