@@ -7,6 +7,7 @@ const dns = require('node:dns');
 const cheerio = require('cheerio');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { openaiRetry } = require('../../lib/openai-retry');
 
 const BLOCKED_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|169\.254\.|fc00:|fe80:|::1)/i;
 
@@ -41,7 +42,7 @@ function createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLi
         if (text.length > 30000) return res.status(400).json({ error: 'Text too long (max 30000 chars)' });
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -55,7 +56,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
                 temperature: 0.2,
                 max_tokens: 1500,
                 response_format: { type: 'json_object' }
-            });
+            }), 'ContractRisk');
 
             let result;
             try { result = JSON.parse(response.choices[0].message.content); }
@@ -77,7 +78,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
         if (email.length > 10000) return res.status(400).json({ error: 'Email too long (max 10000 chars)' });
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -90,7 +91,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
                 temperature: 0.1,
                 max_tokens: 500,
                 response_format: { type: 'json_object' }
-            });
+            }), 'EmailParse');
 
             let result;
             try { result = JSON.parse(response.choices[0].message.content); }
@@ -113,7 +114,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
         if (code.length > 20000) return res.status(400).json({ error: 'Code too long (max 20000 chars)' });
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -127,7 +128,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                 temperature: 0.2,
                 max_tokens: 2000,
                 response_format: { type: 'json_object' }
-            });
+            }), 'CodeReview');
 
             let result;
             try { result = JSON.parse(response.choices[0].message.content); }
@@ -149,7 +150,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         if (csv.length > 20000) return res.status(400).json({ error: 'Data too large (max 20000 chars)' });
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -162,7 +163,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                 temperature: 0.3,
                 max_tokens: 1000,
                 response_format: { type: 'json_object' }
-            });
+            }), 'TableInsights');
 
             let result;
             try { result = JSON.parse(response.choices[0].message.content); }

@@ -380,7 +380,7 @@ describe('Validation & Security', () => {
     assert.ok(res.status === 413 || res.status === 400 || res.status === 402);
   });
 
-  it('GET /api/services with SQL injection attempt should be blocked by Cloudflare', async () => {
+  it('GET /api/services with SQL injection attempt should be safe', async () => {
     const maliciousSearch = "' OR 1=1 --";
     const res = await fetchWithTimeout(
       `${BASE_URL}/api/services?search=${encodeURIComponent(maliciousSearch)}`

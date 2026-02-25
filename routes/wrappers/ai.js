@@ -7,6 +7,7 @@ const cheerio = require('cheerio');
 const { evaluate } = require('mathjs');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { openaiRetry } = require('../../lib/openai-retry');
 
 function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
@@ -43,13 +44,13 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                 });
             }
 
-            const response = await getOpenAI().images.generate({
+            const response = await openaiRetry(() => getOpenAI().images.generate({
                 model: 'dall-e-3',
                 prompt,
                 size,
                 quality,
                 n: 1,
-            });
+            }), 'Image API');
 
             const image = response.data[0];
             logActivity('api_call', `Image API: "${prompt.slice(0, 80)}..." (${size}, ${quality})`);
@@ -99,7 +100,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
         }
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -113,7 +114,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                 ],
                 temperature: 0.3,
                 max_tokens: 200
-            });
+            }), 'Sentiment API');
 
             const resultText = response.choices[0].message.content.trim();
             let analysis;

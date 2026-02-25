@@ -5,6 +5,7 @@ const express = require('express');
 const cheerio = require('cheerio');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { openaiRetry } = require('../../lib/openai-retry');
 
 function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
@@ -75,7 +76,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         }
 
         try {
-            const response = await getOpenAI().chat.completions.create({
+            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
                 model: 'gpt-4o-mini',
                 messages: [
                     {
@@ -89,7 +90,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
                 ],
                 temperature: 0.3,
                 max_tokens: Math.min(Math.ceil(maxLength * 1.5), 4000)
-            });
+            }), 'Summarize API');
 
             const summary = response.choices[0].message.content.trim();
             logActivity('api_call', `Summarize API: ${text.length} chars -> ${summary.length} chars`);
