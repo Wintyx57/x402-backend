@@ -1,7 +1,6 @@
 // routes/dashboard.js — GET /dashboard, GET /api/stats, GET /api/analytics
 
 const express = require('express');
-const path = require('path');
 const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
 const { fetchWithTimeout } = require('../lib/payment');
@@ -9,9 +8,9 @@ const { fetchWithTimeout } = require('../lib/payment');
 function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter) {
     const router = express.Router();
 
-    // Servir le dashboard HTML (auth handled client-side via API calls)
+    // Redirect old dashboard to frontend admin
     router.get('/dashboard', (req, res) => {
-        res.sendFile(path.join(__dirname, '..', 'dashboard.html'));
+        res.redirect(301, 'https://x402bazaar.org/admin');
     });
 
     // API stats (protected by admin auth)
