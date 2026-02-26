@@ -33,6 +33,7 @@
     "@coinbase/coinbase-sdk": "^0.25.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@supabase/supabase-js": "^2.95.3",
+    "@x402/extensions": "^2.5.0",
     "cheerio": "^1.2.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
