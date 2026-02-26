@@ -164,16 +164,15 @@ function createMonitoringRouter(supabase) {
       }
     } catch (err) { logger.warn('PublicStats', `Failed to compute uptime: ${err.message}`); }
 
-    // External providers (services not owned by main wallet)
-    const MAIN_WALLET = (process.env.WALLET_ADDRESS || '').toLowerCase();
+    // External providers (services with URLs NOT pointing to our backend)
+    const BACKEND_URL = process.env.RENDER_EXTERNAL_URL || process.env.BACKEND_URL || 'https://x402-api.onrender.com';
     try {
-      const { data: extServices } = await supabase
+      const { data: allServices } = await supabase
         .from('services')
-        .select('owner_address, name')
-        .not('owner_address', 'is', null);
-      if (extServices) {
-        const extOnly = extServices.filter(s => s.owner_address && s.owner_address.toLowerCase() !== MAIN_WALLET);
-        const uniqueWallets = new Set(extOnly.map(s => s.owner_address.toLowerCase()));
+        .select('url, name, owner_address');
+      if (allServices) {
+        const extOnly = allServices.filter(s => s.url && !s.url.startsWith(BACKEND_URL));
+        const uniqueWallets = new Set(extOnly.map(s => (s.owner_address || '').toLowerCase()).filter(Boolean));
         externalProviders = uniqueWallets.size;
         externalProviderNames = [...new Set(extOnly.map(s => s.name))];
       }
