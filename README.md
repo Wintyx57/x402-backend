@@ -12,7 +12,7 @@
   </p>
 </p>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-424%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-478%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
 
 ---
 
@@ -20,11 +20,14 @@
 
 | Repository | Description |
 |------------|-------------|
-| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 41 native wrappers, MCP server |
+| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 69 native wrappers, MCP server |
 | **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 15 pages, glassmorphism UI, wallet connect, i18n FR/EN |
 | **[x402-langchain](https://github.com/Wintyx57/x402-langchain)** | Python package — LangChain tools for x402 Bazaar (pip install) |
 | **[x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)** | FastAPI template — Monetize any Python function with x402 in 5 minutes |
 | **[CLI: npx x402-bazaar](https://www.npmjs.com/package/x402-bazaar)** | One-line setup for Claude Desktop, Cursor, VS Code |
+| **[@x402/sdk](https://www.npmjs.com/package/@x402/sdk)** | TypeScript SDK — typed client for x402 Bazaar APIs |
+| **[Reviews API](https://x402-api.onrender.com/api/reviews)** | Ratings & reviews system for marketplace services |
+| **[Bazaar Discovery](https://x402-api.onrender.com/api/discovery)** | Agent discovery via @x402/extensions v2.5.0 (official Coinbase SDK) |
 
 **Live:** [x402bazaar.org](https://x402bazaar.org) | **API:** [x402-api.onrender.com](https://x402-api.onrender.com) | **Dashboard:** [x402-api.onrender.com/dashboard](https://x402-api.onrender.com/dashboard)
 
@@ -37,7 +40,7 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 ## Key Features
 
 - **HTTP 402 Protocol** -- Standard-compliant payment flow. Call an endpoint, get a `402` with payment details, pay USDC, retry with tx hash, done.
-- **41 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 30+ more -- all behind micropayments.
+- **69 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 59+ more -- all behind micropayments.
 - **70+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
 - **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
 - **Multi-Chain** -- Base (mainnet) + SKALE Europa (zero gas fees via sFUEL).
@@ -46,8 +49,8 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.
 - **Budget Control** -- Per-session spending caps for AI agents (configurable `MAX_BUDGET_USDC`).
 - **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection.
-- **333 Tests** -- 254 unit + 79 e2e, all passing (node:test, zero deps).
-- **Real-Time Monitoring** -- 41 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
+- **478 Tests** -- 14 test suites, all passing (node:test, zero deps).
+- **Real-Time Monitoring** -- 69 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
 - **Telegram Bot** -- Interactive admin bot with 6 commands (/balance, /stats, /status, /recent, /services, /help).
 - **Auto-Test on Registration** -- New services are pinged automatically, with Telegram notification on result.
 - **Public Stats** -- `GET /api/public-stats` (no auth) for frontend homepage counters.
@@ -104,7 +107,7 @@ Agent                          x402 Bazaar                     Base / SKALE
 | `/search?q=` | GET | 0.05 USDC | Search services by keyword |
 | `/register` | POST | 1.00 USDC | Register a new service |
 
-### Native API Wrappers (41 endpoints, x402-powered)
+### Native API Wrappers (69 endpoints, x402-powered)
 
 | Route | Cost | Source | Description |
 |-------|------|--------|-------------|
@@ -133,7 +136,7 @@ Agent                          x402 Bazaar                     Base / SKALE
 
 | Route | Description |
 |-------|-------------|
-| `/api/status` | Live monitoring status for all 41 endpoints |
+| `/api/status` | Live monitoring status for all 69 endpoints |
 | `/api/status/uptime` | Uptime percentages by endpoint |
 | `/api/status/history` | Check history (last 24h) |
 | `/api/public-stats` | Public stats (services, API calls, monitoring, integrations) |
@@ -217,7 +220,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 npm start            # Start the server
 npm run mcp          # Start the MCP server
 npm run seed         # Seed 75+ services into Supabase
-npm run seed:wrappers # Register the 41 native wrappers
+npm run seed:wrappers # Register the 69 native wrappers
 npm run demo         # Run the autonomous agent demo
 npm run demo:live    # Hackathon live demo with terminal UI
 ```

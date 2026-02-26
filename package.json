@@ -1,6 +1,6 @@
 {
   "name": "x402-bazaar",
-  "version": "1.0.0",
+  "version": "1.3.0",
   "description": "x402 Bazaar - Autonomous AI marketplace with HTTP 402 micropayments on Base & SKALE",
   "main": "server.js",
   "scripts": {
@@ -24,7 +24,12 @@
     "skale"
   ],
   "author": "Wintyx57",
-  "license": "ISC",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Wintyx57/x402-backend.git"
+  },
+  "homepage": "https://x402bazaar.org",
   "type": "commonjs",
   "engines": {
     "node": ">=18"

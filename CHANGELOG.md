@@ -6,14 +6,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-02-26
+
 ### Added
+- Bazaar Discovery: 69 `declareDiscoveryExtension()` declarations via @x402/extensions v2.5.0 (official Coinbase SDK) — AI agents can now auto-discover all endpoints from 402 responses
+- Reviews API: ratings & reviews system for marketplace services
+- Dynamic public-stats endpoint now includes live payment count, API call count, and provider wallet breakdown
+- SKALE Europa badge on README and /health response
 - Wallet rate limit (60 req/min per wallet, configurable via WALLET_RATE_LIMIT)
 - Swagger UI interactive docs at /api-docs
 - ReDoS protection on /api/regex endpoint
+- MIT LICENSE file added
+
+### Changed
+- Discovery sync verified: 69 wrapper keys exactly match 69 registered endpoints (phantom routes removed)
+- 8 integrations total (added TypeScript SDK + Reviews API)
+- Test suite expanded to 478 tests across 14 test suites
 
 ### Security
-- X-Monitor bypass now requires localhost IP
+- X-Monitor bypass now requires localhost IP (no more external bypass)
 - Admin auth log no longer exposes expected token length
+- openapi.json and /health exempt from global rate limit
 
 ## [1.2.0] - 2026-02-25
 
