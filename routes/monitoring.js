@@ -99,6 +99,9 @@ function createMonitoringRouter(supabase) {
     let topEndpoints = [];
     let recentCallCount24h = 0;
     let uptimePercent = null;
+    let externalProviders = 0;
+    let externalProviderNames = [];
+    let usdcVolume = 0;
 
     try {
       const { count } = await supabase.from('services').select('*', { count: 'exact', head: true });
@@ -161,27 +164,60 @@ function createMonitoringRouter(supabase) {
       }
     } catch (err) { logger.warn('PublicStats', `Failed to compute uptime: ${err.message}`); }
 
+    // External providers (services not owned by main wallet)
+    const MAIN_WALLET = (process.env.WALLET_ADDRESS || '').toLowerCase();
+    try {
+      const { data: extServices } = await supabase
+        .from('services')
+        .select('owner_address, name')
+        .not('owner_address', 'is', null);
+      if (extServices) {
+        const extOnly = extServices.filter(s => s.owner_address && s.owner_address.toLowerCase() !== MAIN_WALLET);
+        const uniqueWallets = new Set(extOnly.map(s => s.owner_address.toLowerCase()));
+        externalProviders = uniqueWallets.size;
+        externalProviderNames = [...new Set(extOnly.map(s => s.name))];
+      }
+    } catch (err) { logger.warn('PublicStats', `Failed to count external providers: ${err.message}`); }
+
+    // USDC volume from payment activity
+    try {
+      const { data: payments } = await supabase
+        .from('activity')
+        .select('detail')
+        .eq('type', 'payment');
+      if (payments) {
+        for (const p of payments) {
+          const match = p.detail?.match(/([\d.]+)\s*USDC/i);
+          if (match) usdcVolume += parseFloat(match[1]);
+        }
+        usdcVolume = parseFloat(usdcVolume.toFixed(2));
+      }
+    } catch (err) { logger.warn('PublicStats', `Failed to compute USDC volume: ${err.message}`); }
+
     const status = getStatus();
     const onlineCount = status?.onlineCount || 0;
-    const totalEndpoints = status?.totalCount || 61;
+    const totalEndpoints = status?.totalCount || 69;
 
     res.json({
       success: true,
       services: servicesCount,
-      nativeEndpoints: 61,
+      nativeEndpoints: 69,
       apiCalls: totalApiCalls,
       totalPayments,
       recentCallCount24h,
       uptimePercent,
       topEndpoints,
+      externalProviders,
+      externalProviderNames,
+      usdcVolume,
       monitoring: {
         online: onlineCount,
         total: totalEndpoints,
         overall: status?.overall || 'unknown',
         lastCheck: status?.lastCheck || null,
       },
-      integrations: 6,
-      tests: 416,
+      integrations: 8,
+      tests: 478,
     });
   });
 
