@@ -29,6 +29,7 @@ const createMonitoringRouter = require('./routes/monitoring');
 const createBudgetRouter = require('./routes/budget');
 const { createCommunityAgentRouter } = require('./routes/community-agent');
 const createStreamRouter = require('./routes/stream');
+const createReviewsRouter = require('./routes/reviews');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -238,6 +239,7 @@ app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
+app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 
 // --- SWAGGER UI ---
