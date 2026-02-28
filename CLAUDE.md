@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 14/02/2026 — PHASE 1-3 COMPLETE + Community Agent LIVE)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 26/02/2026 — PHASE 1-3 COMPLETE + Bazaar Discovery LIVE)
 
 ### Vue d'ensemble
 
@@ -141,7 +141,7 @@ x402-bazaar-cli/
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
-│   │                      # 61 endpoints natifs (x402-native)
+│   │                      # 69 endpoints natifs (x402-native)
 │   │                      # routes/, lib/ modules (health, services, register, dashboard, wrappers, logger, chains, activity, payment)
 │   ├── routes/           # Modularisation routes
 │   │   ├── health.js     # GET /health
@@ -155,9 +155,10 @@ HACKATHON/
 │   │   ├── logger.js     # Winston logger
 │   │   ├── chains.js     # Config networks (Base, SKALE)
 │   │   ├── activity.js   # Activity tracking
-│   │   ├── payment.js    # Payment verification (with budget integration)
+│   │   ├── payment.js    # Payment verification (with budget integration + Bazaar Discovery extensions)
+│   │   ├── bazaar-discovery.js # 69 declareDiscoveryExtension() + generateDiscoveryForService() (@x402/extensions v2.5.0)
 │   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
-│   │   ├── monitor.js    # Monitoring engine (61 endpoints, 5min checks, Telegram alerts)
+│   │   ├── monitor.js    # Monitoring engine (69 endpoints, 5min checks, Telegram alerts)
 │   │   └── telegram-bot.js # Interactive Telegram bot (11 commands, polling, secured by chat_id)
 │   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
@@ -287,7 +288,8 @@ HACKATHON/
 
 1. **Backend production** (Render, mainnet Base) :
    - `/health` → 200 OK, `"network": "Base"`
-   - 61 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, news, stocks, reddit, hn, youtube, whois, ssl-check, regex, diff, math, unit-convert, csv-to-json, jwt-decode, cron-parse, password-strength, phone-validate, url-parse, url-shorten, html-to-text, http-status, +14 autres
+   - 69 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, news, stocks, reddit, hn, youtube, whois, ssl-check, regex, diff, math, unit-convert, csv-to-json, jwt-decode, cron-parse, password-strength, phone-validate, url-parse, url-shorten, html-to-text, http-status, dogs, geocoding, airquality, quote, facts, +8 intelligence APIs
+   - Bazaar Discovery: 69 endpoints avec @x402/extensions v2.5.0 (declareDiscoveryExtension, inputSchema, exemples I/O)
    - Health-check endpoint pour monitoring des services
    - Analytics endpoint enrichi (walletBalance, recentActivity, avgPrice, activeServicesCount)
    - Dashboard admin `/dashboard` avec wallet balance hero, 5 stat cards, activity feed, glassmorphism
@@ -352,10 +354,11 @@ HACKATHON/
    - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base (--key wallet.json)
    - `npx x402-bazaar wallet` — gestion wallet agent
 
-5. **Ecosysteme** :
+5. **Ecosysteme (7 integrations)** :
    - x402-langchain : package Python sur GitHub (Wintyx57/x402-langchain)
    - x402-autogpt-plugin : plugin Auto-GPT v0.1.0 sur GitHub (Wintyx57/x402-autogpt-plugin)
    - x402-fast-monetization-template : template FastAPI
+   - Bazaar Discovery : @x402/extensions v2.5.0, 69 APIs avec inputSchema + exemples I/O dans reponses 402
    - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
 
 6. **Supabase** :
@@ -574,4 +577,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 19/02/2026 — Phase 1-3 COMPLETE + P1.9 (RainbowKit) + Phase 4 EN COURS + ChainSelector LIVE + SKALE sFUEL OK*
+*Derniere mise a jour: 26/02/2026 — Phase 1-3 COMPLETE + Bazaar Discovery LIVE (69 APIs) + 7 integrations + Phase 4 EN COURS*
