@@ -38,7 +38,7 @@ jobs:
         env:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         # E2E tests hit production — may fail due to cold starts or network issues
-        # Admin tests are skipped when ADMIN_TOKEN secret is not configured
+        # Admin tests require ADMIN_TOKEN secret to be configured in GitHub Actions
         continue-on-error: true
 
   security:
@@ -52,4 +52,3 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm audit --audit-level=high
-        continue-on-error: true
