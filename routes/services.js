@@ -1,11 +1,12 @@
 // routes/services.js — GET /services, GET /search, GET /api/services, GET /api/activity,
 //                     GET /api/services/activity, GET /api/health-check,
-//                     DELETE /api/admin/services/:id
+//                     DELETE /api/admin/services/:id, POST /api/admin/services/:id/verify
 
 const express = require('express');
 const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
 const { ServiceSearchSchema, ServiceListQuerySchema } = require('../schemas/index');
+const { verifyService } = require('../lib/service-verifier');
 
 function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
     const router = express.Router();
@@ -217,6 +218,38 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             res.status(500).json({ error: 'Health check failed' });
         }
     });
+
+    // --- ADMIN: RE-VERIFY SERVICE ---
+    if (adminAuth) {
+        router.post('/api/admin/services/:id/verify', adminAuth, async (req, res) => {
+            const { id } = req.params;
+
+            // Fetch service from DB
+            const { data: services, error: fetchErr } = await supabase
+                .from('services')
+                .select('*')
+                .eq('id', id)
+                .limit(1);
+
+            if (fetchErr || !services || services.length === 0) {
+                return res.status(404).json({ error: 'Service not found' });
+            }
+
+            const service = services[0];
+            const report = await verifyService(service.url);
+
+            // Update verified_status in DB
+            await supabase
+                .from('services')
+                .update({ verified_status: report.verdict, verified_at: new Date().toISOString() })
+                .eq('id', id);
+
+            logActivity('admin', `Re-verified "${service.name}": ${report.verdict}`);
+            logger.info('Admin', `Re-verified "${service.name}" (${id.slice(0, 8)}): ${report.verdict}`);
+
+            res.json({ success: true, service: service.name, report });
+        });
+    }
 
     // --- ADMIN: DELETE SERVICE BY ID ---
     if (adminAuth) {

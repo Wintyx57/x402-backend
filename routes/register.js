@@ -1,11 +1,10 @@
-// routes/register.js — POST /register + auto-test on registration
+// routes/register.js — POST /register + deep auto-verification on registration
 
 const express = require('express');
 const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
 const { ServiceRegistrationSchema } = require('../schemas');
-
-const AUTO_TEST_TIMEOUT = 10000; // 10s
+const { verifyService } = require('../lib/service-verifier');
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
@@ -72,65 +71,67 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
     return router;
 }
 
-// --- Auto-test: ping registered URL and notify admin ---
+// --- Auto-test: deep x402 verification and notify admin ---
 async function autoTestService(service, supabase) {
-    const { name, url, id } = service;
-    const start = Date.now();
+    const { name, url, id, price_usdc } = service;
 
-    let status = 'unknown';
-    let httpStatus = 0;
-    let latency = 0;
-    let errorMsg = null;
+    const report = await verifyService(url);
 
-    try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), AUTO_TEST_TIMEOUT);
-
-        const res = await fetch(url, {
-            method: 'GET',
-            signal: controller.signal,
-            headers: { 'User-Agent': 'x402-bazaar-autotest/1.0' },
-        });
-        clearTimeout(timeoutId);
-
-        latency = Date.now() - start;
-        httpStatus = res.status;
-        // 200, 402, 400, 403 = endpoint exists and responds
-        status = (httpStatus >= 200 && httpStatus < 500) ? 'reachable' : 'error';
-    } catch (err) {
-        latency = Date.now() - start;
-        errorMsg = err.name === 'AbortError' ? 'Timeout (10s)' : err.message;
-        status = 'unreachable';
-    }
-
-    // Update service verified status in Supabase (add verified_at + verified_status columns if they exist)
+    // Update service verified status in Supabase
     try {
         await supabase
             .from('services')
-            .update({ verified_status: status, verified_at: new Date().toISOString() })
+            .update({ verified_status: report.verdict, verified_at: new Date().toISOString() })
             .eq('id', id);
     } catch {
         // Column might not exist yet, that's OK
     }
 
-    // Notify admin via Telegram
-    const emoji = status === 'reachable' ? '\u2705' : '\uD83D\uDD34';
-    const text = [
-        `${emoji} *Nouveau service enregistre*`,
+    // Notify admin via Telegram with rich details
+    const VERDICT_EMOJI = {
+        mainnet_verified: '\u2705',  // ✅
+        reachable: '\u2139\uFE0F',   // ℹ️
+        testnet: '\u26A0\uFE0F',     // ⚠️
+        wrong_chain: '\u26A0\uFE0F', // ⚠️
+        no_x402: '\u2753',           // ❓
+        offline: '\uD83D\uDD34',     // 🔴
+    };
+    const VERDICT_LABEL = {
+        mainnet_verified: 'MAINNET VERIFIE',
+        reachable: 'ACCESSIBLE (pas de x402)',
+        testnet: 'TESTNET',
+        wrong_chain: 'CHAIN INCONNUE',
+        no_x402: 'PAS DE x402',
+        offline: 'HORS LIGNE',
+    };
+
+    const emoji = VERDICT_EMOJI[report.verdict] || '\u2753';
+    const label = VERDICT_LABEL[report.verdict] || report.verdict;
+
+    const lines = [
+        `${emoji} *Nouveau service — ${label}*`,
         ``,
         `*Nom:* ${name}`,
         `*URL:* \`${url}\``,
-        `*Auto-test:* ${status}`,
-        `*HTTP:* ${httpStatus || 'N/A'}`,
-        `*Latence:* ${latency}ms`,
-        errorMsg ? `*Erreur:* ${errorMsg}` : null,
-        ``,
-        `*ID:* \`${id.slice(0, 8)}...\``,
-    ].filter(Boolean).join('\n');
+        `*Prix:* ${price_usdc} USDC`,
+        `*HTTP:* ${report.httpStatus || 'N/A'}`,
+        `*Latence:* ${report.latency}ms`,
+    ];
 
-    await notifyAdmin(text);
+    if (report.x402 && report.x402.valid) {
+        lines.push(`*Chain:* ${report.x402.chainLabel} (${report.x402.network})`);
+        lines.push(`*USDC:* ${report.x402.asset ? report.x402.asset.slice(0, 10) + '...' : 'N/A'} ${report.x402.isValidUsdc ? '\u2705' : '\u274C'}`);
+        lines.push(`*Mainnet:* ${report.x402.isMainnet ? 'Oui \u2705' : 'Non \u274C'}`);
+        if (report.x402.payTo) lines.push(`*PayTo:* \`${report.x402.payTo.slice(0, 10)}...\``);
+    }
 
-    logger.info('AutoTest', `Service "${name}" (${id.slice(0, 8)}): ${status} (HTTP ${httpStatus}, ${latency}ms)`);
+    if (report.endpoints.health) lines.push(`*/health:* accessible \u2705`);
+    if (report.details) lines.push(`\n_${report.details}_`);
+    lines.push(`\n*ID:* \`${id.slice(0, 8)}...\``);
+
+    await notifyAdmin(lines.filter(Boolean).join('\n'));
+
+    logger.info('AutoTest', `Service "${name}" (${id.slice(0, 8)}): ${report.verdict} — ${report.details}`);
 }
 
 // --- Notify Community Agent of new API registration ---
