@@ -7,23 +7,26 @@ const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { WebSearchQuerySchema, ScraperUrlSchema } = require('../../schemas/index');
 
 function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
 
     // --- WEB SEARCH API WRAPPER (0.005 USDC) ---
     router.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web Search API"), async (req, res) => {
-        const query = (req.query.q || '').trim().slice(0, 200);
+        // Validate query parameters using Zod
+        const parseResult = WebSearchQuerySchema.safeParse({
+            q: req.query.q || '',
+            max: req.query.max || '10'
+        });
 
-        if (!query) {
-            return res.status(400).json({ error: "Parameter 'q' required. Ex: /api/search?q=bitcoin+price" });
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
         }
 
-        if (/[\x00-\x1F\x7F]/.test(query)) {
-            return res.status(400).json({ error: 'Invalid characters in query' });
-        }
-
-        const maxResults = Math.min(Math.max(1, parseInt(req.query.max) || 10), 20);
+        const query = parseResult.data.q;
+        const maxResults = parseInt(parseResult.data.max);
 
         try {
             const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -70,11 +73,15 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
 
     // --- UNIVERSAL SCRAPER API WRAPPER (0.005 USDC) ---
     router.get('/api/scrape', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Universal Scraper API"), async (req, res) => {
-        const targetUrl = (req.query.url || '').trim();
+        // Validate URL parameter using Zod
+        const parseResult = ScraperUrlSchema.safeParse({ url: req.query.url || '' });
 
-        if (!targetUrl) {
-            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/scrape?url=https://example.com" });
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
         }
+
+        const targetUrl = parseResult.data.url;
 
         let parsed;
         try {
@@ -132,7 +139,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
             const title = $('title').text().trim() || $('h1').first().text().trim() || '';
             const metaDesc = $('meta[name="description"]').attr('content') || '';
 
-            let contentHtml = $('article').html() || $('main').html() || $('[role="main"]').html() || $('body').html() || '';
+            const contentHtml = $('article').html() || $('main').html() || $('[role="main"]').html() || $('body').html() || '';
 
             const turndown = new TurndownService({
                 headingStyle: 'atx',

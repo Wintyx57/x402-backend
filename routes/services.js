@@ -4,6 +4,7 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
+const { ServiceSearchSchema, ServiceListQuerySchema } = require('../schemas/index');
 
 function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter) {
     const router = express.Router();
@@ -29,16 +30,15 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
     // --- RECHERCHE DE SERVICES (0.05 USDC) ---
     router.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Rechercher un service"), async (req, res) => {
-        const query = (req.query.q || '').trim().slice(0, 100);
+        // Validate query parameters using Zod
+        const parseResult = ServiceSearchSchema.safeParse({ q: req.query.q || '' });
 
-        if (!query) {
-            return res.status(400).json({ error: "Parametre 'q' requis. Ex: /search?q=weather" });
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
         }
 
-        // Reject control characters and null bytes
-        if (/[\x00-\x1F\x7F]/.test(query)) {
-            return res.status(400).json({ error: 'Invalid characters in query' });
-        }
+        const query = parseResult.data.q;
 
         // Sanitize: escape special Postgres LIKE characters
         const sanitized = query.replace(/[%_\\]/g, '\\$&');

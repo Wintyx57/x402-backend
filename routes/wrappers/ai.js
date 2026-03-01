@@ -8,6 +8,7 @@ const { evaluate } = require('mathjs');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { openaiRetry } = require('../../lib/openai-retry');
+const { ImageGenerationSchema, SentimentAnalysisSchema, CodeExecutionSchema } = require('../../schemas/index');
 
 function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();
@@ -18,31 +19,21 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
 
     router.get('/api/image', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Image Generation API"), async (req, res) => {
         try {
-            const prompt = (req.query.prompt || '').trim();
-            const size = (req.query.size || '1024x1024').trim();
-            const quality = (req.query.quality || 'standard').trim();
+            // Validate query parameters using Zod
+            const parseResult = ImageGenerationSchema.safeParse({
+                prompt: req.query.prompt || '',
+                size: req.query.size || '1024x1024',
+                quality: req.query.quality || 'standard'
+            });
 
-            if (!prompt) {
-                return res.status(400).json({ error: "Parameter 'prompt' is required. Ex: /api/image?prompt=a+cat+in+space" });
-            }
-            if (prompt.length > 1000) {
-                return res.status(400).json({ error: 'Prompt too long (max 1000 characters)' });
-            }
-            if (/[\x00-\x1F\x7F]/.test(prompt)) {
-                return res.status(400).json({ error: 'Invalid characters in prompt' });
+            if (!parseResult.success) {
+                const errors = parseResult.error.errors.map(err => err.message).join(', ');
+                return res.status(400).json({ error: errors });
             }
 
-            if (!IMAGE_SIZES.includes(size)) {
-                return res.status(400).json({
-                    error: `Invalid size. Accepted: ${IMAGE_SIZES.join(', ')}`,
-                });
-            }
-
-            if (!IMAGE_QUALITIES.includes(quality)) {
-                return res.status(400).json({
-                    error: `Invalid quality. Accepted: ${IMAGE_QUALITIES.join(', ')}`,
-                });
-            }
+            const prompt = parseResult.data.prompt;
+            const size = parseResult.data.size;
+            const quality = parseResult.data.quality;
 
             const response = await openaiRetry(() => getOpenAI().images.generate({
                 model: 'dall-e-3',
@@ -85,19 +76,15 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
 
     // --- SENTIMENT ANALYSIS API WRAPPER (0.005 USDC) ---
     router.get('/api/sentiment', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Sentiment Analysis API"), async (req, res) => {
-        const text = (req.query.text || '').trim();
+        // Validate query parameter using Zod
+        const parseResult = SentimentAnalysisSchema.safeParse({ text: req.query.text || '' });
 
-        if (!text) {
-            return res.status(400).json({ error: "Parameter 'text' required. Ex: /api/sentiment?text=I+love+this+product" });
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
         }
 
-        if (text.length < 5) {
-            return res.status(400).json({ error: 'Text too short (minimum 5 characters)' });
-        }
-
-        if (text.length > 10000) {
-            return res.status(400).json({ error: 'Text too long (max 10000 characters)' });
-        }
+        const text = parseResult.data.text;
 
         try {
             const response = await openaiRetry(() => getOpenAI().chat.completions.create({
@@ -155,16 +142,21 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
 
     // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
     router.post('/api/code', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Code Execution API"), async (req, res) => {
-        const language = (req.body.language || '').trim().toLowerCase().slice(0, 50);
-        const code = (req.body.code || '').trim();
+        // Validate request body using Zod
+        const parseResult = CodeExecutionSchema.safeParse({
+            code: req.body.code || '',
+            language: req.body.language || 'python',
+            timeout: req.body.timeout || '5000'
+        });
 
-        if (!language || !code) {
-            return res.status(400).json({ error: "Parameters 'language' and 'code' required. Ex: POST /api/code {language: 'python', code: 'print(42)'}" });
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
         }
 
-        if (code.length > 50000) {
-            return res.status(400).json({ error: 'Code too long (max 50000 characters)' });
-        }
+        const language = parseResult.data.language;
+        const code = parseResult.data.code;
+        const timeout = parseInt(parseResult.data.timeout);
 
         try {
             const apiUrl = 'https://emkc.org/api/v2/piston/execute';
