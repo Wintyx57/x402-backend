@@ -232,7 +232,7 @@ app.use((req, res, next) => {
 // ============================================================
 
 app.use(createHealthRouter(supabase));
-app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter));
+app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));

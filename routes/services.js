@@ -1,12 +1,13 @@
 // routes/services.js — GET /services, GET /search, GET /api/services, GET /api/activity,
-//                     GET /api/services/activity, GET /api/health-check
+//                     GET /api/services/activity, GET /api/health-check,
+//                     DELETE /api/admin/services/:id
 
 const express = require('express');
 const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
 const { ServiceSearchSchema, ServiceListQuerySchema } = require('../schemas/index');
 
-function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter) {
+function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
     const router = express.Router();
 
     // --- LISTE DES SERVICES (0.05 USDC) ---
@@ -216,6 +217,31 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             res.status(500).json({ error: 'Health check failed' });
         }
     });
+
+    // --- ADMIN: DELETE SERVICE BY ID ---
+    if (adminAuth) {
+        router.delete('/api/admin/services/:id', adminAuth, async (req, res) => {
+            const { id } = req.params;
+            const { data, error } = await supabase
+                .from('services')
+                .delete()
+                .eq('id', id)
+                .select();
+
+            if (error) {
+                logger.error('Admin', `DELETE /api/admin/services/${id} error: ${error.message}`);
+                return res.status(500).json({ error: 'Failed to delete service' });
+            }
+
+            if (!data || data.length === 0) {
+                return res.status(404).json({ error: 'Service not found' });
+            }
+
+            logActivity('admin', `Deleted service: ${data[0].name} (${id})`);
+            logger.info('Admin', `Deleted service: ${data[0].name} (${id})`);
+            res.json({ success: true, deleted: data[0] });
+        });
+    }
 
     return router;
 }
