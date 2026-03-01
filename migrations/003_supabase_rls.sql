@@ -1,9 +1,11 @@
 -- Migration 003 — Supabase Row Level Security (RLS)
 --
--- Context: activity, budgets, monitoring_checks tables are exposed via
--- Supabase's auto-generated REST API. Without RLS, any request with the
--- anon key can read/write all rows. This migration locks down access so
--- only the service role (backend) can write, and public reads are blocked.
+-- Context: activity, monitoring_checks, services, used_transactions tables are
+-- exposed via Supabase's auto-generated REST API. Without RLS, any request with
+-- the anon key can read/write all rows. This migration locks down access so
+-- only the service role (backend) can write, and public reads are limited.
+--
+-- Applied: 2026-03-01 (4 tables — budgets excluded, table does not exist)
 --
 -- Apply manually via Supabase SQL Editor:
 -- https://supabase.com/dashboard/project/kucrowtjsgusdxnjglug/sql
@@ -33,20 +35,7 @@ CREATE POLICY "service_role_delete_activity"
   USING (true);
 
 -- ============================================================
--- 2. BUDGETS TABLE
--- ============================================================
-
-ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
-
--- Only service role can manage budgets
-CREATE POLICY "service_role_all_budgets"
-  ON budgets FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
-
--- ============================================================
--- 3. MONITORING_CHECKS TABLE
+-- 2. MONITORING_CHECKS TABLE
 -- ============================================================
 
 ALTER TABLE monitoring_checks ENABLE ROW LEVEL SECURITY;
