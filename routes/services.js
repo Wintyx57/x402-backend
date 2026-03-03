@@ -158,7 +158,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         for (const [key, val] of healthCache) {
             if (now - val.timestamp > HEALTH_TTL * 3) healthCache.delete(key);
         }
-    }, 30 * 60 * 1000);
+    }, 30 * 60 * 1000).unref();
 
     router.get('/api/health-check', dashboardApiLimiter, async (req, res) => {
         try {

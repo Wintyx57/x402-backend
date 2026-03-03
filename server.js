@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -177,15 +178,12 @@ app.use(correlationId);
 
 // S4 — Timing-safe token comparison to prevent timing attacks
 function timingSafeCompare(a, b) {
-    const crypto = require('crypto');
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) {
-        // Compare against itself to maintain constant time, then return false
-        crypto.timingSafeEqual(bufA, bufA);
-        return false;
-    }
-    return crypto.timingSafeEqual(bufA, bufB);
+    const maxLen = Math.max(Buffer.byteLength(a), Buffer.byteLength(b));
+    const bufA = Buffer.alloc(maxLen);
+    const bufB = Buffer.alloc(maxLen);
+    Buffer.from(a).copy(bufA);
+    Buffer.from(b).copy(bufB);
+    return Buffer.byteLength(a) === Buffer.byteLength(b) && crypto.timingSafeEqual(bufA, bufB);
 }
 
 // Helper — Check if request has valid ADMIN_TOKEN (used for rate-limit bypass in CI)

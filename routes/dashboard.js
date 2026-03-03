@@ -5,6 +5,36 @@ const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
 const { fetchWithTimeout } = require('../lib/payment');
 
+// Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
+let _balanceCache = { value: null, ts: 0 };
+const BALANCE_TTL = 5 * 60_000;
+
+async function getCachedBalance() {
+    if (_balanceCache.value !== null && Date.now() - _balanceCache.ts < BALANCE_TTL) {
+        return _balanceCache.value;
+    }
+    const walletAddr = process.env.WALLET_ADDRESS;
+    if (!walletAddr) return null;
+    const balanceCall = '0x70a08231' + '000000000000000000000000' + walletAddr.slice(2).toLowerCase();
+    const balRes = await fetchWithTimeout(RPC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            jsonrpc: '2.0', method: 'eth_call',
+            params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
+        })
+    });
+    const rpcResponse = await balRes.json();
+    let balance = 0;
+    if (rpcResponse.error) {
+        throw new Error(rpcResponse.error.message || 'RPC error');
+    } else if (rpcResponse.result && rpcResponse.result !== '0x') {
+        balance = Number(BigInt(rpcResponse.result)) / 1e6;
+    }
+    _balanceCache = { value: balance, ts: Date.now() };
+    return balance;
+}
+
 function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter) {
     const router = express.Router();
 
@@ -37,29 +67,12 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             }
         } catch (err) { logger.warn('Dashboard', `Failed to fetch payment stats: ${err.message}`); }
 
-        // Solde USDC du wallet serveur (on-chain)
+        // Solde USDC du wallet serveur (on-chain) — cache TTL 5min
         let walletBalance = null;
         let balanceError = null;
         const walletAddr = process.env.WALLET_ADDRESS;
         try {
-            const balanceCall = '0x70a08231' + '000000000000000000000000' + walletAddr.slice(2).toLowerCase();
-            const balRes = await fetchWithTimeout(RPC_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    jsonrpc: '2.0', method: 'eth_call',
-                    params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
-                })
-            });
-            const rpcResponse = await balRes.json();
-            if (rpcResponse.error) {
-                balanceError = rpcResponse.error.message || 'RPC error';
-                logger.error('Balance', `RPC error: ${JSON.stringify(rpcResponse.error)}`);
-            } else if (rpcResponse.result && rpcResponse.result !== '0x') {
-                walletBalance = Number(BigInt(rpcResponse.result)) / 1e6;
-            } else {
-                walletBalance = 0;
-            }
+            walletBalance = await getCachedBalance();
         } catch (err) {
             balanceError = err.message;
             logger.error('Balance', `Failed to read USDC balance: ${err.message}`);
@@ -83,32 +96,43 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     // --- ANALYTICS (aggregated data for charts, protected by admin auth) ---
     router.get('/api/analytics', dashboardApiLimiter, adminAuthLimiter, adminAuth, async (req, res) => {
         try {
-            // 1. Get all payments for daily volume + cumulative revenue
-            const { data: payments } = await supabase
-                .from('activity')
-                .select('amount, created_at')
-                .eq('type', 'payment')
-                .order('created_at', { ascending: true });
+            // Lancer toutes les queries independantes en parallele
+            const [
+                paymentsResult,
+                apiCallsResult,
+                servicesCountResult,
+                recentActivityResult,
+                avgPriceResult,
+                walletBalanceResult,
+            ] = await Promise.allSettled([
+                // 1. Payments — limite 5000 pour eviter full scan
+                supabase.from('activity').select('amount, created_at').eq('type', 'payment').order('created_at', { ascending: true }).limit(5000),
+                // 2. API calls pour top services
+                supabase.from('activity').select('detail, created_at').eq('type', 'api_call').order('created_at', { ascending: false }).limit(1000),
+                // 3. Total services count
+                supabase.from('services').select('*', { count: 'exact', head: true }),
+                // 4. Recent activity (last 10)
+                supabase.from('activity').select('type, detail, amount, created_at, tx_hash').order('created_at', { ascending: false }).limit(10),
+                // 5. Average price of paid services
+                supabase.from('services').select('price_usdc').gt('price_usdc', 0),
+                // 6. Wallet balance (cache TTL 5min — evite 1-3s RPC par appel)
+                getCachedBalance(),
+            ]);
 
-            // 2. Get all api_calls for top services
-            const { data: apiCalls } = await supabase
-                .from('activity')
-                .select('detail, created_at')
-                .eq('type', 'api_call')
-                .order('created_at', { ascending: false })
-                .limit(1000);
+            const payments = paymentsResult.status === 'fulfilled' ? (paymentsResult.value.data || []) : [];
+            const apiCalls = apiCallsResult.status === 'fulfilled' ? (apiCallsResult.value.data || []) : [];
+            const servicesCount = servicesCountResult.status === 'fulfilled' ? (servicesCountResult.value.count || 0) : 0;
 
-            // 3. Total services count
-            const { count: servicesCount } = await supabase
-                .from('services')
-                .select('*', { count: 'exact', head: true });
+            if (paymentsResult.status === 'rejected') logger.warn('Analytics', `Failed to fetch payments: ${paymentsResult.reason?.message}`);
+            if (apiCallsResult.status === 'rejected') logger.warn('Analytics', `Failed to fetch api_calls: ${apiCallsResult.reason?.message}`);
+            if (servicesCountResult.status === 'rejected') logger.warn('Analytics', `Failed to count services: ${servicesCountResult.reason?.message}`);
 
             // Aggregate payments by day
             const dailyMap = {};
             let cumulativeTotal = 0;
             const cumulativeRevenue = [];
 
-            for (const p of (payments || [])) {
+            for (const p of payments) {
                 const date = p.created_at?.split('T')[0];
                 if (!date) continue;
                 const amount = Number(p.amount) || 0;
@@ -134,7 +158,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
 
             // Aggregate top services by call count
             const serviceCountMap = {};
-            for (const call of (apiCalls || [])) {
+            for (const call of apiCalls) {
                 const match = call.detail?.match(/^(\w[\w\s/]+?)(?:\s*[:.])/);
                 const endpoint = match ? match[1].trim() : (call.detail || 'Unknown');
                 serviceCountMap[endpoint] = (serviceCountMap[endpoint] || 0) + 1;
@@ -146,59 +170,39 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 .map(([endpoint, count]) => ({ endpoint, count }));
 
             // Totals
-            const totalRevenue = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-            const totalTransactions = (payments || []).length;
+            const totalRevenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+            const totalTransactions = payments.length;
 
-            // 4. Wallet balance (on-chain USDC)
+            // Wallet balance (depuis cache)
             let walletBalance = null;
-            try {
-                const balanceCall = '0x70a08231' + '000000000000000000000000' + process.env.WALLET_ADDRESS.slice(2).toLowerCase();
-                const balRes = await fetchWithTimeout(RPC_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0', method: 'eth_call',
-                        params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
-                    })
-                });
-                const rpcResponse = await balRes.json();
-                if (rpcResponse.result && rpcResponse.result !== '0x') {
-                    walletBalance = Number(BigInt(rpcResponse.result)) / 1e6;
-                } else {
-                    walletBalance = 0;
-                }
-            } catch (err) {
-                logger.error('Analytics', `Balance read failed: ${err.message}`);
+            if (walletBalanceResult.status === 'fulfilled') {
+                walletBalance = walletBalanceResult.value;
+            } else {
+                logger.error('Analytics', `Balance read failed: ${walletBalanceResult.reason?.message}`);
             }
 
-            // 5. Recent activity (last 10)
+            // Recent activity
             let recentActivity = [];
-            try {
-                const { data: actData } = await supabase
-                    .from('activity')
-                    .select('type, detail, amount, created_at, tx_hash')
-                    .order('created_at', { ascending: false })
-                    .limit(10);
-                recentActivity = (actData || []).map(a => ({
+            if (recentActivityResult.status === 'fulfilled' && recentActivityResult.value.data) {
+                recentActivity = recentActivityResult.value.data.map(a => ({
                     type: a.type,
                     detail: a.detail,
                     amount: a.amount,
                     time: a.created_at,
                     txHash: a.tx_hash
                 }));
-            } catch (err) { logger.warn('Analytics', `Failed to fetch recent activity: ${err.message}`); }
+            } else if (recentActivityResult.status === 'rejected') {
+                logger.warn('Analytics', `Failed to fetch recent activity: ${recentActivityResult.reason?.message}`);
+            }
 
-            // 6. Average price of paid services
+            // Average price
             let avgPrice = 0;
-            try {
-                const { data: svcData } = await supabase
-                    .from('services')
-                    .select('price_usdc')
-                    .gt('price_usdc', 0);
-                if (svcData && svcData.length > 0) {
-                    avgPrice = Math.round((svcData.reduce((sum, s) => sum + Number(s.price_usdc), 0) / svcData.length) * 1000) / 1000;
-                }
-            } catch (err) { logger.warn('Analytics', `Failed to compute avg price: ${err.message}`); }
+            if (avgPriceResult.status === 'fulfilled' && avgPriceResult.value.data?.length > 0) {
+                const svcData = avgPriceResult.value.data;
+                avgPrice = Math.round((svcData.reduce((sum, s) => sum + Number(s.price_usdc), 0) / svcData.length) * 1000) / 1000;
+            } else if (avgPriceResult.status === 'rejected') {
+                logger.warn('Analytics', `Failed to compute avg price: ${avgPriceResult.reason?.message}`);
+            }
 
             res.json({
                 dailyVolume,
@@ -207,14 +211,14 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 totals: {
                     revenue: Math.round(totalRevenue * 100) / 100,
                     transactions: totalTransactions,
-                    services: servicesCount || 0,
+                    services: servicesCount,
                 },
                 walletBalance,
                 walletAddress: process.env.WALLET_ADDRESS,
                 network: NETWORK_LABEL,
                 explorer: EXPLORER_URL,
                 recentActivity,
-                activeServicesCount: servicesCount || 0,
+                activeServicesCount: servicesCount,
                 avgPrice,
             });
         } catch (err) {

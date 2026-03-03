@@ -8,29 +8,7 @@ const cheerio = require('cheerio');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { openaiRetry } = require('../../lib/openai-retry');
-
-const BLOCKED_HOST = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|169\.254\.|fc00:|fe80:|::1)/i;
-
-async function safeUrl(rawUrl) {
-    let parsed;
-    try {
-        parsed = new URL(rawUrl);
-        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Only HTTP/HTTPS URLs allowed');
-    } catch (e) {
-        throw new Error(e.message.includes('Only') ? e.message : 'Invalid URL format');
-    }
-    if (BLOCKED_HOST.test(parsed.hostname)) throw new Error('Internal URLs not allowed');
-    try {
-        const { address } = await dns.promises.lookup(parsed.hostname);
-        if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address)) {
-            throw new Error('Internal IPs not allowed');
-        }
-    } catch (e) {
-        if (e.message.includes('Internal')) throw e;
-        throw new Error('Could not resolve hostname');
-    }
-    return parsed;
-}
+const { safeUrl } = require('../../lib/safe-url');
 
 function createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
     const router = express.Router();

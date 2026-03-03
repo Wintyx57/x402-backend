@@ -2,11 +2,11 @@
 // search, scrape, twitter (+ twitter-search), news, reddit, hn, youtube
 
 const express = require('express');
-const dns = require('dns');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { safeUrl } = require('../../lib/safe-url');
 const { WebSearchQuerySchema, ScraperUrlSchema } = require('../../schemas/index');
 
 function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
@@ -85,29 +85,9 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
 
         let parsed;
         try {
-            parsed = new URL(targetUrl);
-            if (!['http:', 'https:'].includes(parsed.protocol)) {
-                return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
-            }
-        } catch {
-            return res.status(400).json({ error: 'Invalid URL format' });
-        }
-
-        // SECURITY: Block internal/private IPs and cloud metadata endpoints
-        const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\]|\[::ffff:)/i;
-        if (blockedHostname.test(parsed.hostname)) {
-            return res.status(400).json({ error: 'Internal URLs not allowed' });
-        }
-
-        // SECURITY: DNS resolution check to prevent DNS rebinding attacks
-        try {
-            const { address } = await dns.promises.lookup(parsed.hostname);
-            const isPrivateIP = /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address);
-            if (isPrivateIP) {
-                return res.status(400).json({ error: 'Internal URLs not allowed' });
-            }
-        } catch (dnsErr) {
-            return res.status(400).json({ error: 'Could not resolve hostname' });
+            parsed = await safeUrl(targetUrl);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
         }
 
         try {
