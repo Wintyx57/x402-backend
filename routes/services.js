@@ -274,6 +274,20 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             logger.info('Admin', `Deleted service: ${data[0].name} (${id})`);
             res.json({ success: true, deleted: data[0] });
         });
+
+        // Diagnostic: which community-agent env vars are set (no values exposed)
+        router.get('/api/admin/env-check', adminAuth, (req, res) => {
+            const keys = [
+                'AGENT_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_CHANNEL_ID',
+                'GEMINI_API_KEY', 'DISCORD_WEBHOOK_URL', 'OPENAI_API_KEY', 'ENABLE_COMMUNITY_AGENT',
+                'DEVTO_API_KEY', 'MAX_BUDGET_USDC',
+            ];
+            const result = {};
+            for (const k of keys) {
+                result[k] = !!process.env[k];
+            }
+            res.json(result);
+        });
     }
 
     return router;
