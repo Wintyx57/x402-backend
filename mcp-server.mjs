@@ -570,6 +570,29 @@ server.tool(
     }
 );
 
+// ─── Auto-update check (fire-and-forget) ────────────────────────────
+const LOCAL_VERSION = '2.2.0';
+(async () => {
+    try {
+        const res = await fetch(
+            'https://raw.githubusercontent.com/Wintyx57/x402-backend/main/mcp-server.mjs',
+            { signal: AbortSignal.timeout(5000) },
+        );
+        if (!res.ok) return;
+        const text = await res.text();
+        const match = text.match(/version:\s*'(\d+\.\d+\.\d+)'/);
+        if (!match) return;
+        const remote = match[1];
+        if (remote !== LOCAL_VERSION) {
+            console.error(`\n⚠️  MCP update available: ${LOCAL_VERSION} → ${remote}`);
+            console.error(`   Run: cd ${__dirname} && git pull`);
+            console.error(`   Then restart Claude Code / Cursor\n`);
+        }
+    } catch {
+        // Silently ignore (offline, timeout, etc.)
+    }
+})();
+
 // ─── Start ──────────────────────────────────────────────────────────
 const transport = new StdioServerTransport();
 await server.connect(transport);
