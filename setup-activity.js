@@ -1,3 +1,6 @@
+// DEPRECATED — This script uses insecure RLS policies (public write).
+// Use migrations/003_supabase_rls.sql + 004_rls_reviews_budgets.sql instead.
+// Kept for reference only — DO NOT RUN on production Supabase.
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 

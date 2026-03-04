@@ -85,7 +85,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     router.get('/api/activity', dashboardApiLimiter, async (req, res) => {
         const { data, error } = await supabase
             .from('activity')
-            .select('*')
+            .select('type, detail, amount, created_at')
             .order('created_at', { ascending: false })
             .limit(50);
 
@@ -94,13 +94,12 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             return res.status(500).json({ error: 'Failed to fetch activity' });
         }
 
-        // Mapper pour compatibilite dashboard (time, txHash)
+        // Mapper pour compatibilite dashboard (time)
         const activity = (data || []).map(a => ({
             type: a.type,
             detail: a.detail,
             amount: Number(a.amount),
             time: a.created_at,
-            txHash: a.tx_hash,
         }));
 
         res.json(activity);
