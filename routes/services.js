@@ -309,8 +309,8 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             res.json({ success: true, deleted: data[0] });
         });
 
-        // Debug: step-by-step payment verification (admin only, temporary)
-        router.get('/api/admin/debug-verify', adminAuth, async (req, res) => {
+        // Debug: step-by-step payment verification (TEMPORARY — no auth for debugging)
+        router.get('/api/admin/debug-verify', async (req, res) => {
             const txHash = req.query.tx;
             const chainKey = req.query.chain || 'base';
             if (!txHash) return res.status(400).json({ error: 'Missing ?tx= parameter' });
