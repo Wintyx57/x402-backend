@@ -119,7 +119,7 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
     });
 
     // --- STOCK PRICE API (0.005 USDC) ---
-    router.get('/api/stocks', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "Stock Price API"), async (req, res) => {
+    router.get('/api/stocks', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Stock Price API"), async (req, res) => {
         const symbol = (req.query.symbol || '').trim().toUpperCase().slice(0, 10);
 
         if (!symbol) {

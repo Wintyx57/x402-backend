@@ -368,7 +368,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
     });
 
     // --- NEWS / RSS FEED API (0.005 USDC) ---
-    router.get('/api/news', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "News API"), async (req, res) => {
+    router.get('/api/news', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "News API"), async (req, res) => {
         const topic = (req.query.topic || req.query.q || '').trim().slice(0, 100);
         const lang = (req.query.lang || 'en').trim().slice(0, 5);
 
@@ -413,7 +413,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
     });
 
     // --- REDDIT API (0.005 USDC) ---
-    router.get('/api/reddit', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "Reddit API"), async (req, res) => {
+    router.get('/api/reddit', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Reddit API"), async (req, res) => {
         const subreddit = (req.query.subreddit || req.query.sub || '').trim().replace(/^r\//, '').slice(0, 50);
         const sort = ['hot', 'new', 'top', 'rising'].includes(req.query.sort) ? req.query.sort : 'hot';
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 25);
@@ -456,7 +456,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
     });
 
     // --- HACKER NEWS API (0.003 USDC) ---
-    router.get('/api/hn', paidEndpointLimiter, paymentMiddleware(8000, 0.003, "Hacker News API"), async (req, res) => {
+    router.get('/api/hn', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Hacker News API"), async (req, res) => {
         const type = ['top', 'new', 'best', 'ask', 'show', 'job'].includes(req.query.type) ? req.query.type : 'top';
         const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 30);
 
@@ -493,7 +493,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
     });
 
     // --- YOUTUBE VIDEO INFO API (0.005 USDC) ---
-    router.get('/api/youtube', paidEndpointLimiter, paymentMiddleware(8000, 0.005, "YouTube Info API"), async (req, res) => {
+    router.get('/api/youtube', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "YouTube Info API"), async (req, res) => {
         const input = (req.query.url || req.query.id || '').trim().slice(0, 200);
 
         if (!input) {

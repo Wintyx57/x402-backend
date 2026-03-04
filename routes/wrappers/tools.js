@@ -323,7 +323,7 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
     });
 
     // --- URL SHORTENER API (0.003 USDC) ---
-    router.get('/api/url-shorten', paidEndpointLimiter, paymentMiddleware(5000, 0.003, "URL Shortener API"), async (req, res) => {
+    router.get('/api/url-shorten', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "URL Shortener API"), async (req, res) => {
         const url = (req.query.url || '').trim().slice(0, 2000);
 
         if (!url) {
@@ -354,7 +354,7 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
     });
 
     // --- SSL CERTIFICATE CHECK API (0.003 USDC) ---
-    router.get('/api/ssl-check', paidEndpointLimiter, paymentMiddleware(10000, 0.003, "SSL Check API"), async (req, res) => {
+    router.get('/api/ssl-check', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "SSL Check API"), async (req, res) => {
         const hostname = (req.query.domain || req.query.host || '').trim().toLowerCase().slice(0, 253);
 
         if (!hostname) {
@@ -405,7 +405,7 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
     });
 
     // --- WHOIS DOMAIN API (0.005 USDC) ---
-    router.get('/api/whois', paidEndpointLimiter, paymentMiddleware(10000, 0.005, "WHOIS API"), async (req, res) => {
+    router.get('/api/whois', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "WHOIS API"), async (req, res) => {
         const domain = (req.query.domain || '').trim().toLowerCase().slice(0, 253);
 
         if (!domain) {

@@ -148,7 +148,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
     });
 
     // --- HTML TO TEXT API (0.001 USDC) ---
-    router.get('/api/html-to-text', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "HTML to Text API"), async (req, res) => {
+    router.get('/api/html-to-text', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "HTML to Text API"), async (req, res) => {
         const html = (req.query.html || '');
 
         if (!html) {
@@ -193,7 +193,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
     });
 
     // --- CSV TO JSON API (0.001 USDC) ---
-    router.get('/api/csv-to-json', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "CSV to JSON API"), async (req, res) => {
+    router.get('/api/csv-to-json', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "CSV to JSON API"), async (req, res) => {
         const csv = (req.query.csv || '');
         const delimiter = req.query.delimiter || ',';
         const hasHeader = req.query.header !== 'false';
@@ -276,7 +276,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
     });
 
     // --- TEXT DIFF API (0.001 USDC) ---
-    router.get('/api/diff', paidEndpointLimiter, paymentMiddleware(2000, 0.001, "Text Diff API"), async (req, res) => {
+    router.get('/api/diff', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Text Diff API"), async (req, res) => {
         const text1 = (req.query.text1 || '');
         const text2 = (req.query.text2 || '');
 
