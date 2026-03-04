@@ -19,6 +19,7 @@ const { startMonitor, stopMonitor, getStatus } = require('./lib/monitor');
 const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
 const { BudgetManager } = require('./lib/budget');
 const { startAgent, stopAgent } = require('./lib/agent-process');
+const { createPayoutManager } = require('./lib/payouts');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -31,6 +32,7 @@ const createBudgetRouter = require('./routes/budget');
 const { createCommunityAgentRouter } = require('./routes/community-agent');
 const createStreamRouter = require('./routes/stream');
 const createReviewsRouter = require('./routes/reviews');
+const createProxyRouter = require('./routes/proxy');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -53,6 +55,9 @@ function getOpenAI() {
 
 // --- Supabase ---
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+
+// --- Payout manager (95/5 revenue split) ---
+const payoutManager = createPayoutManager(supabase);
 
 // --- Activity logger ---
 const logActivity = createActivityLogger(supabase);
@@ -237,7 +242,8 @@ app.use((req, res, next) => {
 app.use(createHealthRouter(supabase));
 app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
-app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter));
+app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager));
+app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));

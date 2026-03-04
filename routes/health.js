@@ -131,7 +131,11 @@ function createHealthRouter(supabase) {
                 "GET /api/color?hex=": "Color information and conversions (0.003 USDC)",
                 "GET /api/json-validate": "JSON schema validator (0.003 USDC)",
                 "GET /api/useragent": "User-Agent string parser (0.003 USDC)",
-                "GET /api/agent/:agentId": "ERC-8004 agent identity lookup (free)"
+                "GET /api/agent/:agentId": "ERC-8004 agent identity lookup (free)",
+                "POST /api/call/:serviceId": "Call an external API through the Bazaar proxy (price varies, 95/5 split)",
+                "GET /api/admin/revenue": "Revenue overview (admin only)",
+                "GET /api/admin/payouts": "Pending payouts list (admin only)",
+                "POST /api/admin/payouts/mark-paid": "Mark payouts as paid (admin only)"
             },
             protocol: "x402 - HTTP 402 Payment Required",
             erc8004: {

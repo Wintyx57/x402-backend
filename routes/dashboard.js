@@ -35,7 +35,7 @@ async function getCachedBalance() {
     return balance;
 }
 
-function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter) {
+function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity) {
     const router = express.Router();
 
     // Redirect old dashboard to frontend admin
@@ -227,6 +227,45 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             logger.error('Analytics', err.message);
             res.status(500).json({ error: 'Analytics failed' });
         }
+    });
+
+    // --- ADMIN: Revenue overview ---
+    router.get('/api/admin/revenue', adminAuth, async (req, res) => {
+        if (!payoutManager) {
+            return res.status(501).json({ error: 'Payout system not configured' });
+        }
+        const overview = await payoutManager.getRevenueOverview();
+        if (overview.error) return res.status(500).json({ error: overview.error });
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.json(overview);
+    });
+
+    // --- ADMIN: Pending payouts ---
+    router.get('/api/admin/payouts', adminAuth, async (req, res) => {
+        if (!payoutManager) {
+            return res.status(501).json({ error: 'Payout system not configured' });
+        }
+        const result = await payoutManager.getPendingPayouts();
+        if (result.error) return res.status(500).json({ error: result.error });
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.json(result);
+    });
+
+    // --- ADMIN: Mark payouts as paid ---
+    router.post('/api/admin/payouts/mark-paid', adminAuth, async (req, res) => {
+        if (!payoutManager) {
+            return res.status(501).json({ error: 'Payout system not configured' });
+        }
+        const { ids, txHashOut } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0 || !txHashOut) {
+            return res.status(400).json({ error: 'Required: ids (array) and txHashOut (string)' });
+        }
+        const result = await payoutManager.markPayoutsPaid(ids, txHashOut);
+        if (result.error) return res.status(500).json({ error: result.error });
+        logActivity('admin', `Marked ${result.updated} payouts as paid (tx: ${txHashOut.slice(0, 18)}...)`);
+        res.json({ success: true, ...result });
     });
 
     return router;
