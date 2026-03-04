@@ -16,33 +16,45 @@ import { createPublicClient, createWalletClient, http, parseAbi, defineChain } f
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
 
-// ─── SKALE Europa chain definition ──────────────────────────────────
-const skaleEuropa = defineChain({
-    id: 2046399126,
-    name: 'SKALE Europa',
+// ─── SKALE on Base chain definition ─────────────────────────────────
+const skaleOnBase = defineChain({
+    id: 1187947933,
+    name: 'SKALE on Base',
     nativeCurrency: { name: 'sFUEL', symbol: 'sFUEL', decimals: 18 },
-    rpcUrls: { default: { http: ['https://mainnet.skalenodes.com/v1/elated-tan-skat'] } },
-    blockExplorers: { default: { name: 'SKALE Explorer', url: 'https://elated-tan-skat.explorer.mainnet.skalenodes.com' } },
+    rpcUrls: { default: { http: ['https://skale-base.skalenodes.com/v1/base'] } },
+    blockExplorers: { default: { name: 'SKALE Explorer', url: 'https://skale-base-explorer.skalenodes.com' } },
 });
 
-// ─── Config ──────────────────────────────────────────────────────────
+// ─── Multi-chain config ─────────────────────────────────────────────
+const CHAINS = {
+    base: {
+        chain: base,
+        usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        explorer: 'https://basescan.org',
+        label: 'Base Mainnet',
+        paymentHeader: 'base',
+    },
+    skale: {
+        chain: skaleOnBase,
+        usdc: '0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20',
+        explorer: 'https://skale-base-explorer.skalenodes.com',
+        label: 'SKALE on Base (zero gas)',
+        paymentHeader: 'skale',
+    },
+    'base-sepolia': {
+        chain: baseSepolia,
+        usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        explorer: 'https://sepolia.basescan.org',
+        label: 'Base Sepolia',
+        paymentHeader: 'base-sepolia',
+    },
+};
+
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
 const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
-const NETWORK = process.env.NETWORK || 'mainnet';
-const isMainnet = NETWORK === 'mainnet';
-const isSkale = NETWORK === 'skale';
-const chain = isSkale ? skaleEuropa : (isMainnet ? base : baseSepolia);
-const explorerBase = isSkale
-    ? 'https://elated-tan-skat.explorer.mainnet.skalenodes.com'
-    : (isMainnet ? 'https://basescan.org' : 'https://sepolia.basescan.org');
-const networkLabel = isSkale ? 'SKALE Europa' : (isMainnet ? 'Base Mainnet' : 'Base Sepolia');
+const DEFAULT_CHAIN_KEY = process.env.NETWORK === 'skale' ? 'skale'
+    : (process.env.NETWORK === 'testnet' ? 'base-sepolia' : 'base');
 
-// USDC contract addresses per network
-const USDC_ADDRESS = isSkale
-    ? '0x5F795bb52dAc3085f578f4877D450e2929D2F13d'   // SKALE Europa
-    : (isMainnet
-        ? '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // Base mainnet
-        : '0x036CbD53842c5426634e7929541eC2318f3dCF7e'); // Base Sepolia
 const USDC_ABI = parseAbi([
     'function transfer(address to, uint256 amount) returns (bool)',
     'function balanceOf(address) view returns (uint256)',
@@ -52,27 +64,17 @@ const USDC_ABI = parseAbi([
 let sessionSpending = 0;
 const sessionPayments = [];
 
-// ─── Wallet (viem — no Coinbase CDP dependency) ──────────────────────
+// ─── Wallet (viem — multi-chain, no Coinbase CDP dependency) ────────
 let account = null;
-let publicClient = null;
-let walletClient = null;
+const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet } }
 
-function initWallet() {
-    if (account) return;
-
-    // Method 1: Direct private key (simplest — recommended for new users)
+function getPrivateKey() {
     if (process.env.AGENT_PRIVATE_KEY) {
-        const key = process.env.AGENT_PRIVATE_KEY.startsWith('0x')
-            ? process.env.AGENT_PRIVATE_KEY
-            : `0x${process.env.AGENT_PRIVATE_KEY}`;
-        account = privateKeyToAccount(key);
-        publicClient = createPublicClient({ chain, transport: http() });
-        walletClient = createWalletClient({ account, chain, transport: http() });
-        console.error(`[Wallet] Initialized from private key: ${account.address} on ${networkLabel}`);
-        return;
+        const key = process.env.AGENT_PRIVATE_KEY;
+        return key.startsWith('0x') ? key : `0x${key}`;
     }
 
-    // Method 2: Encrypted agent-seed.json (Coinbase SDK format — legacy)
+    // Legacy: encrypted agent-seed.json
     const seedPath = process.env.AGENT_SEED_PATH || join(__dirname, 'agent-seed.json');
     if (!fs.existsSync(seedPath)) {
         throw new Error(
@@ -87,16 +89,9 @@ function initWallet() {
 
     let decryptedSeed = seed;
     if (encrypted) {
-        let ed2curve;
-        try {
-            ed2curve = await_import_ed2curve();
-        } catch {
-            throw new Error('ed2curve package required for encrypted seeds. Install with: npm install ed2curve');
-        }
-
+        const ed2curve = await_import_ed2curve();
         const apiSecret = process.env.COINBASE_API_SECRET;
         if (!apiSecret) throw new Error('COINBASE_API_SECRET required to decrypt wallet seed');
-
         const decoded = Buffer.from(apiSecret, 'base64');
         const x25519Key = ed2curve.convertSecretKey(new Uint8Array(decoded.slice(0, 32)));
         const encKey = crypto.createHash('sha256').update(Buffer.from(x25519Key)).digest();
@@ -111,13 +106,28 @@ function initWallet() {
     const { HDKey } = await_import_hdkey();
     const hdKey = HDKey.fromMasterSeed(Buffer.from(decryptedSeed, 'hex'));
     const childKey = hdKey.derive("m/44'/60'/0'/0/0");
-    const privateKey = '0x' + Buffer.from(childKey.privateKey).toString('hex');
+    return '0x' + Buffer.from(childKey.privateKey).toString('hex');
+}
 
+function initWallet() {
+    if (account) return;
+    const privateKey = getPrivateKey();
     account = privateKeyToAccount(privateKey);
-    publicClient = createPublicClient({ chain, transport: http() });
-    walletClient = createWalletClient({ account, chain, transport: http() });
+    console.error(`[Wallet] Initialized: ${account.address}`);
+}
 
-    console.error(`[Wallet] Initialized from seed: ${account.address} on ${networkLabel}`);
+function getClients(chainKey) {
+    initWallet();
+    if (!chainClients[chainKey]) {
+        const cfg = CHAINS[chainKey];
+        if (!cfg) throw new Error(`Unknown chain: ${chainKey}. Use: ${Object.keys(CHAINS).join(', ')}`);
+        chainClients[chainKey] = {
+            public: createPublicClient({ chain: cfg.chain, transport: http() }),
+            wallet: createWalletClient({ account, chain: cfg.chain, transport: http() }),
+        };
+        console.error(`[Wallet] Connected to ${cfg.label}`);
+    }
+    return chainClients[chainKey];
 }
 
 // Synchronous require for CommonJS deps (works in ESM via createRequire)
@@ -126,8 +136,8 @@ const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
 
-// ─── x402 Payment Flow ──────────────────────────────────────────────
-async function payAndRequest(url, options = {}) {
+// ─── x402 Payment Flow (multi-chain) ────────────────────────────────
+async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     const res = await fetch(url, options);
     const body = await res.json();
 
@@ -147,19 +157,20 @@ async function payAndRequest(url, options = {}) {
         );
     }
 
-    initWallet();
+    const cfg = CHAINS[chainKey];
+    const { public: pubClient, wallet: walClient } = getClients(chainKey);
 
     // Send USDC transfer via viem
     const amountInUnits = BigInt(Math.round(cost * 1e6));
-    const txHash = await walletClient.writeContract({
-        address: USDC_ADDRESS,
+    const txHash = await walClient.writeContract({
+        address: cfg.usdc,
         abi: USDC_ABI,
         functionName: 'transfer',
         args: [details.recipient, amountInUnits],
     });
 
     // Wait for confirmation
-    const receipt = await publicClient.waitForTransactionReceipt({
+    const receipt = await pubClient.waitForTransactionReceipt({
         hash: txHash,
         timeout: 120_000,
     });
@@ -173,12 +184,13 @@ async function payAndRequest(url, options = {}) {
     sessionPayments.push({
         amount: cost,
         txHash,
+        chain: chainKey,
         timestamp: new Date().toISOString(),
         endpoint: url.replace(SERVER_URL, ''),
     });
 
     // Retry with payment proof
-    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': isSkale ? 'skale' : 'base' };
+    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': cfg.paymentHeader };
     const retryRes = await fetch(url, { ...options, headers: retryHeaders });
     const result = await retryRes.json();
 
@@ -187,7 +199,8 @@ async function payAndRequest(url, options = {}) {
         amount: details.amount,
         currency: 'USDC',
         txHash,
-        explorer: `${explorerBase}/tx/${txHash}`,
+        chain: cfg.label,
+        explorer: `${cfg.explorer}/tx/${txHash}`,
         session_spent: sessionSpending.toFixed(2),
         session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
     };
@@ -198,7 +211,7 @@ async function payAndRequest(url, options = {}) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '2.0.0',
+    version: '2.2.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
@@ -226,11 +239,16 @@ server.tool(
 server.tool(
     'search_services',
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
-    { query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")') },
-    async ({ query }) => {
+    {
+        query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+    },
+    async ({ query, chain: chainKey }) => {
         try {
             const result = await payAndRequest(
-                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`
+                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
+                {},
+                chainKey || DEFAULT_CHAIN_KEY,
             );
             return {
                 content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -248,10 +266,12 @@ server.tool(
 server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
-    {},
-    async () => {
+    {
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+    },
+    async ({ chain: chainKey }) => {
         try {
-            const result = await payAndRequest(`${SERVER_URL}/services`);
+            const result = await payAndRequest(`${SERVER_URL}/services`, {}, chainKey || DEFAULT_CHAIN_KEY);
             return {
                 content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
@@ -268,8 +288,11 @@ server.tool(
 server.tool(
     'find_tool_for_task',
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
-    { task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")') },
-    async ({ task }) => {
+    {
+        task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+    },
+    async ({ task, chain: chainKey }) => {
         try {
             const stopWords = new Set(['i', 'need', 'want', 'to', 'a', 'an', 'the', 'for', 'of', 'and', 'or', 'in', 'on', 'with', 'that', 'this', 'get', 'find', 'me', 'my', 'some', 'can', 'you', 'do', 'is', 'it', 'be', 'have', 'use', 'please', 'should', 'would', 'could']);
             const keywords = task.toLowerCase()
@@ -279,7 +302,9 @@ server.tool(
             const query = keywords.slice(0, 3).join(' ') || task.slice(0, 30);
 
             const result = await payAndRequest(
-                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`
+                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
+                {},
+                chainKey || DEFAULT_CHAIN_KEY,
             );
 
             const services = result.data || result.services || [];
@@ -342,8 +367,12 @@ async function validateUrlForSSRF(urlStr) {
 server.tool(
     'call_api',
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
-    { url: z.string().url().describe('The full API URL to call') },
-    async ({ url }) => {
+    {
+        url: z.string().url().describe('The full API URL to call'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas fees)'),
+    },
+    async ({ url, chain: chainKey }) => {
+        const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
         try {
             await validateUrlForSSRF(url);
 
@@ -379,18 +408,19 @@ server.tool(
                     };
                 }
 
-                initWallet();
+                const cfg = CHAINS[selectedChain];
+                const { public: pubClient, wallet: walClient } = getClients(selectedChain);
 
                 // Send USDC payment on-chain
                 const amountInUnits = BigInt(Math.round(cost * 1e6));
-                const txHash = await walletClient.writeContract({
-                    address: USDC_ADDRESS,
+                const txHash = await walClient.writeContract({
+                    address: cfg.usdc,
                     abi: USDC_ABI,
                     functionName: 'transfer',
                     args: [details.recipient, amountInUnits],
                 });
 
-                const receipt = await publicClient.waitForTransactionReceipt({
+                const receipt = await pubClient.waitForTransactionReceipt({
                     hash: txHash,
                     timeout: 120_000,
                 });
@@ -407,6 +437,7 @@ server.tool(
                 sessionPayments.push({
                     amount: cost,
                     txHash,
+                    chain: selectedChain,
                     timestamp: new Date().toISOString(),
                     endpoint: url,
                 });
@@ -415,7 +446,7 @@ server.tool(
                 const retryRes = await fetch(url, {
                     headers: {
                         'X-Payment-TxHash': txHash,
-                        'X-Payment-Chain': isSkale ? 'skale' : 'base',
+                        'X-Payment-Chain': cfg.paymentHeader,
                     },
                 });
 
@@ -432,7 +463,8 @@ server.tool(
                     amount: details.amount,
                     currency: 'USDC',
                     txHash,
-                    explorer: `${explorerBase}/tx/${txHash}`,
+                    chain: cfg.label,
+                    explorer: `${cfg.explorer}/tx/${txHash}`,
                     session_spent: sessionSpending.toFixed(2),
                     session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
                 };
@@ -462,30 +494,45 @@ server.tool(
     }
 );
 
-// --- Tool: get_wallet_balance (FREE — direct on-chain query) ---
+// --- Tool: get_wallet_balance (FREE — queries all chains) ---
 server.tool(
     'get_wallet_balance',
-    'Check the USDC balance of the agent wallet on-chain. Free.',
+    'Check the USDC balance of the agent wallet on all supported chains (Base + SKALE on Base). Free.',
     {},
     async () => {
         try {
             initWallet();
-            const balance = await publicClient.readContract({
-                address: USDC_ADDRESS,
-                abi: USDC_ABI,
-                functionName: 'balanceOf',
-                args: [account.address],
-            });
-            const ethBalance = await publicClient.getBalance({ address: account.address });
+            const balances = {};
+
+            for (const [key, cfg] of Object.entries(CHAINS)) {
+                if (key === 'base-sepolia') continue; // skip testnet
+                try {
+                    const { public: pubClient } = getClients(key);
+                    const usdcBal = await pubClient.readContract({
+                        address: cfg.usdc,
+                        abi: USDC_ABI,
+                        functionName: 'balanceOf',
+                        args: [account.address],
+                    });
+                    const nativeBal = await pubClient.getBalance({ address: account.address });
+                    balances[key] = {
+                        network: cfg.label,
+                        balance_usdc: (Number(usdcBal) / 1e6).toFixed(6),
+                        balance_native: (Number(nativeBal) / 1e18).toFixed(8),
+                        explorer: `${cfg.explorer}/address/${account.address}`,
+                    };
+                } catch (err) {
+                    balances[key] = { network: cfg.label, error: err.message };
+                }
+            }
+
             return {
                 content: [{
                     type: 'text',
                     text: JSON.stringify({
                         address: account.address,
-                        balance_usdc: (Number(balance) / 1e6).toFixed(6),
-                        balance_eth: (Number(ethBalance) / 1e18).toFixed(8),
-                        network: networkLabel,
-                        explorer: `${explorerBase}/address/${account.address}`,
+                        chains: balances,
+                        default_chain: DEFAULT_CHAIN_KEY,
                     }, null, 2),
                 }],
             };
@@ -513,7 +560,10 @@ server.tool(
                     remaining: (MAX_BUDGET - sessionSpending).toFixed(2) + ' USDC',
                     payments_count: sessionPayments.length,
                     payments: sessionPayments,
-                    network: networkLabel,
+                    default_chain: CHAINS[DEFAULT_CHAIN_KEY].label,
+                    supported_chains: Object.entries(CHAINS)
+                        .filter(([k]) => k !== 'base-sepolia')
+                        .map(([k, v]) => ({ key: k, label: v.label })),
                 }, null, 2),
             }],
         };
