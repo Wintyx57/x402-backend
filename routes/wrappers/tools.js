@@ -1,11 +1,15 @@
 // routes/wrappers/tools.js — Developer tools API wrappers
 // hash, qrcode-gen, password, color, cron-parse, http-status, unit-convert, url-shorten, ssl-check, whois, dns
 
+const crypto = require('crypto');
+const tls = require('tls');
+const dnsPromises = require('dns/promises');
 const express = require('express');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { safeUrl } = require('../../lib/safe-url');
 
-function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
     // --- HASH GENERATOR API (0.001 USDC) ---
@@ -25,7 +29,6 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
             return res.status(400).json({ error: `Invalid algorithm. Accepted: ${validAlgos.join(', ')}` });
         }
 
-        const crypto = require('crypto');
         const hash = crypto.createHash(algo).update(text).digest('hex');
 
         logActivity('api_call', `Hash Generator API: ${algo} (${text.slice(0, 30)}...)`);
@@ -52,7 +55,7 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
             // Return JSON with the image URL instead of returning the image directly
             res.json({
                 success: true,
-                imageUrl: apiUrl,
+                image_url: apiUrl,
                 data: data,
                 size: size
             });
@@ -75,7 +78,6 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
         if (includeNumbers) chars += '0123456789';
         if (includeSymbols) chars += '!@#$%^&*()-_=+[]{}|;:,.<>?';
 
-        const crypto = require('crypto');
         const bytes = crypto.randomBytes(length);
         let password = '';
         for (let i = 0; i < length; i++) {
@@ -337,6 +339,12 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
         }
 
         try {
+            await safeUrl(url);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+
+        try {
             const apiUrl = `https://is.gd/create.php?format=json&url=${encodeURIComponent(url)}`;
             const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
             const data = await apiRes.json();
@@ -365,7 +373,6 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
         }
 
         try {
-            const tls = require('tls');
             const socket = tls.connect(443, hostname, { servername: hostname, timeout: 8000 });
 
             const result = await new Promise((resolve, reject) => {
@@ -475,7 +482,6 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, 
         }
 
         try {
-            const dnsPromises = require('dns/promises');
             let records;
 
             switch (type) {

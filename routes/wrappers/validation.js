@@ -1,10 +1,11 @@
 // routes/wrappers/validation.js — Validation & parsing API wrappers
 // validate-email, phone-validate, url-parse, json-validate, jwt-decode, password-strength, regex
 
+const dnsPromises = require('dns/promises');
 const express = require('express');
 const logger = require('../../lib/logger');
 
-function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
     // --- EMAIL VALIDATION API WRAPPER (0.003 USDC) ---
@@ -26,7 +27,7 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
                 email,
                 valid: false,
                 format: false,
-                mxRecords: false,
+                mx_records: false,
                 domain: null
             });
         }
@@ -37,7 +38,6 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
         // DNS MX lookup
         let mxValid = false;
         try {
-            const dnsPromises = require('dns/promises');
             const mxRecords = await dnsPromises.resolveMx(domain);
             mxValid = mxRecords && mxRecords.length > 0;
         } catch (err) {
@@ -54,7 +54,7 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
             email,
             valid: isValid,
             format: formatValid,
-            mxRecords: mxValid,
+            mx_records: mxValid,
             domain
         });
     });

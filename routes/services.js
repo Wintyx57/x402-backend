@@ -7,12 +7,13 @@ const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
 const { ServiceSearchSchema, ServiceListQuerySchema } = require('../schemas/index');
 const { verifyService } = require('../lib/service-verifier');
+const { safeUrl } = require('../lib/safe-url');
 
 function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
     const router = express.Router();
 
     // --- LISTE DES SERVICES (0.05 USDC) ---
-    router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Lister les services"), async (req, res) => {
+    router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "List Services"), async (req, res) => {
         const { data, error } = await supabase
             .from('services')
             .select('*')
@@ -31,7 +32,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     });
 
     // --- RECHERCHE DE SERVICES (0.05 USDC) ---
-    router.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Rechercher un service"), async (req, res) => {
+    router.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Search Services"), async (req, res) => {
         // Validate query parameters using Zod
         const parseResult = ServiceSearchSchema.safeParse({ q: req.query.q || '' });
 
@@ -190,6 +191,12 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             for (let i = 0; i < toCheck.length; i += 10) {
                 const batch = toCheck.slice(i, i + 10);
                 const checks = batch.map(async (url) => {
+                    try {
+                        await safeUrl(url);
+                    } catch {
+                        results[url] = 'blocked';
+                        return;
+                    }
                     try {
                         const controller = new AbortController();
                         const timeout = setTimeout(() => controller.abort(), 5000);

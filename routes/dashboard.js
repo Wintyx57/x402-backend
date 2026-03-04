@@ -83,12 +83,10 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             totalPayments,
             totalRevenue: Math.round(totalRevenue * 100) / 100,
             walletBalance,
-            walletFull: walletAddr || null,
             wallet: walletAddr ? `${walletAddr.slice(0, 6)}...${walletAddr.slice(-4)}` : null,
             network: NETWORK_LABEL,
             explorer: EXPLORER_URL,
             usdcContract: USDC_CONTRACT,
-            rpcUrl: RPC_URL,
             ...(balanceError && { balanceError }),
         });
     });

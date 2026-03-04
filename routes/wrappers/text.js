@@ -43,7 +43,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
 
             res.json({
                 success: true,
-                translatedText: data.responseData.translatedText,
+                translated_text: data.responseData.translatedText,
                 from: langFrom,
                 to: to,
                 original: text
@@ -98,8 +98,8 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
             res.json({
                 success: true,
                 summary,
-                originalLength: text.length,
-                summaryLength: summary.length
+                original_length: text.length,
+                summary_length: summary.length
             });
         } catch (err) {
             logger.error('Summarize API', err.message);

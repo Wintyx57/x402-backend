@@ -9,7 +9,7 @@ const { verifyService } = require('../lib/service-verifier');
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
 
-    router.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Enregistrer un service"), async (req, res) => {
+    router.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Register Service"), async (req, res) => {
         const txHash = req.headers['x-payment-txhash'] || null;
 
         // Validate request body using Zod schema
@@ -63,7 +63,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
         res.status(201).json({
             success: true,
-            message: `Service "${validatedData.name}" enregistre avec succes !`,
+            message: `Service "${validatedData.name}" registered successfully!`,
             data: data[0]
         });
     });

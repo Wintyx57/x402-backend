@@ -111,7 +111,11 @@ app.use(cors({
     },
     methods: ['GET', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token'],
-    exposedHeaders: ['X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert']
+    exposedHeaders: [
+        'X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert',
+        'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After',
+        'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'
+    ]
 }));
 
 // --- BODY LIMITS ---
@@ -326,3 +330,6 @@ async function gracefulShutdown(signal) {
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('unhandledRejection', (reason) => {
+    logger.error('process', `Unhandled rejection: ${reason}`);
+});

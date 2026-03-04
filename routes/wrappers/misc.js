@@ -93,7 +93,7 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
 
             const entry = data[0];
             const meanings = (entry.meanings || []).map(m => ({
-                partOfSpeech: m.partOfSpeech,
+                part_of_speech: m.partOfSpeech,
                 definitions: (m.definitions || []).slice(0, 3).map(d => d.definition)
             }));
 
@@ -104,7 +104,7 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
                 word: entry.word,
                 phonetic: entry.phonetic || '',
                 meanings,
-                sourceUrl: entry.sourceUrls?.[0] || ''
+                source_url: entry.sourceUrls?.[0] || ''
             });
         } catch (err) {
             logger.error('Dictionary API', err.message);
@@ -292,7 +292,7 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         }
 
         try {
-            const apiUrl = `http://ip-api.com/json/${encodeURIComponent(address)}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as`;
+            const apiUrl = `https://ip-api.com/json/${encodeURIComponent(address)}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as`;
             const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
             const data = await apiRes.json();
 

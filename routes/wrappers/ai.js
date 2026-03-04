@@ -258,7 +258,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                 success: true,
                 title,
                 text: fullText,
-                wordCount,
+                word_count: wordCount,
                 url: targetUrl
             });
         } catch (err) {

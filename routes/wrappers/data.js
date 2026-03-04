@@ -1,11 +1,13 @@
 // routes/wrappers/data.js — Data-related API wrappers
 // weather, crypto, stocks, currency, timestamp, lorem, uuid, headers, useragent
 
+const crypto = require('crypto');
 const express = require('express');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
+const { safeUrl } = require('../../lib/safe-url');
 
-function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
     // --- WEATHER API WRAPPER (0.02 USDC) ---
@@ -276,7 +278,6 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         let count = parseInt(req.query.count) || 1;
         count = Math.max(1, Math.min(100, count));
 
-        const crypto = require('crypto');
         const uuids = Array.from({ length: count }, () => crypto.randomUUID());
 
         logActivity('api_call', `UUID Generator API: ${count} UUIDs`);
@@ -305,6 +306,12 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\])/i;
         if (blockedHostname.test(parsed.hostname)) {
             return res.status(400).json({ error: 'Internal URLs not allowed' });
+        }
+
+        try {
+            await safeUrl(targetUrl);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
         }
 
         try {
