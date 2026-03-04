@@ -13,6 +13,7 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
     const router = express.Router();
 
     // --- WEB SEARCH API WRAPPER (0.005 USDC) ---
+    // Uses DuckDuckGo Lite (more reliable from datacenter IPs) with Wikipedia fallback
     router.get('/api/search', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Web Search API"), async (req, res) => {
         // Validate query parameters using Zod
         const parseResult = WebSearchQuerySchema.safeParse({
@@ -29,33 +30,59 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, ge
         const maxResults = parseInt(parseResult.data.max);
 
         try {
-            const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-            const searchRes = await fetchWithTimeout(searchUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' }
-            }, 8000);
-            const html = await searchRes.text();
+            let results = [];
 
-            const $ = cheerio.load(html);
-            const results = [];
+            // Primary: DuckDuckGo Lite (less aggressive blocking than html endpoint)
+            try {
+                const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+                const searchRes = await fetchWithTimeout(searchUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                }, 8000);
+                const html = await searchRes.text();
+                const $ = cheerio.load(html);
 
-            $('.result').each((i, el) => {
-                if (results.length >= maxResults) return false;
-                const $el = $(el);
-                const title = $el.find('.result__a').text().trim();
-                const snippet = $el.find('.result__snippet').text().trim();
-                const rawHref = $el.find('.result__a').attr('href') || '';
+                // DuckDuckGo Lite uses table-based layout
+                $('a.result-link').each((i, el) => {
+                    if (results.length >= maxResults) return false;
+                    const $el = $(el);
+                    const title = $el.text().trim();
+                    let url = $el.attr('href') || '';
+                    if (url.startsWith('//')) url = 'https:' + url;
+                    if (title && url && url.startsWith('http')) {
+                        results.push({ title, url, snippet: '' });
+                    }
+                });
 
-                let url = rawHref;
-                try {
-                    const parsed = new URL(rawHref, 'https://duckduckgo.com');
-                    url = parsed.searchParams.get('uddg') || rawHref;
-                } catch { /* intentionally silent — malformed URLs fall back to rawHref */ }
-                if (url.startsWith('//')) url = 'https:' + url;
-
-                if (title && url) {
-                    results.push({ title, url, snippet });
+                // Alternative selector for DDG Lite
+                if (results.length === 0) {
+                    $('td a[href]').each((i, el) => {
+                        if (results.length >= maxResults) return false;
+                        const $el = $(el);
+                        const url = $el.attr('href') || '';
+                        const title = $el.text().trim();
+                        if (title && url.startsWith('http') && !url.includes('duckduckgo.com')) {
+                            const snippetTd = $el.closest('tr').next('tr').find('td.result-snippet');
+                            results.push({ title, url, snippet: snippetTd.text().trim() });
+                        }
+                    });
                 }
-            });
+            } catch (ddgErr) {
+                logger.warn('Search API', `DDG Lite failed: ${ddgErr.message}, trying fallback`);
+            }
+
+            // Fallback: Wikipedia Search API (always reliable)
+            if (results.length === 0) {
+                const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=${maxResults}`;
+                const wikiRes = await fetchWithTimeout(wikiUrl, {}, 8000);
+                const wikiData = await wikiRes.json();
+                if (wikiData.query?.search) {
+                    results = wikiData.query.search.map(r => ({
+                        title: r.title,
+                        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
+                        snippet: r.snippet.replace(/<[^>]+>/g, '')
+                    }));
+                }
+            }
 
             logActivity('api_call', `Web Search API: "${query}" -> ${results.length} results`);
 
