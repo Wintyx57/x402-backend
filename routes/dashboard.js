@@ -78,6 +78,8 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             logger.error('Balance', `Failed to read USDC balance: ${err.message}`);
         }
 
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
         res.json({
             totalServices: count || 0,
             totalPayments,
@@ -202,6 +204,8 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 logger.warn('Analytics', `Failed to compute avg price: ${avgPriceResult.reason?.message}`);
             }
 
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
             res.json({
                 dailyVolume,
                 topServices,
@@ -212,7 +216,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                     services: servicesCount,
                 },
                 walletBalance,
-                walletAddress: process.env.WALLET_ADDRESS,
+                walletAddress: process.env.WALLET_ADDRESS ? process.env.WALLET_ADDRESS.slice(0, 6) + '...' + process.env.WALLET_ADDRESS.slice(-4) : null,
                 network: NETWORK_LABEL,
                 explorer: EXPLORER_URL,
                 recentActivity,

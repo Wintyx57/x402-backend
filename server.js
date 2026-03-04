@@ -72,7 +72,7 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "https:"],
             connectSrc: ["*"],
@@ -135,13 +135,13 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || isInternalMonitor(req) || req.path.startsWith('/api/status') || isValidAdminToken(req),
+    skip: (req) => req.path === '/health' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
 const dashboardApiLimiter = rateLimit({
     windowMs: 1 * 60 * 1000,
-    max: 500, // Increased from 60 → 200 → 500 to handle parallel CI runs + test requests without token
+    max: 60,
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => isValidAdminToken(req),
@@ -209,6 +209,7 @@ function adminAuth(req, res, next) {
         logger.warn('AdminAuth', `Rejected: received ${token.length} chars`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
+    logger.info('AdminAuth', 'ACCESS GRANTED: ' + req.ip + ' -> ' + req.method + ' ' + req.path);
     next();
 }
 

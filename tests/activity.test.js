@@ -3,13 +3,16 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createActivityLogger } = require('../lib/activity');
 
+// Helper: wait for next microtask tick (fire-and-forget pattern)
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
 describe('createActivityLogger', () => {
     it('should be a function', () => {
         assert.equal(typeof createActivityLogger, 'function');
     });
 
     it('should return a function (logActivity)', () => {
-        const fakeSupabase = { from: () => ({ insert: () => ({}) }) };
+        const fakeSupabase = { from: () => ({ insert: () => ({ then: () => {} }) }) };
         const logActivity = createActivityLogger(fakeSupabase);
         assert.equal(typeof logActivity, 'function');
     });
@@ -31,7 +34,8 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await logActivity('payment', 'Test payment', 0.05, '0x' + 'a'.repeat(64));
+        logActivity('payment', 'Test payment', 0.05, '0x' + 'a'.repeat(64));
+        await tick();
 
         assert.equal(insertedTable, 'activity');
         assert.ok(Array.isArray(insertedData));
@@ -55,7 +59,8 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await logActivity('search', 'Search query', 0);
+        logActivity('search', 'Search query', 0);
+        await tick();
 
         assert.equal(insertedData[0].type, 'search');
         assert.equal(insertedData[0].detail, 'Search query');
@@ -76,7 +81,8 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await logActivity('payment', 'Paid', 1, '0xabc123');
+        logActivity('payment', 'Paid', 1, '0xabc123');
+        await tick();
 
         assert.ok('tx_hash' in insertedData[0], 'tx_hash should be present');
         assert.equal(insertedData[0].tx_hash, '0xabc123');
@@ -95,23 +101,26 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await logActivity('register', 'New service');
+        logActivity('register', 'New service');
+        await tick();
 
         assert.equal(insertedData[0].amount, 0);
     });
 
-    it('should NOT throw when supabase insert fails', async () => {
+    it('should NOT throw when supabase insert fails synchronously', () => {
         const fakeSupabase = {
             from: () => ({
                 insert: () => {
-                    throw new Error('Supabase connection failed');
+                    // Return a rejected promise (fire-and-forget catches it)
+                    return Promise.reject(new Error('Supabase connection failed'));
                 }
             })
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await assert.doesNotReject(async () => {
-            await logActivity('test', 'should not throw');
+        // Should not throw synchronously
+        assert.doesNotThrow(() => {
+            logActivity('test', 'should not throw');
         });
     });
 
@@ -123,8 +132,10 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        await assert.doesNotReject(async () => {
-            await logActivity('test', 'should not throw');
+        // Should not throw — error is caught by .then(null, handler)
+        assert.doesNotThrow(() => {
+            logActivity('test', 'should not throw');
         });
+        await tick(); // Let the rejection handler run
     });
 });
