@@ -35,7 +35,7 @@
 
 ## What is x402 Bazaar?
 
-x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Required](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/402) standard. AI agents discover services, pay in USDC on Base or SKALE Europa (zero gas), and get instant access -- no API keys, no subscriptions, no accounts. The server verifies payments on-chain and enforces anti-replay protection, making every transaction trustless and permissionless.
+x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Required](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/402) standard. AI agents discover services, pay in USDC on Base or SKALE on Base (ultra-low gas), and get instant access -- no API keys, no subscriptions, no accounts. The server verifies payments on-chain and enforces anti-replay protection, making every transaction trustless and permissionless.
 
 ## Key Features
 
@@ -43,7 +43,7 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 - **69 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 59+ more -- all behind micropayments.
 - **70+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
 - **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
-- **Multi-Chain** -- Base (mainnet) + SKALE Europa (zero gas fees via sFUEL).
+- **Multi-Chain** -- Base (mainnet) + SKALE on Base (ultra-low gas fees ~$0.0007/tx).
 - **MCP Server** -- Plug into Claude Desktop, Cursor, VS Code, or Claude Code as native AI tools.
 - **One-Line Setup** -- `npx x402-bazaar init` detects your IDE and configures everything.
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.

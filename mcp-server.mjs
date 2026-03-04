@@ -38,7 +38,7 @@ const CHAINS = {
         chain: skaleOnBase,
         usdc: '0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20',
         explorer: 'https://skale-base-explorer.skalenodes.com',
-        label: 'SKALE on Base (zero gas)',
+        label: 'SKALE on Base (ultra-low gas)',
         paymentHeader: 'skale',
     },
     'base-sepolia': {
@@ -241,7 +241,7 @@ server.tool(
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
     },
     async ({ query, chain: chainKey }) => {
         try {
@@ -267,7 +267,7 @@ server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
     },
     async ({ chain: chainKey }) => {
         try {
@@ -290,7 +290,7 @@ server.tool(
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
     },
     async ({ task, chain: chainKey }) => {
         try {
@@ -369,7 +369,7 @@ server.tool(
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         url: z.string().url().describe('The full API URL to call'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (zero gas fees)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
     },
     async ({ url, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
