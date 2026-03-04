@@ -423,6 +423,7 @@ server.tool(
 
                 const receipt = await pubClient.waitForTransactionReceipt({
                     hash: txHash,
+                    confirmations: 2,
                     timeout: 120_000,
                 });
 
