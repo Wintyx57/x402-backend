@@ -1,5 +1,5 @@
-// routes/services.js — GET /services, GET /search, GET /api/services, GET /api/activity,
-//                     GET /api/services/activity, GET /api/health-check,
+// routes/services.js — GET /services, GET /search, GET /api/services, GET /api/services/:id,
+//                     GET /api/activity, GET /api/services/activity, GET /api/health-check,
 //                     DELETE /api/admin/services/:id, POST /api/admin/services/:id/verify
 
 const express = require('express');
@@ -145,6 +145,34 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         } catch (err) {
             logger.error('Activity', err.message);
             res.status(500).json({ error: 'Internal error' });
+        }
+    });
+
+    // --- GET SINGLE SERVICE BY ID ---
+    router.get('/api/services/:id', dashboardApiLimiter, async (req, res) => {
+        try {
+            const { id } = req.params;
+
+            // Validate UUID format
+            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidRegex.test(id)) {
+                return res.status(400).json({ error: 'Invalid service ID format' });
+            }
+
+            const { data, error } = await supabase
+                .from('services')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (error || !data) {
+                return res.status(404).json({ error: 'Service not found' });
+            }
+
+            res.json(data);
+        } catch (err) {
+            logger.error('Supabase', `/api/services/:id error: ${err.message}`);
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 

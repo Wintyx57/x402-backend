@@ -25,6 +25,4 @@ CREATE INDEX IF NOT EXISTS idx_services_description_trgm
 CREATE INDEX IF NOT EXISTS idx_monitoring_endpoint_checked
     ON monitoring_checks(endpoint, checked_at DESC);
 
--- Index on activity for wallet-based queries
-CREATE INDEX IF NOT EXISTS idx_activity_wallet
-    ON activity(wallet);
+-- Note: activity table has no 'wallet' column, skip wallet index
