@@ -160,14 +160,16 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     const cfg = CHAINS[chainKey];
     const { public: pubClient, wallet: walClient } = getClients(chainKey);
 
-    // Send USDC transfer via viem
+    // Send USDC transfer via viem (force legacy tx for SKALE — no EIP-1559 support)
     const amountInUnits = BigInt(Math.round(cost * 1e6));
-    const txHash = await walClient.writeContract({
+    const txOpts = {
         address: cfg.usdc,
         abi: USDC_ABI,
         functionName: 'transfer',
         args: [details.recipient, amountInUnits],
-    });
+        ...(chainKey === 'skale' ? { type: 'legacy' } : {}),
+    };
+    const txHash = await walClient.writeContract(txOpts);
 
     // Wait for 2 confirmations (server requires ≥2 blocks)
     const receipt = await pubClient.waitForTransactionReceipt({
@@ -412,14 +414,16 @@ server.tool(
                 const cfg = CHAINS[selectedChain];
                 const { public: pubClient, wallet: walClient } = getClients(selectedChain);
 
-                // Send USDC payment on-chain
+                // Send USDC payment on-chain (force legacy tx for SKALE — no EIP-1559)
                 const amountInUnits = BigInt(Math.round(cost * 1e6));
-                const txHash = await walClient.writeContract({
+                const txOpts = {
                     address: cfg.usdc,
                     abi: USDC_ABI,
                     functionName: 'transfer',
                     args: [details.recipient, amountInUnits],
-                });
+                    ...(selectedChain === 'skale' ? { type: 'legacy' } : {}),
+                };
+                const txHash = await walClient.writeContract(txOpts);
 
                 const receipt = await pubClient.waitForTransactionReceipt({
                     hash: txHash,
