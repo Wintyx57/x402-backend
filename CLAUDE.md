@@ -201,6 +201,11 @@ HACKATHON/
 │   ├── data/              # settings.json, history.json, queue.json (persistent)
 │   └── package.json       # deps: dotenv, viem
 │
+├── n8n-nodes-x402-bazaar/  # n8n community node (GitHub: Wintyx57/n8n-nodes-x402-bazaar)
+│   ├── credentials/         # X402BazaarCredentials (wallet key, network, budget)
+│   ├── nodes/X402Bazaar/    # Universal node (4 ops: Call API, List, Balance, Info)
+│   └── package.json         # deps: viem (CJS), peerDep: n8n-workflow
+│
 ├── x402-fast-monetization-template/  # Template Python pour creer un wrapper x402 (FastAPI)
 │   ├── main.py            # Serveur FastAPI avec decorateur @x402_paywall
 │   ├── x402_middleware.py # Middleware x402 (verification paiements, 402 response)
@@ -311,18 +316,22 @@ HACKATHON/
    - /api/time: native Intl.DateTimeFormat (zero external dependency, replaced worldtimeapi.org)
    - /api/json-validate: dual GET+POST support
 
-2. **Securite (audit 12/02/2026)** :
+2. **Securite (audit 12/02/2026, renforce session 39 — 03/03/2026)** :
    - Helmet : headers de securite (X-Content-Type, HSTS, X-Frame-Options)
    - CSP header renforce + verification
    - CORS whitelist strict (plus de wildcard `*`)
    - Anti-replay : tx hashes persistes dans Supabase `used_transactions`
    - Validation tx hash format (regex 0x + 64 hex)
-   - Sanitization recherche (escape `%_\` pour Postgres LIKE)
+   - Sanitization recherche (escape `%_\` pour Postgres LIKE + iLike chars `(),."'`)
    - Validation robuste /register (types, longueurs, format URL/wallet, prix 0-1000)
    - Body limit 10kb
    - RPC timeout 10s sur tous les appels on-chain
    - Rate limiting : 3 tiers (general 500/15min, paid 120/min, register 10/hr) — paid requests (X-Payment-TxHash) bypass rate limits
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
+   - timingSafeCompare avec pad-to-maxLen (previent timing leak sur longueur)
+   - X-Agent-Wallet validation regex `/^0x[a-fA-F0-9]{40}$/`
+   - SSRF centralise dans `lib/safe-url.js` (utilise par ai.js, intelligence.js, web.js)
+   - Caching : public-stats 60s, RPC balance 5min, Cache-Control headers
 
 3. **Frontend React — 20 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
@@ -354,10 +363,11 @@ HACKATHON/
    - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base (--key wallet.json)
    - `npx x402-bazaar wallet` — gestion wallet agent
 
-5. **Ecosysteme (7 integrations)** :
+5. **Ecosysteme (8 integrations)** :
    - x402-langchain : package Python sur GitHub (Wintyx57/x402-langchain)
    - x402-autogpt-plugin : plugin Auto-GPT v0.1.0 sur GitHub (Wintyx57/x402-autogpt-plugin)
    - x402-fast-monetization-template : template FastAPI
+   - n8n-nodes-x402-bazaar : n8n community node v1.0.0 sur GitHub (Wintyx57/n8n-nodes-x402-bazaar)
    - Bazaar Discovery : @x402/extensions v2.5.0, 69 APIs avec inputSchema + exemples I/O dans reponses 402
    - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
 
