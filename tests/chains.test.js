@@ -30,7 +30,7 @@ describe('chains', () => {
         });
 
         it('skale chain should have correct chainId', () => {
-            assert.equal(CHAINS.skale.chainId, 2046399126);
+            assert.equal(CHAINS.skale.chainId, 1187947933);
         });
     });
 
@@ -59,8 +59,8 @@ describe('chains', () => {
 
         it('should return skale config for "skale"', () => {
             const cfg = getChainConfig('skale');
-            assert.equal(cfg.chainId, 2046399126);
-            assert.equal(cfg.label, 'SKALE Europa');
+            assert.equal(cfg.chainId, 1187947933);
+            assert.equal(cfg.label, 'SKALE on Base');
         });
 
         it('should return base-sepolia config for "base-sepolia"', () => {
