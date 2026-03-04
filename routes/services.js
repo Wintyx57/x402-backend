@@ -309,6 +309,75 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             res.json({ success: true, deleted: data[0] });
         });
 
+        // Debug: step-by-step payment verification (admin only, temporary)
+        router.get('/api/admin/debug-verify', adminAuth, async (req, res) => {
+            const txHash = req.query.tx;
+            const chainKey = req.query.chain || 'base';
+            if (!txHash) return res.status(400).json({ error: 'Missing ?tx= parameter' });
+
+            const { getChainConfig } = require('../lib/chains');
+            const chain = getChainConfig(chainKey);
+            const steps = [];
+            try {
+                const normalizedTxHash = txHash.toLowerCase().trim();
+                steps.push({ step: 'normalize', txHash: normalizedTxHash, length: normalizedTxHash.length });
+
+                const serverAddress = process.env.WALLET_ADDRESS?.toLowerCase();
+                steps.push({ step: 'serverAddress', address: serverAddress, env_set: !!process.env.WALLET_ADDRESS });
+
+                steps.push({ step: 'chain', chainKey, label: chain.label, rpcUrls: chain.rpcUrls, usdcContract: chain.usdcContract });
+
+                // Fetch receipt
+                const rpcUrl = chain.rpcUrls?.[0] || chain.rpcUrl;
+                const receiptRes = await fetch(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_getTransactionReceipt', params: [normalizedTxHash], id: 1 }),
+                });
+                const receiptData = await receiptRes.json();
+                const receipt = receiptData.result;
+                steps.push({ step: 'receipt', found: !!receipt, status: receipt?.status, blockNumber: receipt?.blockNumber, logsCount: receipt?.logs?.length });
+
+                if (!receipt) { steps.push({ step: 'FAIL', reason: 'No receipt found' }); return res.json({ steps }); }
+
+                // Block confirmations
+                const blockRes = await fetch(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 2 }),
+                });
+                const { result: currentBlockHex } = await blockRes.json();
+                const currentBlock = parseInt(currentBlockHex, 16);
+                const txBlock = parseInt(receipt.blockNumber, 16);
+                steps.push({ step: 'confirmations', currentBlock, txBlock, confirmations: currentBlock - txBlock });
+
+                // Parse logs
+                const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+                for (const log of (receipt.logs || [])) {
+                    if (log.topics[0] === TRANSFER_TOPIC && log.topics.length >= 3) {
+                        const logAddr = log.address.toLowerCase();
+                        const usdcMatch = logAddr === chain.usdcContract.toLowerCase();
+                        const toAddr = '0x' + log.topics[2].slice(26).toLowerCase();
+                        const walletMatch = toAddr === serverAddress;
+                        const amount = BigInt(log.data);
+                        steps.push({
+                            step: 'transfer_log',
+                            logAddress: logAddr,
+                            usdcMatch,
+                            to: toAddr,
+                            walletMatch,
+                            amount: Number(amount),
+                            amountUsdc: Number(amount) / 1e6,
+                        });
+                    }
+                }
+                steps.push({ step: 'DONE' });
+            } catch (err) {
+                steps.push({ step: 'ERROR', message: err.message });
+            }
+            res.json({ steps });
+        });
+
         // Diagnostic: which community-agent env vars are set (no values exposed)
         router.get('/api/admin/env-check', adminAuth, (req, res) => {
             const keys = [
