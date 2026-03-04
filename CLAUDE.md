@@ -160,7 +160,7 @@ HACKATHON/
 │   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
 │   │   ├── monitor.js    # Monitoring engine (69 endpoints, 5min checks, Telegram alerts)
 │   │   └── telegram-bot.js # Interactive Telegram bot (11 commands, polling, secured by chat_id)
-│   ├── mcp-server.mjs    # Serveur MCP pour Claude/Cursor (x402 payment flow, call_api auto-payment)
+│   ├── mcp-server.mjs    # Serveur MCP v2.2.0 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, confirmations:2)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
@@ -573,13 +573,16 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 
 **Sprint 3 — Go live** (deploy Render, validation manuelle puis autonomie progressive)
 
-### P0.5 — SKALE Europa: Tester paiement reel
-- [x] ChainSelector component (Base / SKALE toggle) — frontend LIVE (commit da38722)
-- [x] sFUEL claim OK (0.0001 sFUEL sur wallet, sfuelstation.com)
-- [x] Backend supporte SKALE (payment.js verifie on-chain, X-Payment-Chain: skale)
-- [ ] Bridge USDC Base → SKALE Europa via Meson.fi (a retenter)
-- [ ] Tester paiement x402 reel sur SKALE (0 gas)
-- **Note**: Meson supporte USDT+USDC sur SKALE Europa, mais x402 n'accepte que USDC
+### P0.5 — SKALE on Base: COMPLETE (sessions 46-47)
+- [x] Migrated from SKALE Europa (2046399126) to SKALE on Base (1187947933)
+- [x] ChainSelector component (Base / SKALE on Base toggle) — frontend LIVE
+- [x] Backend verifies SKALE payments on-chain (payment.js + X-Payment-Chain: skale)
+- [x] MCP v2.2.0: multi-chain (Base + SKALE), confirmations:2, legacy tx type for SKALE
+- [x] Marketing fix: "zero gas"/"FREE" → "ultra-low gas"/"~$0.0007" across all files
+- [x] Payment verification fix: server-side retry (4 attempts × 3s) for receipt + confirmations
+- [x] **SKALE payment tested & confirmed on-chain** (joke API paid via SKALE)
+- Gas: ~$0.0007/tx via CREDITS token (10 USDC = 40 CREDITS = ~10K transfers)
+- Agent wallet needs CREDITS for gas (send from MetaMask on SKALE on Base network)
 
 ### P1 — Scale & Polish
 - Scale APIs 61→100, Agent SDK JS/TS, Ratings & Reviews, Landing refonte
@@ -587,4 +590,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 26/02/2026 — Phase 1-3 COMPLETE + Bazaar Discovery LIVE (69 APIs) + 7 integrations + Phase 4 EN COURS*
+*Derniere mise a jour: 04/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 9 integrations + SKALE on Base WORKING + MCP v2.2.0 multi-chain + Payment verification fix*
