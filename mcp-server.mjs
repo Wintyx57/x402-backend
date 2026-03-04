@@ -169,9 +169,10 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         args: [details.recipient, amountInUnits],
     });
 
-    // Wait for confirmation
+    // Wait for 2 confirmations (server requires ≥2 blocks)
     const receipt = await pubClient.waitForTransactionReceipt({
         hash: txHash,
+        confirmations: 2,
         timeout: 120_000,
     });
 
