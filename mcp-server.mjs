@@ -505,6 +505,44 @@ server.tool(
         try {
             await validateUrlForSSRF(url);
 
+            // ── Anti-bypass: redirect Bazaar internal URLs to proxy for split enforcement ──
+            const parsedUrl = new URL(url);
+            const serverParsed = new URL(SERVER_URL);
+            if (parsedUrl.hostname === serverParsed.hostname) {
+                try {
+                    const servicesRes = await fetch(`${SERVER_URL}/api/services`);
+                    const servicesData = await servicesRes.json();
+                    const services = servicesData.data || servicesData.services || [];
+                    const matchingService = services.find(s => {
+                        try {
+                            const serviceUrlPath = new URL(s.url).pathname;
+                            return parsedUrl.pathname === serviceUrlPath || parsedUrl.pathname.endsWith(serviceUrlPath);
+                        } catch {
+                            return false;
+                        }
+                    });
+
+                    if (matchingService) {
+                        console.error(`[Split] Redirected Bazaar URL to proxy for split enforcement: ${url} → /api/call/${matchingService.id}`);
+                        const proxyUrl = `${SERVER_URL}/api/call/${matchingService.id}`;
+                        const options = {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({}),
+                        };
+                        const result = await payAndRequest(proxyUrl, options, selectedChain);
+                        result._split_enforced = true;
+                        result._original_url = url;
+                        return {
+                            content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+                        };
+                    }
+                } catch (err) {
+                    console.error(`[Split] Service lookup failed, proceeding with direct call: ${err.message}`);
+                    // Fall through to direct call if lookup fails
+                }
+            }
+
             const res = await fetch(url);
 
             // ── x402 Payment Required ──────────────────────────────
