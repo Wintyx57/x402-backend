@@ -12,7 +12,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Bazaar Discovery: 69 `declareDiscoveryExtension()` declarations via @x402/extensions v2.5.0 (official Coinbase SDK) — AI agents can now auto-discover all endpoints from 402 responses
 - Reviews API: ratings & reviews system for marketplace services
 - Dynamic public-stats endpoint now includes live payment count, API call count, and provider wallet breakdown
-- SKALE Europa badge on README and /health response
+- SKALE on Base badge on README and /health response
 - Wallet rate limit (60 req/min per wallet, configurable via WALLET_RATE_LIMIT)
 - Swagger UI interactive docs at /api-docs
 - ReDoS protection on /api/regex endpoint
@@ -57,7 +57,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - HTTP 402 payment protocol with on-chain USDC verification
-- Multi-chain support (Base mainnet + SKALE Europa)
+- Multi-chain support (Base mainnet + SKALE on Base)
 - 41 native API wrappers
 - Anti-replay protection (Supabase persistence + in-memory cache)
 - MCP Server v2.1.0 for Claude/Cursor

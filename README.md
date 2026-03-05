@@ -182,7 +182,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 |---------|----------|-----|---------------|
 | Base | 8453 | ~$0.001 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | Base Sepolia | 84532 | Free (testnet) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| SKALE Europa | 2046399126 | Free (sFUEL) | `0x5F795bb52dAc3085f578f4877D450e2929D2F13d` |
+| SKALE on Base | 1187947933 | ~$0.0007 (CREDITS) | `0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20` |
 
 ## Tech Stack
 
@@ -190,7 +190,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 |-------|-----------|
 | Runtime | Node.js |
 | Framework | Express 5 |
-| Blockchain | Base + SKALE Europa (USDC) |
+| Blockchain | Base + SKALE on Base (USDC) |
 | Wallet SDK | Coinbase Developer Platform (CDP) |
 | Database | Supabase (PostgreSQL) |
 | MCP | Model Context Protocol SDK |
