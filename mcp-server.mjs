@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { homedir } from 'os';
+import { homedir, hostname, userInfo } from 'os';
 
 // Load .env from the script's directory (not cwd)
 const __filename = fileURLToPath(import.meta.url);
@@ -71,6 +71,34 @@ const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet 
 
 const AUTO_WALLET_PATH = join(homedir(), '.x402-bazaar', 'wallet.json');
 
+// ─── Wallet encryption helpers (AES-256-GCM, machine-bound key) ─────
+function getMachineKey() {
+    // Derive a stable 256-bit key from machine identifiers.
+    // Synchronous: uses already-imported 'os' named exports.
+    const raw = `${hostname()}:${userInfo().username}:${homedir()}`;
+    return crypto.createHash('sha256').update(raw).digest();
+}
+
+function encryptPrivateKey(privateKey) {
+    const key = getMachineKey();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(privateKey, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return {
+        encrypted: encrypted.toString('hex'),
+        iv: iv.toString('hex'),
+        tag: tag.toString('hex'),
+    };
+}
+
+function decryptPrivateKey(data) {
+    const key = getMachineKey();
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(data.iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(data.tag, 'hex'));
+    return decipher.update(Buffer.from(data.encrypted, 'hex')) + decipher.final('utf8');
+}
+
 function getPrivateKey() {
     // Fallback 1: env var
     if (process.env.AGENT_PRIVATE_KEY) {
@@ -110,10 +138,29 @@ function getPrivateKey() {
     // Fallback 3: Auto-generated wallet persisted in ~/.x402-bazaar/wallet.json
     if (fs.existsSync(AUTO_WALLET_PATH)) {
         const saved = JSON.parse(fs.readFileSync(AUTO_WALLET_PATH, 'utf-8'));
-        return saved.privateKey;
+
+        // Backward compat: plaintext format → migrate transparently to encrypted format
+        if (saved.privateKey) {
+            console.error('[Wallet] Migrating plaintext wallet to encrypted format...');
+            const encFields = encryptPrivateKey(saved.privateKey);
+            const migratedData = {
+                encrypted: encFields.encrypted,
+                iv: encFields.iv,
+                tag: encFields.tag,
+                address: saved.address,
+                createdAt: saved.createdAt,
+                note: saved.note || 'Auto-generated wallet for x402 Bazaar MCP. Fund with USDC on Base to use paid APIs.',
+            };
+            fs.writeFileSync(AUTO_WALLET_PATH, JSON.stringify(migratedData, null, 2), { mode: 0o600 });
+            console.error('[Wallet] Migration complete — private key is now encrypted at rest.');
+            return saved.privateKey;
+        }
+
+        // Encrypted format: decrypt and return
+        return decryptPrivateKey(saved);
     }
 
-    // Generate a new wallet and persist it
+    // Generate a new wallet and persist it (encrypted)
     const rawKey = crypto.randomBytes(32);
     const privateKey = `0x${rawKey.toString('hex')}`;
     const generatedAccount = privateKeyToAccount(privateKey);
@@ -121,15 +168,18 @@ function getPrivateKey() {
     if (!fs.existsSync(walletDir)) {
         fs.mkdirSync(walletDir, { recursive: true });
     }
+    const encFields = encryptPrivateKey(privateKey);
     const walletData = {
-        privateKey,
+        encrypted: encFields.encrypted,
+        iv: encFields.iv,
+        tag: encFields.tag,
         address: generatedAccount.address,
         createdAt: new Date().toISOString(),
         note: 'Auto-generated wallet for x402 Bazaar MCP. Fund with USDC on Base to use paid APIs.',
     };
     fs.writeFileSync(AUTO_WALLET_PATH, JSON.stringify(walletData, null, 2), { mode: 0o600 });
     console.error(`[Wallet] Auto-generated new wallet: ${generatedAccount.address} — Fund it with USDC on Base to use paid APIs.`);
-    console.error(`[Wallet] Wallet saved to: ${AUTO_WALLET_PATH}`);
+    console.error(`[Wallet] Encrypted wallet stored at ${AUTO_WALLET_PATH}`);
     return privateKey;
 }
 

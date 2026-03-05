@@ -44,38 +44,6 @@ const ServiceRegistrationSchema = z.object({
     .default([]),
 });
 
-// ─── API Call Validation Schema ───────────────────────────────────────
-/**
- * Schema for API call validation
- * Used when agents call wrapped endpoints with parameters
- */
-const APICallSchema = z.object({
-  serviceId: z
-    .string()
-    .uuid('Invalid service ID')
-    .optional(),
-
-  params: z
-    .record(z.unknown())
-    .optional()
-    .default({}),
-
-  timeout: z
-    .number()
-    .int('Timeout must be an integer')
-    .min(100, 'Timeout must be at least 100ms')
-    .max(60000, 'Timeout must be at most 60 seconds')
-    .optional()
-    .default(10000),
-
-  retries: z
-    .number()
-    .int('Retries must be an integer')
-    .min(0, 'Retries must be at least 0')
-    .max(5, 'Retries must be at most 5')
-    .optional()
-    .default(0),
-});
 
 // ─── Service Search Schema ────────────────────────────────────────────
 /**
@@ -138,34 +106,6 @@ const ServiceListQuerySchema = z.object({
     .default('0'),
 });
 
-// ─── Payment Transaction Schema ──────────────────────────────────────
-/**
- * Schema for payment transaction data
- * Used for logging and tracking payments
- */
-const PaymentTransactionSchema = z.object({
-  amount: z
-    .number()
-    .positive('Amount must be positive'),
-
-  usdc: z
-    .boolean()
-    .default(true),
-
-  gasPrice: z
-    .number()
-    .optional(),
-
-  txHash: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/, 'Invalid transaction hash')
-    .optional(),
-
-  chain: z
-    .enum(['base', 'skale', 'ethereum'])
-    .optional()
-    .default('base'),
-});
 
 // ─── Web Scraper URL Schema ────────────────────────────────────────────
 /**
@@ -273,7 +213,6 @@ const CodeExecutionSchema = z.object({
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
-  APICallSchema,
   ServiceSearchSchema,
   ServiceListQuerySchema,
   ScraperUrlSchema,
@@ -281,5 +220,4 @@ module.exports = {
   ImageGenerationSchema,
   SentimentAnalysisSchema,
   CodeExecutionSchema,
-  PaymentTransactionSchema,
 };

@@ -5,19 +5,27 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { fetchWithTimeout } = require('../lib/payment');
-const { ServiceSearchSchema, ServiceListQuerySchema } = require('../schemas/index');
+const { ServiceSearchSchema } = require('../schemas/index');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 
 function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
     const router = express.Router();
 
+    // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
+    const SERVICE_COLUMNS = 'id, name, url, price, description, owner_address, tags, status, chain, verified_status, created_at';
+
     // --- LISTE DES SERVICES (0.05 USDC) ---
     router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "List Services"), async (req, res) => {
-        const { data, error } = await supabase
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const offset = (page - 1) * limit;
+
+        const { data, count, error } = await supabase
             .from('services')
-            .select('*')
-            .order('created_at', { ascending: true });
+            .select(SERVICE_COLUMNS, { count: 'exact' })
+            .order('created_at', { ascending: true })
+            .range(offset, offset + limit - 1);
 
         if (error) {
             logger.error('Supabase', '/services error:', error.message);
@@ -27,7 +35,13 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         res.json({
             success: true,
             count: data.length,
-            data
+            data,
+            pagination: {
+                page,
+                limit,
+                total: count,
+                pages: Math.ceil(count / limit),
+            },
         });
     });
 
@@ -70,16 +84,33 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
     // --- API services (gratuit, pour le dashboard) ---
     router.get('/api/services', dashboardApiLimiter, async (req, res) => {
-        const { data, error } = await supabase
+        const page = Math.max(1, parseInt(req.query.page) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const offset = (page - 1) * limit;
+
+        const { data, count, error } = await supabase
             .from('services')
-            .select('*')
-            .order('created_at', { ascending: false });
+            .select(SERVICE_COLUMNS, { count: 'exact' })
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
 
         if (error) {
             logger.error('Supabase', '/api/services error:', error.message);
             return res.status(500).json({ error: 'Failed to fetch services' });
         }
-        res.json(data);
+        // Wrap dans un objet avec pagination tout en maintenant la compatibilité :
+        // les clients qui attendaient un tableau brut doivent migrer vers data.data.
+        // Pour ne pas casser le dashboard existant qui lit directement le tableau,
+        // on retourne aussi le tableau à la racine via la clé `data` (objet, pas tableau).
+        res.json({
+            data,
+            pagination: {
+                page,
+                limit,
+                total: count,
+                pages: Math.ceil(count / limit),
+            },
+        });
     });
 
     // --- API activity log (gratuit, pour le dashboard) ---

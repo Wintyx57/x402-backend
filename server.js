@@ -43,6 +43,12 @@ for (const key of REQUIRED_ENV) {
     }
 }
 
+// Warn at startup if ADMIN_TOKEN is too short to be secure.
+// A brute-force attack on a short token could grant full dashboard access.
+if (process.env.ADMIN_TOKEN && process.env.ADMIN_TOKEN.trim().length < 32) {
+    logger.warn('Config', 'ADMIN_TOKEN is too short (< 32 chars). Use a strong random token in production (e.g.: openssl rand -hex 32).');
+}
+
 // --- Lazy OpenAI client ---
 let _openai = null;
 function getOpenAI() {
@@ -152,9 +158,21 @@ const dashboardApiLimiter = rateLimit({
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => isValidAdminToken(req),
     skipSuccessfulRequests: true, // Don't count 2xx/3xx responses
     message: { error: 'Too many requests', message: 'Dashboard API rate limit exceeded.' }
+});
+
+// Separate, more generous rate limiter for admin-authenticated requests.
+// A valid ADMIN_TOKEN no longer bypasses rate limiting entirely — it gets a higher
+// quota (300 req / 15 min) to support legitimate admin dashboards while still
+// protecting against brute-force / credential stuffing on a compromised token.
+const adminDashboardLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 300,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skipSuccessfulRequests: true,
+    message: { error: 'Too many requests', message: 'Admin dashboard rate limit exceeded. Try again in 15 minutes.' }
 });
 
 const paidEndpointLimiter = rateLimit({
@@ -214,7 +232,7 @@ function adminAuth(req, res, next) {
     }
     const token = (req.headers['x-admin-token'] || '').trim();
     if (!token || !timingSafeCompare(token, expected)) {
-        logger.warn('AdminAuth', `Rejected: received ${token.length} chars`);
+        logger.warn('AdminAuth', `Rejected from ${req.ip || 'unknown'}: received ${token.length} chars`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     logger.info('AdminAuth', 'ACCESS GRANTED: ' + req.ip + ' -> ' + req.method + ' ' + req.path);
