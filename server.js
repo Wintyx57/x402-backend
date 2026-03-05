@@ -80,9 +80,11 @@ app.use(helmet({
             scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "https:"],
-            connectSrc: ["*"],
+            connectSrc: ["'self'", "https://*.base.org", "https://*.skalenodes.com", "https://*.thirdweb.com", "https://api.telegram.org"],
         },
     },
+    frameguard: { action: 'deny' },
+    hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
     crossOriginEmbedderPolicy: false,
 }));
 

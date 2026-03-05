@@ -12,7 +12,7 @@
   </p>
 </p>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-478%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-505%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
 
 ---
 
@@ -49,7 +49,7 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.
 - **Budget Control** -- Per-session spending caps for AI agents (configurable `MAX_BUDGET_USDC`).
 - **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection.
-- **478 Tests** -- 14 test suites, all passing (node:test, zero deps).
+- **505 Tests** -- 14 test suites, all passing (node:test, zero deps).
 - **Real-Time Monitoring** -- 69 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
 - **Telegram Bot** -- Interactive admin bot with 6 commands (/balance, /stats, /status, /recent, /services, /help).
 - **Auto-Test on Registration** -- New services are pinged automatically, with Telegram notification on result.
@@ -222,7 +222,7 @@ npm run mcp          # Start the MCP server
 npm run seed         # Seed 75+ services into Supabase
 npm run seed:wrappers # Register the 69 native wrappers
 npm run demo         # Run the autonomous agent demo
-npm run demo:live    # Hackathon live demo with terminal UI
+npm run demo:live    # Live demo with terminal UI
 ```
 
 ## Security

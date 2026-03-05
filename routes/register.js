@@ -48,8 +48,8 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             return res.status(500).json({ error: 'Registration failed' });
         }
 
-        logger.info('Bazaar', `Nouveau service enregistre : "${validatedData.name}" (${data[0].id})`);
-        logActivity('register', `Nouveau service : "${validatedData.name}" (${data[0].id.slice(0, 8)})`);
+        logger.info('Bazaar', `New service registered: "${validatedData.name}" (${data[0].id})`);
+        logActivity('register', `New service: "${validatedData.name}" (${data[0].id.slice(0, 8)})`);
 
         // Auto-test: ping the registered URL (fire-and-forget)
         autoTestService(data[0], supabase).catch(err => {

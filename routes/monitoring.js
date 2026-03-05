@@ -212,7 +212,7 @@ function createMonitoringRouter(supabase) {
         lastCheck: status?.lastCheck || null,
       },
       integrations: 8,
-      tests: 478,
+      tests: 505,
     };
 
     // Mettre en cache

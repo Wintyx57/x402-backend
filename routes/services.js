@@ -58,7 +58,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             return res.status(500).json({ error: 'Search failed' });
         }
 
-        logActivity('search', `Recherche "${query}" -> ${data.length} resultat(s)`);
+        logActivity('search', `Search "${query}" -> ${data.length} result(s)`);
 
         res.json({
             success: true,
@@ -309,8 +309,9 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             res.json({ success: true, deleted: data[0] });
         });
 
-        // Debug: step-by-step payment verification (admin only)
+        // Debug: step-by-step payment verification (admin only, disabled in production)
         router.get('/api/admin/debug-verify', adminAuth, async (req, res) => {
+            if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not found' });
             const txHash = req.query.tx;
             const chainKey = req.query.chain || 'base';
             if (!txHash) return res.status(400).json({ error: 'Missing ?tx= parameter' });

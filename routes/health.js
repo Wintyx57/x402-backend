@@ -66,7 +66,7 @@ function createHealthRouter(supabase) {
             timestamp: new Date().toISOString(),
             version,
             uptime_seconds: Math.floor(process.uptime()),
-            node_version: process.version,
+            ...(process.env.NODE_ENV !== 'production' && { node_version: process.version }),
         });
     });
 
@@ -82,7 +82,7 @@ function createHealthRouter(supabase) {
         const agentId = process.env.ERC8004_AGENT_ID || null;
         res.json({
             name: "x402 Bazaar",
-            description: "Place de marche autonome de services IA - Protocole x402",
+            description: "Autonomous API marketplace — x402 HTTP 402 Payment Required protocol. Multi-chain: Base + SKALE on Base.",
             network: NETWORK_LABEL,
             total_services: count,
             api_docs: "/api-docs",
@@ -132,10 +132,7 @@ function createHealthRouter(supabase) {
                 "GET /api/json-validate": "JSON schema validator (0.003 USDC)",
                 "GET /api/useragent": "User-Agent string parser (0.003 USDC)",
                 "GET /api/agent/:agentId": "ERC-8004 agent identity lookup (free)",
-                "POST /api/call/:serviceId": "Call an external API through the Bazaar proxy (price varies, 95/5 split)",
-                "GET /api/admin/revenue": "Revenue overview (admin only)",
-                "GET /api/admin/payouts": "Pending payouts list (admin only)",
-                "POST /api/admin/payouts/mark-paid": "Mark payouts as paid (admin only)"
+                "POST /api/call/:serviceId": "Call an external API through the Bazaar proxy (price varies, 95/5 split)"
             },
             protocol: "x402 - HTTP 402 Payment Required",
             erc8004: {
