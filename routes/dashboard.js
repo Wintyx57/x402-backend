@@ -262,6 +262,20 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         if (!Array.isArray(ids) || ids.length === 0 || !txHashOut) {
             return res.status(400).json({ error: 'Required: ids (array) and txHashOut (string)' });
         }
+
+        const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+        if (!TX_HASH_REGEX.test(txHashOut)) {
+            return res.status(400).json({ error: 'txHashOut must be a valid transaction hash (0x + 64 hex chars)' });
+        }
+        if (!ids.every(id => UUID_RE.test(id))) {
+            return res.status(400).json({ error: 'All ids must be valid UUIDs' });
+        }
+        if (ids.length > 100) {
+            return res.status(400).json({ error: 'Maximum 100 ids per batch' });
+        }
+
         const result = await payoutManager.markPayoutsPaid(ids, txHashOut);
         if (result.error) return res.status(500).json({ error: result.error });
         logActivity('admin', `Marked ${result.updated} payouts as paid (tx: ${txHashOut.slice(0, 18)}...)`);

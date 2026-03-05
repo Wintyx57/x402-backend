@@ -841,7 +841,7 @@ describe('proxy.js — input validation (split mode)', () => {
 describe('proxy.js — anti-replay (split mode)', () => {
     beforeEach(() => { process.env.WALLET_ADDRESS = PLATFORM_WALLET; });
 
-    it('should reject 402 when txHashProvider is already in used_transactions', async () => {
+    it('should reject 409 when txHashProvider is already in used_transactions', async () => {
         const usedTxRows = [{ tx_hash: `base:split_provider:${TX_HASH_PROVIDER}` }];
         const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER, usedTxRows });
 
@@ -864,11 +864,11 @@ describe('proxy.js — anti-replay (split mode)', () => {
         await invokeRouteHandler(router, req, res);
         const { statusCode, body } = res.getResponse();
 
-        assert.equal(statusCode, 402);
+        assert.equal(statusCode, 409);
         assert.ok(body.message.includes('already been used'), `Expected "already been used" in: ${body.message}`);
     });
 
-    it('should reject 402 when txHashPlatform is already in used_transactions', async () => {
+    it('should reject 409 when txHashPlatform is already in used_transactions', async () => {
         const usedTxRows = [{ tx_hash: `base:split_platform:${TX_HASH_PLATFORM}` }];
         const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER, usedTxRows });
 
@@ -892,7 +892,7 @@ describe('proxy.js — anti-replay (split mode)', () => {
         await invokeRouteHandler(router, req, res);
         const { statusCode, body } = res.getResponse();
 
-        assert.equal(statusCode, 402);
+        assert.equal(statusCode, 409);
         assert.ok(body.message.includes('already been used'));
     });
 });
@@ -1259,7 +1259,7 @@ describe('proxy.js — service not found', () => {
 describe('proxy.js — race condition on provider tx claim', () => {
     beforeEach(() => { process.env.WALLET_ADDRESS = PLATFORM_WALLET; });
 
-    it('should return 402 when INSERT returns duplicate key error (concurrent request won the race)', async () => {
+    it('should return 409 when INSERT returns duplicate key error (concurrent request won the race)', async () => {
         const duplicateKeyError = { code: '23505', message: 'duplicate key value violates unique constraint' };
         const supabase = makeSupabaseMock({
             service:     SERVICE_WITH_OWNER,
@@ -1286,7 +1286,7 @@ describe('proxy.js — race condition on provider tx claim', () => {
         await invokeRouteHandler(router, req, res);
         const { statusCode, body } = res.getResponse();
 
-        assert.equal(statusCode, 402);
+        assert.equal(statusCode, 409);
         assert.ok(body.message.includes('already been used'), `Expected "already been used" in: ${body.message}`);
     });
 });

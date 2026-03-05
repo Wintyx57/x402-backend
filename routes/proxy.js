@@ -170,11 +170,12 @@ async function handleSplitMode(req, res, { supabase, service, price, minAmountRa
         if (usedRows && usedRows.length > 0) {
             const usedHash = usedRows[0].tx_hash;
             const isProviderHash = usedHash === txHashProvider || usedHash === providerReplayKey;
-            return res.status(402).json({
-                error: 'Payment Required',
+            return res.status(409).json({
+                error: 'TX_ALREADY_USED',
+                code: 'TX_REPLAY',
                 message: isProviderHash
-                    ? 'Provider transaction has already been used. Please send a new payment.'
-                    : 'Platform transaction has already been used. Please send a new payment.',
+                    ? 'This provider transaction hash has already been used for a previous payment. Please send a new transaction.'
+                    : 'This platform transaction hash has already been used for a previous payment. Please send a new transaction.',
             });
         }
     } catch (err) {
@@ -230,9 +231,10 @@ async function handleSplitMode(req, res, { supabase, service, price, minAmountRa
     if (claimProviderErr) {
         if (claimProviderErr.code === '23505' || (claimProviderErr.message && claimProviderErr.message.includes('duplicate'))) {
             logger.warn('Proxy:split', `Race condition on provider tx ${txHashProvider.slice(0, 18)}...`);
-            return res.status(402).json({
-                error: 'Payment Required',
-                message: 'This transaction has already been used. Please send a new payment.',
+            return res.status(409).json({
+                error: 'TX_ALREADY_USED',
+                code: 'TX_REPLAY',
+                message: 'This transaction hash has already been used for a previous payment. Please send a new transaction.',
             });
         }
         logger.error('Proxy:split', 'Failed to claim provider tx:', claimProviderErr.message);
@@ -392,7 +394,9 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 grossAmount:    price,
                 txHashIn:       txHash,
                 chain: req.headers['x-payment-chain'] || 'base',
-            }).catch(() => {});
+            }).catch(err => {
+                logger.error('Proxy', `Failed to record fallback payout for "${service.name}": ${err.message}`);
+            });
         }
 
         const x402ErrMeta = splitMeta

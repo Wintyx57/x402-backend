@@ -195,17 +195,63 @@ async function sendUsdcTransfer(chainKey, toAddress, amountRaw) {
     return txHash;
 }
 
-// ─── x402 Payment Flow (multi-chain, split-aware) ────────────────────
-async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
-    const res = await fetch(url, options);
-    const body = await res.json();
+// ─── Services cache (anti-bypass) ────────────────────────────────────
+let servicesCache = null;
+let servicesCacheTime = 0;
+const SERVICES_CACHE_TTL = 60_000; // 60s
 
+async function getCachedServices() {
+    if (servicesCache && Date.now() - servicesCacheTime < SERVICES_CACHE_TTL) {
+        return servicesCache;
+    }
+    const res = await fetch(`${SERVER_URL}/api/services`);
+    const data = await res.json();
+    servicesCache = data.data || data.services || [];
+    servicesCacheTime = Date.now();
+    return servicesCache;
+}
+
+// ─── x402 Payment Flow (multi-chain, split-aware) ────────────────────
+//
+// Options:
+//   - Standard fetch options (method, headers, body, etc.)
+//   - textFallback {boolean}: if true, the retry response is parsed as text
+//     with JSON.parse() + fallback to { response: text }, instead of strict
+//     res.json(). Use this when the API may return non-JSON on success.
+//
+async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
+    const { textFallback = false, ...fetchOptions } = options;
+
+    const res = await fetch(url, fetchOptions);
+
+    // ── Non-402 response ──────────────────────────────────────────────
     if (res.status !== 402) {
-        return body;
+        if (textFallback) {
+            const text = await res.text();
+            try {
+                return JSON.parse(text);
+            } catch {
+                return { response: text.slice(0, 5000) };
+            }
+        }
+        return res.json();
     }
 
-    // HTTP 402 — Payment Required
+    // ── HTTP 402 — Payment Required ───────────────────────────────────
+    let body;
+    try {
+        body = await res.json();
+    } catch {
+        throw new Error('API returned 402 Payment Required but response is not valid JSON');
+    }
+
     const details = body.payment_details;
+    if (!details || !details.amount || !details.recipient) {
+        throw new Error(
+            `Non-standard 402 response (missing payment_details): ${JSON.stringify(body)}`
+        );
+    }
+
     const cost = parseFloat(details.amount);
 
     // Budget check
@@ -253,7 +299,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         });
 
         retryHeaders = {
-            ...options.headers,
+            ...fetchOptions.headers,
             'X-Payment-TxHash-Provider': txHashProvider,
             'X-Payment-Chain': cfg.paymentHeader,
         };
@@ -276,15 +322,27 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         });
 
         retryHeaders = {
-            ...options.headers,
+            ...fetchOptions.headers,
             'X-Payment-TxHash': txHash,
             'X-Payment-Chain': cfg.paymentHeader,
         };
     }
 
     // Retry with payment proof
-    const retryRes = await fetch(url, { ...options, headers: retryHeaders });
-    const result = await retryRes.json();
+    const retryRes = await fetch(url, { ...fetchOptions, headers: retryHeaders });
+
+    // Parse retry response: use text+fallback when requested (call_api path)
+    let result;
+    if (textFallback) {
+        const retryText = await retryRes.text();
+        try {
+            result = JSON.parse(retryText);
+        } catch {
+            result = { response: retryText.slice(0, 5000) };
+        }
+    } else {
+        result = await retryRes.json();
+    }
 
     // Enrich result with payment info
     const lastPayment = sessionPayments[sessionPayments.length - 1];
@@ -510,9 +568,7 @@ server.tool(
             const serverParsed = new URL(SERVER_URL);
             if (parsedUrl.hostname === serverParsed.hostname) {
                 try {
-                    const servicesRes = await fetch(`${SERVER_URL}/api/services`);
-                    const servicesData = await servicesRes.json();
-                    const services = servicesData.data || servicesData.services || [];
+                    const services = await getCachedServices();
                     const matchingService = services.find(s => {
                         try {
                             const serviceUrlPath = new URL(s.url).pathname;
@@ -525,12 +581,11 @@ server.tool(
                     if (matchingService) {
                         console.error(`[Split] Redirected Bazaar URL to proxy for split enforcement: ${url} → /api/call/${matchingService.id}`);
                         const proxyUrl = `${SERVER_URL}/api/call/${matchingService.id}`;
-                        const options = {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({}),
-                        };
-                        const result = await payAndRequest(proxyUrl, options, selectedChain);
+                        const result = await payAndRequest(
+                            proxyUrl,
+                            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
+                            selectedChain,
+                        );
                         result._split_enforced = true;
                         result._original_url = url;
                         return {
@@ -543,137 +598,11 @@ server.tool(
                 }
             }
 
-            const res = await fetch(url);
-
-            // ── x402 Payment Required ──────────────────────────────
-            if (res.status === 402) {
-                let body;
-                try {
-                    body = await res.json();
-                } catch {
-                    return {
-                        content: [{ type: 'text', text: 'Error: API returned 402 Payment Required but response is not valid JSON' }],
-                        isError: true,
-                    };
-                }
-
-                const details = body.payment_details;
-                if (!details || !details.amount || !details.recipient) {
-                    return {
-                        content: [{ type: 'text', text: JSON.stringify({ error: 'Non-standard 402 response (missing payment_details)', raw: body }, null, 2) }],
-                        isError: true,
-                    };
-                }
-
-                const cost = parseFloat(details.amount);
-
-                // Budget check
-                if (sessionSpending + cost > MAX_BUDGET) {
-                    return {
-                        content: [{ type: 'text', text: `Error: Budget limit reached. Spent: ${sessionSpending.toFixed(2)} / ${MAX_BUDGET.toFixed(2)} USDC. This call costs ${cost} USDC. To increase the limit, set MAX_BUDGET_USDC=X in your MCP config environment (e.g. MAX_BUDGET_USDC=5).` }],
-                        isError: true,
-                    };
-                }
-
-                const cfg = CHAINS[selectedChain];
-                const isSplitMode = !!details.provider_wallet && details.payment_mode === 'split_native';
-                let retryHeaders = {};
-
-                if (isSplitMode) {
-                    // ── Split mode: 95% to provider, 5% to platform ──
-                    const totalRaw = BigInt(Math.round(cost * 1e6));
-                    const providerRaw = details.split
-                        ? BigInt(Math.round(parseFloat(details.split.provider_amount) * 1e6))
-                        : totalRaw * 95n / 100n;
-                    const platformRaw = totalRaw - providerRaw;
-
-                    const txHashProvider = await sendUsdcTransfer(selectedChain, details.provider_wallet, providerRaw);
-
-                    let txHashPlatform = null;
-                    try {
-                        txHashPlatform = await sendUsdcTransfer(selectedChain, details.recipient, platformRaw);
-                    } catch (err) {
-                        console.error(`[Split] Platform payment failed (fallback): ${err.message}`);
-                    }
-
-                    sessionSpending += cost;
-                    sessionPayments.push({
-                        amount: cost,
-                        txHash: txHashProvider,
-                        txHashPlatform,
-                        chain: selectedChain,
-                        splitMode: txHashPlatform ? 'split_complete' : 'provider_only',
-                        timestamp: new Date().toISOString(),
-                        endpoint: url,
-                    });
-
-                    retryHeaders = {
-                        'X-Payment-TxHash-Provider': txHashProvider,
-                        'X-Payment-Chain': cfg.paymentHeader,
-                    };
-                    if (txHashPlatform) {
-                        retryHeaders['X-Payment-TxHash-Platform'] = txHashPlatform;
-                    }
-                } else {
-                    // ── Legacy mode: single transfer ──
-                    const amountInUnits = BigInt(Math.round(cost * 1e6));
-                    const txHash = await sendUsdcTransfer(selectedChain, details.recipient, amountInUnits);
-
-                    sessionSpending += cost;
-                    sessionPayments.push({
-                        amount: cost,
-                        txHash,
-                        chain: selectedChain,
-                        timestamp: new Date().toISOString(),
-                        endpoint: url,
-                    });
-
-                    retryHeaders = {
-                        'X-Payment-TxHash': txHash,
-                        'X-Payment-Chain': cfg.paymentHeader,
-                    };
-                }
-
-                // Retry with payment proof
-                const retryRes = await fetch(url, { headers: retryHeaders });
-
-                const retryText = await retryRes.text();
-                let result;
-                try {
-                    result = JSON.parse(retryText);
-                } catch {
-                    result = { response: retryText.slice(0, 5000) };
-                }
-
-                // Enrich with payment info
-                const lastPmt = sessionPayments[sessionPayments.length - 1];
-                result._payment = {
-                    amount: details.amount,
-                    currency: 'USDC',
-                    txHash: lastPmt.txHash,
-                    ...(lastPmt.txHashPlatform ? { txHashPlatform: lastPmt.txHashPlatform } : {}),
-                    ...(lastPmt.splitMode ? { splitMode: lastPmt.splitMode } : {}),
-                    chain: cfg.label,
-                    explorer: `${cfg.explorer}/tx/${lastPmt.txHash}`,
-                    session_spent: sessionSpending.toFixed(2),
-                    session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
-                };
-
-                return {
-                    content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-                };
-            }
-
-            // ── Normal response (non-402) ──────────────────────────
-            const text = await res.text();
-            let parsed;
-            try {
-                parsed = JSON.parse(text);
-            } catch {
-                parsed = { response: text.slice(0, 5000) };
-            }
+            // ── Direct call (non-Bazaar URL or no matching service found) ──
+            // textFallback: true ensures the retry response handles non-JSON APIs gracefully
+            const result = await payAndRequest(url, { textFallback: true }, selectedChain);
             return {
-                content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
         } catch (err) {
             return {
