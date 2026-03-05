@@ -66,7 +66,8 @@ const logActivity = createActivityLogger(supabase);
 const budgetManager = new BudgetManager(supabase);
 
 // --- Payment system (with budget integration) ---
-const { paymentMiddleware } = createPaymentSystem(supabase, logActivity, budgetManager);
+const paymentSystem = createPaymentSystem(supabase, logActivity, budgetManager);
+const { paymentMiddleware } = paymentSystem;
 
 // --- Express app ---
 const app = express();
@@ -244,7 +245,7 @@ app.use((req, res, next) => {
 app.use(createHealthRouter(supabase));
 app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
-app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager));
+app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem));
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));

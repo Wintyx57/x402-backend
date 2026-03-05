@@ -20,7 +20,7 @@ import { base, baseSepolia } from 'viem/chains';
 const skaleOnBase = defineChain({
     id: 1187947933,
     name: 'SKALE on Base',
-    nativeCurrency: { name: 'sFUEL', symbol: 'sFUEL', decimals: 18 },
+    nativeCurrency: { name: 'CREDITS', symbol: 'CREDITS', decimals: 18 },
     rpcUrls: { default: { http: ['https://skale-base.skalenodes.com/v1/base'] } },
     blockExplorers: { default: { name: 'SKALE Explorer', url: 'https://skale-base-explorer.skalenodes.com' } },
 });
@@ -136,7 +136,33 @@ const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
 
-// ─── x402 Payment Flow (multi-chain) ────────────────────────────────
+// ─── USDC Transfer Helper ────────────────────────────────────────────
+async function sendUsdcTransfer(chainKey, toAddress, amountRaw) {
+    const cfg = CHAINS[chainKey];
+    const { public: pubClient, wallet: walClient } = getClients(chainKey);
+
+    const txHash = await walClient.writeContract({
+        address: cfg.usdc,
+        abi: USDC_ABI,
+        functionName: 'transfer',
+        args: [toAddress, amountRaw],
+        ...(chainKey === 'skale' ? { type: 'legacy' } : {}),
+    });
+
+    const receipt = await pubClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 2,
+        timeout: 120_000,
+    });
+
+    if (receipt.status !== 'success') {
+        throw new Error(`Transaction failed: ${txHash}`);
+    }
+
+    return txHash;
+}
+
+// ─── x402 Payment Flow (multi-chain, split-aware) ────────────────────
 async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     const res = await fetch(url, options);
     const body = await res.json();
@@ -158,52 +184,84 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     }
 
     const cfg = CHAINS[chainKey];
-    const { public: pubClient, wallet: walClient } = getClients(chainKey);
+    const isSplitMode = !!details.provider_wallet && details.payment_mode === 'split_native';
+    let retryHeaders;
 
-    // Send USDC transfer via viem (force legacy tx for SKALE — no EIP-1559 support)
-    const amountInUnits = BigInt(Math.round(cost * 1e6));
-    const txOpts = {
-        address: cfg.usdc,
-        abi: USDC_ABI,
-        functionName: 'transfer',
-        args: [details.recipient, amountInUnits],
-        ...(chainKey === 'skale' ? { type: 'legacy' } : {}),
-    };
-    const txHash = await walClient.writeContract(txOpts);
+    if (isSplitMode) {
+        // ── Split mode: 95% to provider, 5% to platform ──
+        const totalRaw = BigInt(Math.round(cost * 1e6));
+        const providerRaw = details.split
+            ? BigInt(Math.round(parseFloat(details.split.provider_amount) * 1e6))
+            : totalRaw * 95n / 100n;
+        const platformRaw = totalRaw - providerRaw;
 
-    // Wait for 2 confirmations (server requires ≥2 blocks)
-    const receipt = await pubClient.waitForTransactionReceipt({
-        hash: txHash,
-        confirmations: 2,
-        timeout: 120_000,
-    });
+        // Send 95% to provider
+        const txHashProvider = await sendUsdcTransfer(chainKey, details.provider_wallet, providerRaw);
 
-    if (receipt.status !== 'success') {
-        throw new Error(`Transaction failed: ${txHash}`);
+        // Send 5% to platform (best-effort)
+        let txHashPlatform = null;
+        try {
+            txHashPlatform = await sendUsdcTransfer(chainKey, details.recipient, platformRaw);
+        } catch (err) {
+            console.error(`[Split] Platform payment failed (fallback to pending payout): ${err.message}`);
+        }
+
+        // Track spending
+        sessionSpending += cost;
+        sessionPayments.push({
+            amount: cost,
+            txHash: txHashProvider,
+            txHashPlatform,
+            chain: chainKey,
+            splitMode: txHashPlatform ? 'split_complete' : 'provider_only',
+            timestamp: new Date().toISOString(),
+            endpoint: url.replace(SERVER_URL, ''),
+        });
+
+        retryHeaders = {
+            ...options.headers,
+            'X-Payment-TxHash-Provider': txHashProvider,
+            'X-Payment-Chain': cfg.paymentHeader,
+        };
+        if (txHashPlatform) {
+            retryHeaders['X-Payment-TxHash-Platform'] = txHashPlatform;
+        }
+    } else {
+        // ── Legacy mode: single transfer to platform ──
+        const amountInUnits = BigInt(Math.round(cost * 1e6));
+        const txHash = await sendUsdcTransfer(chainKey, details.recipient, amountInUnits);
+
+        // Track spending
+        sessionSpending += cost;
+        sessionPayments.push({
+            amount: cost,
+            txHash,
+            chain: chainKey,
+            timestamp: new Date().toISOString(),
+            endpoint: url.replace(SERVER_URL, ''),
+        });
+
+        retryHeaders = {
+            ...options.headers,
+            'X-Payment-TxHash': txHash,
+            'X-Payment-Chain': cfg.paymentHeader,
+        };
     }
 
-    // Track spending
-    sessionSpending += cost;
-    sessionPayments.push({
-        amount: cost,
-        txHash,
-        chain: chainKey,
-        timestamp: new Date().toISOString(),
-        endpoint: url.replace(SERVER_URL, ''),
-    });
-
     // Retry with payment proof
-    const retryHeaders = { ...options.headers, 'X-Payment-TxHash': txHash, 'X-Payment-Chain': cfg.paymentHeader };
     const retryRes = await fetch(url, { ...options, headers: retryHeaders });
     const result = await retryRes.json();
 
     // Enrich result with payment info
+    const lastPayment = sessionPayments[sessionPayments.length - 1];
     result._payment = {
         amount: details.amount,
         currency: 'USDC',
-        txHash,
+        txHash: lastPayment.txHash,
+        ...(lastPayment.txHashPlatform ? { txHashPlatform: lastPayment.txHashPlatform } : {}),
+        ...(lastPayment.splitMode ? { splitMode: lastPayment.splitMode } : {}),
         chain: cfg.label,
-        explorer: `${cfg.explorer}/tx/${txHash}`,
+        explorer: `${cfg.explorer}/tx/${lastPayment.txHash}`,
         session_spent: sessionSpending.toFixed(2),
         session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
     };
@@ -214,7 +272,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '2.2.0',
+    version: '2.3.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
@@ -412,49 +470,66 @@ server.tool(
                 }
 
                 const cfg = CHAINS[selectedChain];
-                const { public: pubClient, wallet: walClient } = getClients(selectedChain);
+                const isSplitMode = !!details.provider_wallet && details.payment_mode === 'split_native';
+                let retryHeaders = {};
 
-                // Send USDC payment on-chain (force legacy tx for SKALE — no EIP-1559)
-                const amountInUnits = BigInt(Math.round(cost * 1e6));
-                const txOpts = {
-                    address: cfg.usdc,
-                    abi: USDC_ABI,
-                    functionName: 'transfer',
-                    args: [details.recipient, amountInUnits],
-                    ...(selectedChain === 'skale' ? { type: 'legacy' } : {}),
-                };
-                const txHash = await walClient.writeContract(txOpts);
+                if (isSplitMode) {
+                    // ── Split mode: 95% to provider, 5% to platform ──
+                    const totalRaw = BigInt(Math.round(cost * 1e6));
+                    const providerRaw = details.split
+                        ? BigInt(Math.round(parseFloat(details.split.provider_amount) * 1e6))
+                        : totalRaw * 95n / 100n;
+                    const platformRaw = totalRaw - providerRaw;
 
-                const receipt = await pubClient.waitForTransactionReceipt({
-                    hash: txHash,
-                    confirmations: 2,
-                    timeout: 120_000,
-                });
+                    const txHashProvider = await sendUsdcTransfer(selectedChain, details.provider_wallet, providerRaw);
 
-                if (receipt.status !== 'success') {
-                    return {
-                        content: [{ type: 'text', text: `Error: Payment transaction failed: ${txHash}` }],
-                        isError: true,
+                    let txHashPlatform = null;
+                    try {
+                        txHashPlatform = await sendUsdcTransfer(selectedChain, details.recipient, platformRaw);
+                    } catch (err) {
+                        console.error(`[Split] Platform payment failed (fallback): ${err.message}`);
+                    }
+
+                    sessionSpending += cost;
+                    sessionPayments.push({
+                        amount: cost,
+                        txHash: txHashProvider,
+                        txHashPlatform,
+                        chain: selectedChain,
+                        splitMode: txHashPlatform ? 'split_complete' : 'provider_only',
+                        timestamp: new Date().toISOString(),
+                        endpoint: url,
+                    });
+
+                    retryHeaders = {
+                        'X-Payment-TxHash-Provider': txHashProvider,
+                        'X-Payment-Chain': cfg.paymentHeader,
+                    };
+                    if (txHashPlatform) {
+                        retryHeaders['X-Payment-TxHash-Platform'] = txHashPlatform;
+                    }
+                } else {
+                    // ── Legacy mode: single transfer ──
+                    const amountInUnits = BigInt(Math.round(cost * 1e6));
+                    const txHash = await sendUsdcTransfer(selectedChain, details.recipient, amountInUnits);
+
+                    sessionSpending += cost;
+                    sessionPayments.push({
+                        amount: cost,
+                        txHash,
+                        chain: selectedChain,
+                        timestamp: new Date().toISOString(),
+                        endpoint: url,
+                    });
+
+                    retryHeaders = {
+                        'X-Payment-TxHash': txHash,
+                        'X-Payment-Chain': cfg.paymentHeader,
                     };
                 }
 
-                // Track spending
-                sessionSpending += cost;
-                sessionPayments.push({
-                    amount: cost,
-                    txHash,
-                    chain: selectedChain,
-                    timestamp: new Date().toISOString(),
-                    endpoint: url,
-                });
-
                 // Retry with payment proof
-                const retryRes = await fetch(url, {
-                    headers: {
-                        'X-Payment-TxHash': txHash,
-                        'X-Payment-Chain': cfg.paymentHeader,
-                    },
-                });
+                const retryRes = await fetch(url, { headers: retryHeaders });
 
                 const retryText = await retryRes.text();
                 let result;
@@ -465,12 +540,15 @@ server.tool(
                 }
 
                 // Enrich with payment info
+                const lastPmt = sessionPayments[sessionPayments.length - 1];
                 result._payment = {
                     amount: details.amount,
                     currency: 'USDC',
-                    txHash,
+                    txHash: lastPmt.txHash,
+                    ...(lastPmt.txHashPlatform ? { txHashPlatform: lastPmt.txHashPlatform } : {}),
+                    ...(lastPmt.splitMode ? { splitMode: lastPmt.splitMode } : {}),
                     chain: cfg.label,
-                    explorer: `${cfg.explorer}/tx/${txHash}`,
+                    explorer: `${cfg.explorer}/tx/${lastPmt.txHash}`,
                     session_spent: sessionSpending.toFixed(2),
                     session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
                 };
@@ -577,7 +655,7 @@ server.tool(
 );
 
 // ─── Auto-update check (fire-and-forget) ────────────────────────────
-const LOCAL_VERSION = '2.2.0';
+const LOCAL_VERSION = '2.3.0';
 (async () => {
     try {
         const res = await fetch(
