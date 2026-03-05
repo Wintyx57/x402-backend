@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { homedir } from 'os';
 
 // Load .env from the script's directory (not cwd)
 const __filename = fileURLToPath(import.meta.url);
@@ -68,45 +69,68 @@ const sessionPayments = [];
 let account = null;
 const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet } }
 
+const AUTO_WALLET_PATH = join(homedir(), '.x402-bazaar', 'wallet.json');
+
 function getPrivateKey() {
+    // Fallback 1: env var
     if (process.env.AGENT_PRIVATE_KEY) {
         const key = process.env.AGENT_PRIVATE_KEY;
         return key.startsWith('0x') ? key : `0x${key}`;
     }
 
-    // Legacy: encrypted agent-seed.json
+    // Fallback 2: Legacy encrypted agent-seed.json
     const seedPath = process.env.AGENT_SEED_PATH || join(__dirname, 'agent-seed.json');
-    if (!fs.existsSync(seedPath)) {
-        throw new Error(
-            'No wallet configured. Set AGENT_PRIVATE_KEY in your .env file, ' +
-            'or provide an agent-seed.json file. Run "npx x402-bazaar init" to set up automatically.'
-        );
+    if (fs.existsSync(seedPath)) {
+        const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
+        const walletId = Object.keys(seedData)[0];
+        const { seed, iv, authTag, encrypted } = seedData[walletId];
+
+        let decryptedSeed = seed;
+        if (encrypted) {
+            const ed2curve = await_import_ed2curve();
+            const apiSecret = process.env.COINBASE_API_SECRET;
+            if (!apiSecret) throw new Error('COINBASE_API_SECRET required to decrypt wallet seed');
+            const decoded = Buffer.from(apiSecret, 'base64');
+            const x25519Key = ed2curve.convertSecretKey(new Uint8Array(decoded.slice(0, 32)));
+            const encKey = crypto.createHash('sha256').update(Buffer.from(x25519Key)).digest();
+            const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, Buffer.from(iv, 'hex'));
+            decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+            decryptedSeed = Buffer.concat([
+                decipher.update(Buffer.from(seed, 'hex')),
+                decipher.final(),
+            ]).toString('utf8');
+        }
+
+        const { HDKey } = await_import_hdkey();
+        const hdKey = HDKey.fromMasterSeed(Buffer.from(decryptedSeed, 'hex'));
+        const childKey = hdKey.derive("m/44'/60'/0'/0/0");
+        return '0x' + Buffer.from(childKey.privateKey).toString('hex');
     }
 
-    const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf-8'));
-    const walletId = Object.keys(seedData)[0];
-    const { seed, iv, authTag, encrypted } = seedData[walletId];
-
-    let decryptedSeed = seed;
-    if (encrypted) {
-        const ed2curve = await_import_ed2curve();
-        const apiSecret = process.env.COINBASE_API_SECRET;
-        if (!apiSecret) throw new Error('COINBASE_API_SECRET required to decrypt wallet seed');
-        const decoded = Buffer.from(apiSecret, 'base64');
-        const x25519Key = ed2curve.convertSecretKey(new Uint8Array(decoded.slice(0, 32)));
-        const encKey = crypto.createHash('sha256').update(Buffer.from(x25519Key)).digest();
-        const decipher = crypto.createDecipheriv('aes-256-gcm', encKey, Buffer.from(iv, 'hex'));
-        decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-        decryptedSeed = Buffer.concat([
-            decipher.update(Buffer.from(seed, 'hex')),
-            decipher.final(),
-        ]).toString('utf8');
+    // Fallback 3: Auto-generated wallet persisted in ~/.x402-bazaar/wallet.json
+    if (fs.existsSync(AUTO_WALLET_PATH)) {
+        const saved = JSON.parse(fs.readFileSync(AUTO_WALLET_PATH, 'utf-8'));
+        return saved.privateKey;
     }
 
-    const { HDKey } = await_import_hdkey();
-    const hdKey = HDKey.fromMasterSeed(Buffer.from(decryptedSeed, 'hex'));
-    const childKey = hdKey.derive("m/44'/60'/0'/0/0");
-    return '0x' + Buffer.from(childKey.privateKey).toString('hex');
+    // Generate a new wallet and persist it
+    const rawKey = crypto.randomBytes(32);
+    const privateKey = `0x${rawKey.toString('hex')}`;
+    const generatedAccount = privateKeyToAccount(privateKey);
+    const walletDir = join(homedir(), '.x402-bazaar');
+    if (!fs.existsSync(walletDir)) {
+        fs.mkdirSync(walletDir, { recursive: true });
+    }
+    const walletData = {
+        privateKey,
+        address: generatedAccount.address,
+        createdAt: new Date().toISOString(),
+        note: 'Auto-generated wallet for x402 Bazaar MCP. Fund with USDC on Base to use paid APIs.',
+    };
+    fs.writeFileSync(AUTO_WALLET_PATH, JSON.stringify(walletData, null, 2), { mode: 0o600 });
+    console.error(`[Wallet] Auto-generated new wallet: ${generatedAccount.address} — Fund it with USDC on Base to use paid APIs.`);
+    console.error(`[Wallet] Wallet saved to: ${AUTO_WALLET_PATH}`);
+    return privateKey;
 }
 
 function initWallet() {
@@ -114,6 +138,15 @@ function initWallet() {
     const privateKey = getPrivateKey();
     account = privateKeyToAccount(privateKey);
     console.error(`[Wallet] Initialized: ${account.address}`);
+}
+
+function tryInitWallet() {
+    try {
+        initWallet();
+        return null;
+    } catch (err) {
+        return err.message;
+    }
 }
 
 function getClients(chainKey) {
@@ -178,8 +211,9 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     // Budget check
     if (sessionSpending + cost > MAX_BUDGET) {
         throw new Error(
-            `Budget limit reached. Spent: ${sessionSpending.toFixed(2)} USDC / ${MAX_BUDGET.toFixed(2)} USDC limit. ` +
-            `This call costs ${cost} USDC. Increase MAX_BUDGET_USDC env var to allow more spending.`
+            `Budget limit reached. Spent: ${sessionSpending.toFixed(2)} USDC / ${MAX_BUDGET.toFixed(2)} USDC. ` +
+            `This call costs ${cost} USDC. ` +
+            `To increase the limit, set MAX_BUDGET_USDC=X in your MCP config environment (e.g. MAX_BUDGET_USDC=5).`
         );
     }
 
@@ -498,7 +532,7 @@ server.tool(
                 // Budget check
                 if (sessionSpending + cost > MAX_BUDGET) {
                     return {
-                        content: [{ type: 'text', text: `Error: Budget limit reached. Spent: ${sessionSpending.toFixed(2)} / ${MAX_BUDGET.toFixed(2)} USDC. This call costs ${cost} USDC. Increase MAX_BUDGET_USDC to allow more spending.` }],
+                        content: [{ type: 'text', text: `Error: Budget limit reached. Spent: ${sessionSpending.toFixed(2)} / ${MAX_BUDGET.toFixed(2)} USDC. This call costs ${cost} USDC. To increase the limit, set MAX_BUDGET_USDC=X in your MCP config environment (e.g. MAX_BUDGET_USDC=5).` }],
                         isError: true,
                     };
                 }
@@ -619,7 +653,17 @@ server.tool(
     {},
     async () => {
         try {
-            initWallet();
+            const initError = tryInitWallet();
+            if (initError) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        error: 'Wallet not configured',
+                        details: initError,
+                        tip: 'Use the setup_wallet tool to auto-generate a wallet, or set AGENT_PRIVATE_KEY in your MCP environment.',
+                    }, null, 2) }],
+                    isError: true,
+                };
+            }
             const balances = {};
 
             for (const [key, cfg] of Object.entries(CHAINS)) {
@@ -657,6 +701,72 @@ server.tool(
         } catch (err) {
             return {
                 content: [{ type: 'text', text: `Error: ${err.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
+// --- Tool: setup_wallet (FREE — plug-and-play onboarding) ---
+server.tool(
+    'setup_wallet',
+    'Initialize your agent wallet (auto-generates one if needed). Returns your wallet address, default chain, explorer link, USDC balance, and instructions to fund it. Free — run this first before using paid APIs.',
+    {},
+    async () => {
+        try {
+            // Auto-generates and persists if no wallet configured
+            initWallet();
+
+            const cfg = CHAINS[DEFAULT_CHAIN_KEY];
+            let usdcBalance = null;
+            let balanceError = null;
+
+            try {
+                const { public: pubClient } = getClients(DEFAULT_CHAIN_KEY);
+                const usdcRaw = await pubClient.readContract({
+                    address: cfg.usdc,
+                    abi: USDC_ABI,
+                    functionName: 'balanceOf',
+                    args: [account.address],
+                });
+                usdcBalance = (Number(usdcRaw) / 1e6).toFixed(6);
+            } catch (err) {
+                balanceError = err.message;
+            }
+
+            const isAutoGenerated = fs.existsSync(AUTO_WALLET_PATH) &&
+                !process.env.AGENT_PRIVATE_KEY &&
+                !fs.existsSync(process.env.AGENT_SEED_PATH || join(__dirname, 'agent-seed.json'));
+
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        status: 'ready',
+                        address: account.address,
+                        default_chain: cfg.label,
+                        explorer: `${cfg.explorer}/address/${account.address}`,
+                        usdc_balance: usdcBalance !== null ? `${usdcBalance} USDC` : null,
+                        balance_error: balanceError,
+                        wallet_source: isAutoGenerated ? 'auto-generated' : 'configured',
+                        wallet_file: isAutoGenerated ? AUTO_WALLET_PATH : null,
+                        next_steps: usdcBalance !== null && parseFloat(usdcBalance) === 0
+                            ? [
+                                `Send USDC to your wallet address on Base: ${account.address}`,
+                                'Minimum recommended: 1 USDC (covers ~20 API calls at 0.05 USDC each)',
+                                `View on explorer: ${cfg.explorer}/address/${account.address}`,
+                                `Current session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC env var to change)`,
+                            ]
+                            : [
+                                `Wallet funded with ${usdcBalance} USDC — ready to use paid APIs`,
+                                `Current session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC env var to change)`,
+                            ],
+                    }, null, 2),
+                }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error initializing wallet: ${err.message}` }],
                 isError: true,
             };
         }

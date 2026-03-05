@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "x402-bazaar": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp-server.mjs"],
+      "env": {
+        "MAX_BUDGET_USDC": "1.00"
+      }
+    }
+  }
+}
