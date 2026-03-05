@@ -392,10 +392,44 @@ server.tool(
                         price_usdc: best.price_usdc,
                         tags: best.tags,
                     },
-                    action: `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call (paid directly to the API provider, not via x402).`}`,
+                    action: best.id
+                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.`
+                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}`,
                     alternatives_count: services.length - 1,
                     _payment: result._payment,
                 }, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
+// --- Tool: call_service (proxy route — supports 95/5 split payment) ---
+server.tool(
+    'call_service',
+    `Call a Bazaar service through the platform proxy. This route enables native 95/5 revenue split: 95% goes directly to the API provider on-chain, 5% platform fee. Use this instead of call_api when calling Bazaar services by ID. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
+    {
+        service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
+        body: z.record(z.any()).optional().describe('Optional JSON body to send with the request (for POST APIs)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+    },
+    async ({ service_id, body: requestBody, chain: chainKey }) => {
+        const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
+        try {
+            const proxyUrl = `${SERVER_URL}/api/call/${service_id}`;
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: requestBody ? JSON.stringify(requestBody) : JSON.stringify({}),
+            };
+
+            const result = await payAndRequest(proxyUrl, options, selectedChain);
+            return {
+                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
         } catch (err) {
             return {
