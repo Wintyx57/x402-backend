@@ -20,6 +20,7 @@ const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
 const { BudgetManager } = require('./lib/budget');
 const { startAgent, stopAgent } = require('./lib/agent-process');
 const { createPayoutManager } = require('./lib/payouts');
+const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -318,8 +319,13 @@ const serverInstance = app.listen(PORT, async () => {
         startAgent();
     }
 
-    // Data retention: purge old activity + monitoring_checks automatically
+    // Data retention: purge old activity + monitoring_checks + daily_checks
     scheduleRetention(supabase);
+
+    // Daily E2E API tester: real USDC payments on SKALE, tests all services
+    if (process.env.ENABLE_DAILY_TESTER === 'true') {
+        scheduleDailyTest(`http://localhost:${PORT}`, supabase);
+    }
 
     // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
     // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
@@ -343,6 +349,7 @@ async function gracefulShutdown(signal) {
     logger.info('server', `${signal} received — shutting down`);
     stopMonitor();
     stopTelegramBot();
+    stopDailyTest();
     await stopAgent().catch(err => {
         logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
     });
