@@ -4,7 +4,13 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
-const { TX_HASH_REGEX } = require('../lib/payment');
+const { TX_HASH_REGEX, INTERNAL_PROXY_SECRET } = require('../lib/payment');
+
+// Hostname of this server — used to detect internal service URLs
+const SELF_HOSTNAME = (() => {
+    try { return new URL(process.env.SERVER_URL || process.env.RENDER_EXTERNAL_URL || 'https://x402-api.onrender.com').hostname; }
+    catch { return 'x402-api.onrender.com'; }
+})();
 
 // Minimum price (micro-USDC) for split payment to ensure both split amounts are non-zero
 const MIN_SPLIT_AMOUNT_RAW = 100; // 0.0001 USDC
@@ -322,6 +328,15 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
         if (req.headers['x-agent-wallet']) {
             proxyHeaders['X-Agent-Wallet'] = req.headers['x-agent-wallet'];
         }
+
+        // Internal bypass: if the service URL is hosted on this same server,
+        // add the bypass header so the service's paymentMiddleware skips
+        // double-payment verification (the proxy already verified payment).
+        try {
+            if (new URL(service.url).hostname === SELF_HOSTNAME) {
+                proxyHeaders['X-Internal-Proxy'] = INTERNAL_PROXY_SECRET;
+            }
+        } catch { /* invalid URL — safeUrl already checked above */ }
 
         const proxyRes = await fetch(service.url, {
             method: service.method || 'GET',
