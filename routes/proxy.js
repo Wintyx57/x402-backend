@@ -4,7 +4,7 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
-const { TX_HASH_REGEX, INTERNAL_PROXY_SECRET } = require('../lib/payment');
+const { TX_HASH_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -23,7 +23,7 @@ const MIN_SPLIT_AMOUNT_RAW = 100; // 0.0001 USDC
  * @param {object} payoutManager - from createPayoutManager
  * @param {object} paymentSystem  - { verifySplitPayment } from createPaymentSystem
  */
-function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem) {
+function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager) {
     const router = express.Router();
 
     // POST /api/call/:serviceId — Call an external service through the Bazaar proxy
@@ -62,6 +62,26 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // A service without owner_address falls back to legacy mode automatically
         // (the 69 native wrappers — platform is both provider and operator)
         const isSplitMode = !!(service.owner_address) && !!txHashProvider;
+
+        // --- Wallet rate limit + budget checks (applies to BOTH modes) ---
+        const rawAgentWallet = req.headers['x-agent-wallet'];
+        const agentWallet = /^0x[a-fA-F0-9]{40}$/.test(rawAgentWallet) ? rawAgentWallet : null;
+        if (agentWallet) {
+            const rlCheck = checkWalletRateLimit(agentWallet);
+            res.setHeader('X-RateLimit-Remaining', rlCheck.remaining);
+            res.setHeader('X-RateLimit-Limit', WALLET_RATE_LIMIT);
+            if (!rlCheck.allowed) {
+                const retryAfter = Math.ceil((rlCheck.resetAt - Date.now()) / 1000);
+                res.setHeader('Retry-After', retryAfter);
+                return res.status(429).json({ error: 'Too Many Requests', retry_after: retryAfter });
+            }
+        }
+        if (agentWallet && budgetManager) {
+            const check = budgetManager.checkAndRecord(agentWallet, price);
+            if (!check.allowed) {
+                return res.status(403).json({ error: 'Budget Exceeded', message: check.reason });
+            }
+        }
 
         // --- SPLIT MODE ---
         if (isSplitMode) {
@@ -330,11 +350,11 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
         }
 
         // Internal bypass: if the service URL is hosted on this same server,
-        // add the bypass header so the service's paymentMiddleware skips
+        // generate a one-time token so the service's paymentMiddleware skips
         // double-payment verification (the proxy already verified payment).
         try {
             if (new URL(service.url).hostname === SELF_HOSTNAME) {
-                proxyHeaders['X-Internal-Proxy'] = INTERNAL_PROXY_SECRET;
+                proxyHeaders['X-Internal-Proxy'] = createInternalBypassToken();
             }
         } catch { /* invalid URL — safeUrl already checked above */ }
 

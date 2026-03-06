@@ -195,7 +195,9 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
     // --- CSV TO JSON API (0.001 USDC) ---
     router.get('/api/csv-to-json', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "CSV to JSON API"), async (req, res) => {
         const csv = (req.query.csv || '');
-        const delimiter = req.query.delimiter || ',';
+        const delimiterRaw = (req.query.delimiter || ',');
+        const ALLOWED_DELIMITERS = [',', ';', '\t', '|', ':'];
+        const delimiter = ALLOWED_DELIMITERS.includes(delimiterRaw) ? delimiterRaw : ',';
         const hasHeader = req.query.header !== 'false';
 
         if (!csv) {

@@ -166,14 +166,11 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         }
 
         try {
-            // SECURITY: DNS rebinding check — block internal IPs
+            // SECURITY: Use centralized safeUrl to block internal IPs (SSRF + DNS rebinding)
             try {
-                const { address } = await dns.promises.lookup(domain);
-                if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address)) {
-                    return res.status(400).json({ error: 'Internal IPs not allowed' });
-                }
-            } catch {
-                return res.status(400).json({ error: 'Could not resolve domain' });
+                await safeUrl(`https://${domain}`);
+            } catch (e) {
+                return res.status(400).json({ error: e.message });
             }
 
             // Parallel data gathering — individual failures are expected and intentionally silent
@@ -367,14 +364,11 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         }
 
         try {
-            // SECURITY: DNS rebinding check — block internal IPs
+            // SECURITY: Use centralized safeUrl to block internal IPs (SSRF + DNS rebinding)
             try {
-                const { address } = await dns.promises.lookup(domain);
-                if (/^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|169\.254\.)/.test(address)) {
-                    return res.status(400).json({ error: 'Internal IPs not allowed' });
-                }
-            } catch {
-                return res.status(400).json({ error: 'Could not resolve domain' });
+                await safeUrl(`https://${domain}`);
+            } catch (e) {
+                return res.status(400).json({ error: e.message });
             }
 
             const orgName = domain.split('.')[0];

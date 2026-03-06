@@ -111,7 +111,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 supabase.from('activity').select('detail, created_at').eq('type', 'api_call').order('created_at', { ascending: false }).limit(1000),
                 // 3. Total services count
                 supabase.from('services').select('*', { count: 'exact', head: true }),
-                // 4. Recent activity (last 10)
+                // 4. Recent activity (last 10) — tx_hash truncated for security
                 supabase.from('activity').select('type, detail, amount, created_at, tx_hash').order('created_at', { ascending: false }).limit(10),
                 // 5. Average price of paid services
                 supabase.from('services').select('price_usdc').gt('price_usdc', 0),
@@ -189,7 +189,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                     detail: a.detail,
                     amount: a.amount,
                     time: a.created_at,
-                    txHash: a.tx_hash
+                    txHash: a.tx_hash ? `${a.tx_hash.slice(0, 10)}...${a.tx_hash.slice(-6)}` : null
                 }));
             } else if (recentActivityResult.status === 'rejected') {
                 logger.warn('Analytics', `Failed to fetch recent activity: ${recentActivityResult.reason?.message}`);
@@ -230,7 +230,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Revenue overview ---
-    router.get('/api/admin/revenue', adminAuth, async (req, res) => {
+    router.get('/api/admin/revenue', dashboardApiLimiter, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
@@ -242,7 +242,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Pending payouts ---
-    router.get('/api/admin/payouts', adminAuth, async (req, res) => {
+    router.get('/api/admin/payouts', dashboardApiLimiter, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
@@ -254,7 +254,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Mark payouts as paid ---
-    router.post('/api/admin/payouts/mark-paid', adminAuth, async (req, res) => {
+    router.post('/api/admin/payouts/mark-paid', dashboardApiLimiter, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
