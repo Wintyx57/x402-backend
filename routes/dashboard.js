@@ -282,6 +282,12 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         res.json({ success: true, ...result });
     });
 
+    // Daily E2E tester status (admin-only diagnostic)
+    router.get('/api/admin/daily-tester', adminAuth, (req, res) => {
+        const { getDailyTesterStatus } = require('../lib/daily-tester');
+        res.json(getDailyTesterStatus());
+    });
+
     return router;
 }
 
