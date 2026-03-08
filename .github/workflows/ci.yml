@@ -18,7 +18,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run unit tests (no network required)
-        run: node --test tests/payment.test.js tests/chains.test.js tests/monitor.test.js tests/services-logic.test.js tests/validation.test.js tests/logger.test.js tests/register-validation.test.js tests/budget.test.js tests/activity.test.js tests/middleware.test.js tests/new-apis.test.js tests/telegram-bot.test.js
+        run: node --test tests/payment.test.js tests/chains.test.js tests/monitor.test.js tests/services-logic.test.js tests/validation.test.js tests/logger.test.js tests/register-validation.test.js tests/budget.test.js tests/activity.test.js tests/middleware.test.js tests/new-apis.test.js tests/telegram-bot.test.js tests/payouts.test.js tests/reviews.test.js tests/split.test.js
 
   e2e-tests:
     name: E2E Tests (production)
@@ -39,7 +39,7 @@ jobs:
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         # E2E tests hit production — may fail due to cold starts or network issues
         # Admin tests require ADMIN_TOKEN secret to be configured in GitHub Actions
-        continue-on-error: true
+        continue-on-error: false
 
   security:
     name: Security Audit
@@ -51,4 +51,4 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm audit --audit-level=critical
+      - run: npm audit --audit-level=high
