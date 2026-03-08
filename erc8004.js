@@ -3,6 +3,7 @@
 
 const { createPublicClient, http } = require('viem');
 const { base } = require('viem/chains');
+const { safeUrl } = require('./lib/safe-url');
 
 // --- Contract addresses (Base mainnet) ---
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
@@ -108,12 +109,14 @@ async function getAgentInfo(agentId) {
     let registration = null;
     if (verification.agentURI) {
         try {
-            const res = await fetch(verification.agentURI, { signal: AbortSignal.timeout(8000) });
+            // SSRF protection: validate URL before fetching (blocks internal/private IPs)
+            const validatedUrl = await safeUrl(verification.agentURI);
+            const res = await fetch(validatedUrl.toString(), { signal: AbortSignal.timeout(8000) });
             if (res.ok) {
                 registration = await res.json();
             }
         } catch {
-            // URI unreachable — still return on-chain data
+            // URI unreachable or blocked — still return on-chain data
         }
     }
 
