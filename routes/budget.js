@@ -64,6 +64,7 @@ function createBudgetRouter(budgetManager, logActivity, adminAuth) {
     // DELETE /api/budget/:wallet — Remove budget cap
     router.delete('/api/budget/:wallet', adminAuth, (req, res) => {
         const { wallet } = req.params;
+        if (!WALLET_REGEX.test(wallet)) return res.status(400).json({ error: 'Invalid wallet' });
         const removed = budgetManager.removeBudget(wallet);
         if (removed) {
             logActivity('budget', `Budget removed: ${wallet.slice(0, 10)}...`);
