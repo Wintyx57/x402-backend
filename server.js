@@ -30,6 +30,7 @@ const createDashboardRouter = require('./routes/dashboard');
 const createWrappersRouter = require('./routes/wrappers/index');
 const createMonitoringRouter = require('./routes/monitoring');
 const createBudgetRouter = require('./routes/budget');
+const { createRgpdRouter } = require('./routes/rgpd');
 const { createCommunityAgentRouter } = require('./routes/community-agent');
 const createStreamRouter = require('./routes/stream');
 const createReviewsRouter = require('./routes/reviews');
@@ -269,6 +270,7 @@ app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAut
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
+app.use(createRgpdRouter(supabase));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
