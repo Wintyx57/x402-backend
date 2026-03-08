@@ -114,7 +114,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     });
 
     // --- API activity log (gratuit, pour le dashboard) ---
-    router.get('/api/activity', dashboardApiLimiter, async (req, res) => {
+    router.get('/api/activity', adminAuth, dashboardApiLimiter, async (req, res) => {
         const { data, error } = await supabase
             .from('activity')
             .select('type, detail, amount, created_at')
