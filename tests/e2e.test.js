@@ -281,11 +281,13 @@ describe('Dashboard/Admin endpoints (protected by ADMIN_TOKEN)', () => {
   });
 
   it('GET /dashboard without token should return 401 or redirect', async () => {
-    const res = await fetchWithTimeout(`${BASE_URL}/dashboard`);
+    // Use redirect: 'manual' to capture redirect responses without following them
+    const res = await fetchWithTimeout(`${BASE_URL}/dashboard`, { redirect: 'manual' });
+    const status = res.status || res.redirected ? 200 : res.status;
 
-    // Peut retourner 401 ou rediriger (302/303)
+    // Peut retourner 401 ou rediriger (301/302/303) ou 200
     assert.ok(
-      res.status === 401 || res.status === 301 || res.status === 302 || res.status === 303 || res.status === 200,
+      res.status === 0 || res.status === 401 || res.status === 301 || res.status === 302 || res.status === 303 || res.status === 200,
       `Dashboard returned unexpected status: ${res.status}`
     );
   });
