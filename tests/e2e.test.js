@@ -761,7 +761,7 @@ describe('OpenAPI Spec (GPT Actions)', () => {
     assert.ok(data.components);
   });
 
-  it('OpenAPI spec should list all 61 paid endpoints', async () => {
+  it('OpenAPI spec should list all 69 paid endpoints', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/.well-known/openapi.json`);
     const data = await res.json();
 

@@ -6,7 +6,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const SERVER_WALLET = process.env.WALLET_ADDRESS;
 const BASE_URL = 'https://x402-api.onrender.com';
 
-// All 61 x402 Native wrapper APIs — real endpoints proxied via x402 payments
+// All 69 x402 Native wrapper APIs — real endpoints proxied via x402 payments
 const WRAPPER_SERVICES = [
     // --- HIGH-VALUE SERVICES (0.005 USDC) ---
     {
