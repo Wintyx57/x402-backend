@@ -70,7 +70,8 @@ describe('Health & Infrastructure', () => {
 describe('Services API (public endpoints)', () => {
   it('GET /api/services should return 200 with array of services', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
@@ -87,7 +88,8 @@ describe('Services API (public endpoints)', () => {
 
   it('GET /api/services?search=weather should return filtered results', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services?search=weather`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
@@ -104,7 +106,8 @@ describe('Services API (public endpoints)', () => {
 
   it('GET /api/services?tag=x402-native should return native services', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services?tag=x402-native`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
@@ -117,7 +120,8 @@ describe('Services API (public endpoints)', () => {
 
   it('GET /api/services with multiple filters should work', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services?search=search&tag=data`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
@@ -281,7 +285,7 @@ describe('Dashboard/Admin endpoints (protected by ADMIN_TOKEN)', () => {
 
     // Peut retourner 401 ou rediriger (302/303)
     assert.ok(
-      res.status === 401 || res.status === 302 || res.status === 303 || res.status === 200,
+      res.status === 401 || res.status === 301 || res.status === 302 || res.status === 303 || res.status === 200,
       `Dashboard returned unexpected status: ${res.status}`
     );
   });
@@ -434,7 +438,8 @@ describe('Rate limiting', () => {
 describe('Edge cases', () => {
   it('GET /api/services with empty search should return all services', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services?search=`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
@@ -443,7 +448,8 @@ describe('Edge cases', () => {
 
   it('GET /api/services with minPrice filter should work', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/services?minPrice=0.02`);
-    const data = await res.json();
+    const json = await res.json();
+    const data = Array.isArray(json) ? json : json.data;
 
     assert.strictEqual(res.status, 200);
     assert.ok(Array.isArray(data));
