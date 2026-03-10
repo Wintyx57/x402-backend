@@ -175,16 +175,17 @@ function getPrivateKey() {
         tag: encFields.tag,
         address: generatedAccount.address,
         createdAt: new Date().toISOString(),
-        note: 'Auto-generated wallet for x402 Bazaar MCP. Fund with USDC on Base to use paid APIs.',
+        note: 'Auto-generated wallet for x402 Bazaar MCP. Fund with USDC on SKALE on Base (recommended — ultra-low gas) or Base.',
     };
     fs.writeFileSync(AUTO_WALLET_PATH, JSON.stringify(walletData, null, 2), { mode: 0o600 });
     console.error(`[Wallet] Auto-generated new wallet: ${generatedAccount.address}`);
     console.error(`[Wallet] Encrypted wallet stored at ${AUTO_WALLET_PATH}`);
+    console.error(`[Wallet] ── SKALE on Base (RECOMMENDED) ──`);
+    console.error(`[Wallet]   Ultra-low gas (~$0.0007/tx). Best for AI agents.`);
+    console.error(`[Wallet]   Pass chain: "skale" to any paid tool.`);
+    console.error(`[Wallet]   CREDITS auto-funded on first setup_wallet call.`);
     console.error(`[Wallet] ── Base ──────────────────────`);
-    console.error(`[Wallet]   Fund with USDC on Base to use paid APIs`);
-    console.error(`[Wallet] ── SKALE on Base ─────────────`);
-    console.error(`[Wallet]   Ultra-low gas (~$0.0007/tx). Pass chain: "skale" to any paid tool.`);
-    console.error(`[Wallet]   CREDITS auto-funded on first setup_wallet call (if faucet configured).`);
+    console.error(`[Wallet]   Alternative: higher gas but same USDC payments.`);
     return privateKey;
 }
 
