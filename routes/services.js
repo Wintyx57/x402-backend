@@ -16,6 +16,18 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
     const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters';
 
+    // Enrich services with required_parameters from discoveryMap when not set in DB
+    function enrichWithParams(services) {
+        if (!Array.isArray(services)) return services;
+        return services.map(s => {
+            if (!s.required_parameters) {
+                const schema = getInputSchemaForUrl(s.url);
+                if (schema) return { ...s, required_parameters: schema };
+            }
+            return s;
+        });
+    }
+
     // --- LISTE DES SERVICES (0.05 USDC) ---
     router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "List Services"), async (req, res) => {
         const page = Math.max(1, parseInt(req.query.page) || 1);
@@ -33,10 +45,11 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             return res.status(500).json({ error: 'Failed to fetch services' });
         }
 
+        const enriched = enrichWithParams(data);
         res.json({
             success: true,
-            count: data.length,
-            data,
+            count: enriched.length,
+            data: enriched,
             pagination: {
                 page,
                 limit,
@@ -74,11 +87,12 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
         logActivity('search', `Search "${query}" -> ${data.length} result(s)`);
 
+        const enriched = enrichWithParams(data);
         res.json({
             success: true,
             query,
-            count: data.length,
-            data
+            count: enriched.length,
+            data: enriched
         });
     });
 
@@ -98,12 +112,9 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             logger.error('Supabase', '/api/services error:', error.message);
             return res.status(500).json({ error: 'Failed to fetch services' });
         }
-        // Wrap dans un objet avec pagination tout en maintenant la compatibilité :
-        // les clients qui attendaient un tableau brut doivent migrer vers data.data.
-        // Pour ne pas casser le dashboard existant qui lit directement le tableau,
-        // on retourne aussi le tableau à la racine via la clé `data` (objet, pas tableau).
+        const enriched = enrichWithParams(data);
         res.json({
-            data,
+            data: enriched,
             pagination: {
                 page,
                 limit,

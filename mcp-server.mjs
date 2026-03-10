@@ -836,9 +836,9 @@ server.tool(
                             what: 'SKALE on Base is an ultra-low gas alternative (~$0.0007/tx vs ~$0.001 on Base)',
                             gas_token: 'CREDITS (NOT sFUEL — SKALE on Base uses CREDITS as native gas token)',
                             how_to_fund: [
-                                '1. Bridge USDC from Base to SKALE on Base via https://bridge.skale.space',
-                                '2. Swap some USDC for CREDITS (10 USDC ≈ 40 CREDITS ≈ 10,000 transactions)',
-                                '3. Send CREDITS to your agent wallet for gas',
+                                '1. Get CREDITS (gas token) at https://base.skalenodes.com/credits — paste your wallet address',
+                                '2. Bridge USDC from Base to SKALE on Base via https://bridge.skale.space',
+                                '3. Or swap USDC for CREDITS on SKALE (10 USDC ≈ 40 CREDITS ≈ 10,000 transactions)',
                             ],
                             chain_param: 'Pass chain: "skale" to any paid tool to use SKALE instead of Base',
                         },
