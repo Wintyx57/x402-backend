@@ -624,7 +624,14 @@ function makePassthroughLimiter() {
 
 /** Payment middleware factory that always approves (calls next). */
 function makeAutoApprovePaymentMiddleware() {
-    return (minAmountRaw, price, label) => (req, res, next) => next();
+    return (minAmountRaw, price, label, options = {}) => (req, res, next) => {
+        if (options.deferClaim) {
+            req._markTxUsed = async () => true;
+            req._paymentVerified = true;
+            req._paymentReplayKey = `base:${req.headers['x-payment-txhash'] || 'mock'}`;
+        }
+        next();
+    };
 }
 
 /** Payment system mock with configurable split result. */
@@ -1257,14 +1264,26 @@ describe('proxy.js — service not found', () => {
 });
 
 describe('proxy.js — race condition on provider tx claim', () => {
-    beforeEach(() => { process.env.WALLET_ADDRESS = PLATFORM_WALLET; });
+    let originalFetch;
+    beforeEach(() => {
+        originalFetch = global.fetch;
+        process.env.WALLET_ADDRESS = PLATFORM_WALLET;
+    });
+    afterEach(() => { global.fetch = originalFetch; });
 
     it('should return 409 when INSERT returns duplicate key error (concurrent request won the race)', async () => {
         const duplicateKeyError = { code: '23505', message: 'duplicate key value violates unique constraint' };
         const supabase = makeSupabaseMock({
             service:     SERVICE_WITH_OWNER,
             usedTxRows:  [], // passes anti-replay SELECT check
-            insertError: duplicateKeyError, // but INSERT fails
+            insertError: duplicateKeyError, // but INSERT fails (after upstream success)
+        });
+
+        // Upstream succeeds (deferred claiming inserts AFTER fetch)
+        global.fetch = async () => ({
+            ok: true, status: 200,
+            headers: { get: () => 'application/json' },
+            json: async () => ({ result: 'ok' }),
         });
 
         const { req, res } = makeReqRes({
@@ -1288,6 +1307,208 @@ describe('proxy.js — race condition on provider tx claim', () => {
 
         assert.equal(statusCode, 409);
         assert.ok(body.message.includes('already been used'), `Expected "already been used" in: ${body.message}`);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Deferred claiming — retry + payment protection
+// ---------------------------------------------------------------------------
+
+describe('proxy.js — deferred claiming (upstream failures)', () => {
+    let originalFetch;
+    beforeEach(() => {
+        originalFetch = global.fetch;
+        process.env.WALLET_ADDRESS = PLATFORM_WALLET;
+    });
+    afterEach(() => { global.fetch = originalFetch; });
+
+    it('should NOT claim tx when upstream returns 5xx after all retries (split mode)', async () => {
+        let insertCalled = false;
+        const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER });
+        // Override insert to track calls
+        const origFrom = supabase.from.bind(supabase);
+        supabase.from = (table) => {
+            const result = origFrom(table);
+            if (table === 'used_transactions') {
+                const origInsert = result.insert;
+                result.insert = (...args) => { insertCalled = true; return origInsert(...args); };
+            }
+            return result;
+        };
+
+        // All 3 fetch attempts return 500
+        global.fetch = async () => ({
+            ok: false, status: 500,
+            headers: { get: () => 'text/plain' },
+            text: async () => 'Internal Server Error',
+        });
+
+        const { req, res } = makeReqRes({
+            params:  { serviceId: SERVICE_WITH_OWNER.id },
+            headers: {
+                'x-payment-txhash-provider': TX_HASH_PROVIDER,
+                'x-payment-chain': 'base',
+            },
+        });
+
+        const router = createProxyRouter(
+            supabase, () => {},
+            makeAutoApprovePaymentMiddleware(),
+            makePassthroughLimiter(),
+            makePayoutManagerMock(),
+            makeSplitPaymentSystem({ providerValid: true, platformValid: false })
+        );
+
+        await invokeRouteHandler(router, req, res);
+        const { statusCode, body } = res.getResponse();
+
+        assert.equal(statusCode, 502);
+        assert.equal(body._x402.retry_eligible, true, 'Should indicate retry is eligible');
+        assert.ok(body.message.includes('NOT consumed'), `Expected "NOT consumed" in: ${body.message}`);
+        assert.equal(insertCalled, false, 'TX should NOT be claimed when upstream fails');
+    });
+
+    it('should NOT claim tx when upstream is unreachable (network error, split mode)', async () => {
+        let insertCalled = false;
+        const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER });
+        const origFrom = supabase.from.bind(supabase);
+        supabase.from = (table) => {
+            const result = origFrom(table);
+            if (table === 'used_transactions') {
+                const origInsert = result.insert;
+                result.insert = (...args) => { insertCalled = true; return origInsert(...args); };
+            }
+            return result;
+        };
+
+        global.fetch = async () => { throw new Error('ECONNREFUSED'); };
+
+        const { req, res } = makeReqRes({
+            params:  { serviceId: SERVICE_WITH_OWNER.id },
+            headers: {
+                'x-payment-txhash-provider': TX_HASH_PROVIDER,
+                'x-payment-chain': 'base',
+            },
+        });
+
+        const router = createProxyRouter(
+            supabase, () => {},
+            makeAutoApprovePaymentMiddleware(),
+            makePassthroughLimiter(),
+            makePayoutManagerMock(),
+            makeSplitPaymentSystem({ providerValid: true, platformValid: false })
+        );
+
+        await invokeRouteHandler(router, req, res);
+        const { statusCode, body } = res.getResponse();
+
+        assert.equal(statusCode, 502);
+        assert.equal(body._x402.retry_eligible, true);
+        assert.equal(insertCalled, false, 'TX should NOT be claimed on network error');
+    });
+
+    it('should claim tx when upstream returns 4xx (service processed request)', async () => {
+        global.fetch = async () => ({
+            ok: false, status: 400,
+            headers: { get: () => 'application/json' },
+            json: async () => ({ error: 'Bad request' }),
+        });
+
+        const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER });
+        const payoutMock = makePayoutManagerMock();
+
+        const { req, res } = makeReqRes({
+            params:  { serviceId: SERVICE_WITH_OWNER.id },
+            headers: {
+                'x-payment-txhash-provider': TX_HASH_PROVIDER,
+                'x-payment-chain': 'base',
+            },
+        });
+
+        const router = createProxyRouter(
+            supabase, () => {},
+            makeAutoApprovePaymentMiddleware(),
+            makePassthroughLimiter(),
+            payoutMock,
+            makeSplitPaymentSystem({ providerValid: true, platformValid: false })
+        );
+
+        await invokeRouteHandler(router, req, res);
+        const { statusCode } = res.getResponse();
+
+        assert.equal(statusCode, 400);
+        assert.equal(payoutMock.calls.recordSplitPayout.length, 1, 'TX should be claimed on 4xx (service processed it)');
+    });
+
+    it('should retry on 5xx and succeed on 2nd attempt', async () => {
+        let fetchCount = 0;
+        global.fetch = async () => {
+            fetchCount++;
+            if (fetchCount === 1) {
+                return { ok: false, status: 503, headers: { get: () => 'text/plain' }, text: async () => 'unavailable' };
+            }
+            return { ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => ({ result: 'ok' }) };
+        };
+
+        const supabase = makeSupabaseMock({ service: SERVICE_WITH_OWNER });
+        const payoutMock = makePayoutManagerMock();
+
+        const { req, res } = makeReqRes({
+            params:  { serviceId: SERVICE_WITH_OWNER.id },
+            headers: {
+                'x-payment-txhash-provider': TX_HASH_PROVIDER,
+                'x-payment-chain': 'base',
+            },
+        });
+
+        const router = createProxyRouter(
+            supabase, () => {},
+            makeAutoApprovePaymentMiddleware(),
+            makePassthroughLimiter(),
+            payoutMock,
+            makeSplitPaymentSystem({ providerValid: true, platformValid: false })
+        );
+
+        await invokeRouteHandler(router, req, res);
+        const { statusCode } = res.getResponse();
+
+        assert.equal(statusCode, 200);
+        assert.equal(fetchCount, 2, 'Should have retried once');
+        assert.equal(payoutMock.calls.recordSplitPayout.length, 1, 'TX should be claimed after successful retry');
+    });
+
+    it('should NOT claim tx when upstream fails in legacy mode', async () => {
+        global.fetch = async () => ({
+            ok: false, status: 500,
+            headers: { get: () => 'text/plain' },
+            text: async () => 'error',
+        });
+
+        const supabase = makeSupabaseMock({ service: SERVICE_WITHOUT_OWNER });
+        const payoutMock = makePayoutManagerMock();
+
+        const { req, res } = makeReqRes({
+            params:  { serviceId: SERVICE_WITHOUT_OWNER.id },
+            headers: {
+                'x-payment-txhash': TX_HASH_LEGACY,
+                'x-payment-chain': 'base',
+            },
+        });
+
+        const router = createProxyRouter(
+            supabase, () => {},
+            makeAutoApprovePaymentMiddleware(),
+            makePassthroughLimiter(),
+            payoutMock,
+            makeSplitPaymentSystem()
+        );
+
+        await invokeRouteHandler(router, req, res);
+        const { statusCode, body } = res.getResponse();
+
+        assert.equal(statusCode, 502);
+        assert.equal(body._x402.retry_eligible, true);
+        assert.equal(payoutMock.calls.recordPayout.length, 0, 'Should NOT record payout when upstream fails');
     });
 });
 

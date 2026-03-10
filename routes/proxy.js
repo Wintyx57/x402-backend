@@ -119,11 +119,20 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         }
 
         // Apply payment middleware dynamically (legacy: single X-Payment-TxHash)
-        const dynamicPayment = paymentMiddleware(minAmountRaw, price, `API Call: ${service.name}`);
+        // deferClaim: true → middleware verifies on-chain but does NOT INSERT into used_transactions.
+        // The proxy claims the tx AFTER successful upstream response (deferred claiming).
+        const dynamicPayment = paymentMiddleware(minAmountRaw, price, `API Call: ${service.name}`, { deferClaim: true });
 
         dynamicPayment(req, res, async () => {
             const txHash = req.headers['x-payment-txhash'];
             const chain  = req.headers['x-payment-chain'] || 'base';
+
+            const onSuccess = async () => {
+                const claimed = await req._markTxUsed(req._paymentReplayKey, `API Call: ${service.name}`);
+                if (!claimed) return { ok: false };
+                logActivity('payment', `API Call: ${service.name} - ${price} USDC verified`, price, txHash);
+                return { ok: true };
+            };
 
             await executeProxyCall(req, res, {
                 service,
@@ -134,6 +143,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
                 logActivity,
                 splitMode: 'legacy',
                 splitMeta: null,
+                onSuccess,
             });
         });
     });
@@ -248,89 +258,90 @@ async function handleSplitMode(req, res, { supabase, service, price, minAmountRa
         });
     }
 
-    // 7. Atomically claim provider tx hash
-    const { error: claimProviderErr } = await supabase
-        .from('used_transactions')
-        .insert([{ tx_hash: providerReplayKey, action: `split_provider:${service.name}` }]);
-
-    if (claimProviderErr) {
-        if (claimProviderErr.code === '23505' || (claimProviderErr.message && claimProviderErr.message.includes('duplicate'))) {
-            logger.warn('Proxy:split', `Race condition on provider tx ${txHashProvider.slice(0, 18)}...`);
-            return res.status(409).json({
-                error: 'TX_ALREADY_USED',
-                code: 'TX_REPLAY',
-                message: 'This transaction hash has already been used for a previous payment. Please send a new transaction.',
-            });
-        }
-        logger.error('Proxy:split', 'Failed to claim provider tx:', claimProviderErr.message);
-        return res.status(503).json({
-            error: 'Service temporarily unavailable',
-            message: 'Payment claim failed. Please retry.',
-        });
-    }
-
-    // 8. Determine split mode and optionally claim platform tx
-    let splitMode = 'provider_only';
-
-    if (txHashPlatform && splitResult.platformValid) {
-        const { error: claimPlatformErr } = await supabase
-            .from('used_transactions')
-            .insert([{ tx_hash: platformReplayKey, action: `split_platform:${service.name}` }]);
-
-        if (claimPlatformErr && (claimPlatformErr.code === '23505' || (claimPlatformErr.message && claimPlatformErr.message.includes('duplicate')))) {
-            // Platform tx claimed by concurrent request — degrade gracefully
-            logger.warn('Proxy:split', `Race on platform tx ${txHashPlatform.slice(0, 18)}... — continuing as provider_only`);
-            splitMode = 'provider_only';
-        } else if (!claimPlatformErr) {
-            splitMode = 'split_complete';
-        }
-    }
-
-    // 9. Record split payout
+    // 7. Compute split amounts (needed by onSuccess and splitMeta)
     const providerAmountRaw = Math.floor(minAmountRaw * 95 / 100);
     const platformAmountRaw = minAmountRaw - providerAmountRaw;
 
-    if (payoutManager) {
-        payoutManager.recordSplitPayout({
-            serviceId:      service.id,
-            serviceName:    service.name,
-            providerWallet: service.owner_address,
-            grossAmount:    price,
-            txHashProvider,
-            txHashPlatform: txHashPlatform || null,
-            chain:          chainKey,
-            splitMode,
-        }).catch(err => {
-            logger.error('Proxy:split', `Failed to record split payout for "${service.name}": ${err.message}`);
-        });
-    }
+    // 8. Deferred claiming: INSERT tx hashes + record payout ONLY after successful upstream call.
+    //    This prevents users from losing USDC when the upstream API fails.
+    const onSuccess = async () => {
+        // Atomically claim provider tx hash
+        const { error: claimProviderErr } = await supabase
+            .from('used_transactions')
+            .insert([{ tx_hash: providerReplayKey, action: `split_provider:${service.name}` }]);
 
-    logActivity('proxy_call_split', `Proxied split call to "${service.name}" (${price} USDC, mode: ${splitMode})`, price, txHashProvider);
+        if (claimProviderErr) {
+            if (claimProviderErr.code === '23505' || (claimProviderErr.message && claimProviderErr.message.includes('duplicate'))) {
+                logger.warn('Proxy:split', `Race condition on provider tx ${txHashProvider.slice(0, 18)}...`);
+                return { ok: false };
+            }
+            logger.error('Proxy:split', 'Failed to claim provider tx:', claimProviderErr.message);
+            return { ok: false };
+        }
 
-    // 10. Execute the proxy call to the external API
+        // Determine split mode and optionally claim platform tx
+        let splitMode = 'provider_only';
+        if (txHashPlatform && splitResult.platformValid) {
+            const { error: claimPlatformErr } = await supabase
+                .from('used_transactions')
+                .insert([{ tx_hash: platformReplayKey, action: `split_platform:${service.name}` }]);
+
+            if (claimPlatformErr && (claimPlatformErr.code === '23505' || (claimPlatformErr.message && claimPlatformErr.message.includes('duplicate')))) {
+                logger.warn('Proxy:split', `Race on platform tx ${txHashPlatform.slice(0, 18)}... — continuing as provider_only`);
+            } else if (!claimPlatformErr) {
+                splitMode = 'split_complete';
+            }
+        }
+
+        // Record split payout
+        if (payoutManager) {
+            payoutManager.recordSplitPayout({
+                serviceId:      service.id,
+                serviceName:    service.name,
+                providerWallet: service.owner_address,
+                grossAmount:    price,
+                txHashProvider,
+                txHashPlatform: txHashPlatform || null,
+                chain:          chainKey,
+                splitMode,
+            }).catch(err => {
+                logger.error('Proxy:split', `Failed to record split payout for "${service.name}": ${err.message}`);
+            });
+        }
+
+        logActivity('proxy_call_split', `Proxied split call to "${service.name}" (${price} USDC, mode: ${splitMode})`, price, txHashProvider);
+        return { ok: true, splitMode };
+    };
+
+    // 9. Execute the proxy call with deferred claiming
     return executeProxyCall(req, res, {
         service,
         price,
         txHash: txHashProvider,
         chain:  chainKey,
-        payoutManager: null, // already recorded above
-        logActivity:   () => {}, // already logged
-        splitMode,
+        payoutManager: null, // handled inside onSuccess
+        logActivity:   () => {}, // handled inside onSuccess
+        splitMode: 'split',
         splitMeta: {
             provider_amount:       (providerAmountRaw / 1e6).toFixed(6),
             platform_amount:       (platformAmountRaw / 1e6).toFixed(6),
             tx_hash_provider:      txHashProvider,
             tx_hash_platform:      txHashPlatform || null,
-            platform_split_status: splitMode === 'split_complete' ? 'on_chain' : 'fallback_pending',
+            platform_split_status: txHashPlatform && splitResult.platformValid ? 'on_chain' : 'fallback_pending',
         },
+        onSuccess,
     });
 }
 
 // ---------------------------------------------------------------------------
-// Shared proxy execution (SSRF check + fetch external API + return response)
+// Shared proxy execution (SSRF check + fetch with retry + deferred claiming)
 // ---------------------------------------------------------------------------
 
-async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta }) {
+// Retry backoff delays (ms): 1st attempt immediate, then 1s, then 3s
+const RETRY_BACKOFF_MS = [0, 1000, 3000];
+const MAX_RETRIES = RETRY_BACKOFF_MS.length;
+
+async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess }) {
     // SSRF check on service URL
     try {
         await safeUrl(service.url);
@@ -339,135 +350,151 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
         return res.status(403).json({ error: 'Service URL is not allowed' });
     }
 
-    try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-        const proxyHeaders = { 'Content-Type': 'application/json' };
-        if (req.headers['x-agent-wallet']) {
-            proxyHeaders['X-Agent-Wallet'] = req.headers['x-agent-wallet'];
-        }
-
-        // Internal bypass: if the service URL is hosted on this same server,
-        // generate a one-time token so the service's paymentMiddleware skips
-        // double-payment verification (the proxy already verified payment).
-        try {
-            if (new URL(service.url).hostname === SELF_HOSTNAME) {
-                proxyHeaders['X-Internal-Proxy'] = createInternalBypassToken();
+    // Build target URL once (immutable across retries)
+    let targetUrl = service.url;
+    const params = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    if (req.query && Object.keys(req.query).length > 0) {
+        Object.assign(params, req.query);
+    }
+    if (Object.keys(params).length > 0) {
+        const url = new URL(targetUrl);
+        for (const [key, value] of Object.entries(params)) {
+            if (value !== undefined && value !== null) {
+                url.searchParams.set(key, String(value));
             }
-        } catch { /* invalid URL — safeUrl already checked above */ }
-
-        // Build target URL: forward query params from request body/query to the service
-        let targetUrl = service.url;
-        const params = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-        // Also merge any query params from the incoming request
-        if (req.query && Object.keys(req.query).length > 0) {
-            Object.assign(params, req.query);
         }
-        // For GET services: append params as query string
-        if (Object.keys(params).length > 0) {
-            const url = new URL(targetUrl);
-            for (const [key, value] of Object.entries(params)) {
-                if (value !== undefined && value !== null) {
-                    url.searchParams.set(key, String(value));
+        targetUrl = url.toString();
+    }
+
+    let lastError = null;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+            logger.info('Proxy', `Retry ${attempt}/${MAX_RETRIES - 1} for "${service.name}" after ${RETRY_BACKOFF_MS[attempt]}ms`);
+            await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[attempt]));
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 30000);
+
+            const proxyHeaders = { 'Content-Type': 'application/json' };
+            if (req.headers['x-agent-wallet']) {
+                proxyHeaders['X-Agent-Wallet'] = req.headers['x-agent-wallet'];
+            }
+
+            // Internal bypass token: MUST be created inside retry loop (single-use, 30s TTL)
+            try {
+                if (new URL(service.url).hostname === SELF_HOSTNAME) {
+                    proxyHeaders['X-Internal-Proxy'] = createInternalBypassToken();
+                }
+            } catch { /* invalid URL — safeUrl already checked */ }
+
+            const proxyRes = await fetch(targetUrl, {
+                method: 'GET',
+                headers: proxyHeaders,
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+
+            // 5xx → retry (upstream error)
+            if (proxyRes.status >= 500) {
+                logger.warn('Proxy', `Upstream ${proxyRes.status} for "${service.name}" (attempt ${attempt + 1}/${MAX_RETRIES})`);
+                lastError = new Error(`Upstream returned ${proxyRes.status}`);
+                continue;
+            }
+
+            // 2xx or 4xx → accept response, claim tx
+            const contentType = proxyRes.headers.get('content-type') || '';
+            let responseData;
+            if (contentType.includes('application/json')) {
+                responseData = await proxyRes.json();
+            } else {
+                responseData = { raw: await proxyRes.text() };
+            }
+
+            // --- DEFERRED CLAIMING: claim tx AFTER successful upstream response ---
+            if (onSuccess) {
+                const claimResult = await onSuccess();
+                if (claimResult && !claimResult.ok) {
+                    return res.status(409).json({
+                        error: 'TX_ALREADY_USED',
+                        code: 'TX_REPLAY',
+                        message: 'This transaction hash has already been used for a previous payment. Please send a new transaction.',
+                    });
+                }
+                // Update splitMeta with actual splitMode if available
+                if (claimResult && claimResult.splitMode && splitMeta) {
+                    splitMeta.platform_split_status =
+                        claimResult.splitMode === 'split_complete' ? 'on_chain' : 'fallback_pending';
                 }
             }
-            targetUrl = url.toString();
-        }
 
-        const proxyRes = await fetch(targetUrl, {
-            method: 'GET',
-            headers: proxyHeaders,
-            signal: controller.signal,
-        });
-        clearTimeout(timeout);
+            // Record legacy payout if applicable (after successful claim)
+            if (payoutManager && service.owner_address && splitMode === 'legacy') {
+                payoutManager.recordPayout({
+                    serviceId:      service.id,
+                    serviceName:    service.name,
+                    providerWallet: service.owner_address,
+                    grossAmount:    price,
+                    txHashIn:       txHash,
+                    chain,
+                }).catch(err => {
+                    logger.error('Proxy', `Failed to record payout for "${service.name}": ${err.message}`);
+                });
+            }
 
-        const contentType = proxyRes.headers.get('content-type') || '';
-        let responseData;
-        if (contentType.includes('application/json')) {
-            responseData = await proxyRes.json();
-        } else {
-            responseData = { raw: await proxyRes.text() };
-        }
+            if (splitMode === 'legacy') {
+                logActivity('proxy_call', `Proxied call to "${service.name}" (${price} USDC)`, price, txHash);
+            }
 
-        // Record legacy payout if applicable
-        if (payoutManager && service.owner_address && splitMode === 'legacy') {
-            payoutManager.recordPayout({
-                serviceId:      service.id,
-                serviceName:    service.name,
-                providerWallet: service.owner_address,
-                grossAmount:    price,
-                txHashIn:       txHash,
-                chain,
-            }).catch(err => {
-                logger.error('Proxy', `Failed to record payout for "${service.name}": ${err.message}`);
+            // Build _x402 metadata
+            const x402Meta = splitMeta
+                ? {
+                    payment:               price + ' USDC',
+                    split_mode:            'native',
+                    provider_share:        splitMeta.provider_amount + ' USDC',
+                    platform_fee:          splitMeta.platform_amount + ' USDC',
+                    tx_hash_provider:      splitMeta.tx_hash_provider,
+                    tx_hash_platform:      splitMeta.tx_hash_platform,
+                    platform_split_status: splitMeta.platform_split_status,
+                  }
+                : {
+                    payment:        price + ' USDC',
+                    provider_share: (price * 0.95).toFixed(6) + ' USDC',
+                    platform_fee:   (price * 0.05).toFixed(6) + ' USDC',
+                    tx_hash:        txHash,
+                  };
+
+            return res.status(proxyRes.status).json({
+                success: proxyRes.ok,
+                service: { id: service.id, name: service.name },
+                data:    responseData,
+                _x402:   x402Meta,
             });
+
+        } catch (err) {
+            // Network error (timeout, DNS, connection refused, abort) → retry
+            logger.warn('Proxy', `Network error for "${service.name}" (attempt ${attempt + 1}/${MAX_RETRIES}): ${err.message}`);
+            lastError = err;
+            continue;
         }
-
-        if (splitMode === 'legacy') {
-            logActivity('proxy_call', `Proxied call to "${service.name}" (${price} USDC)`, price, txHash);
-        }
-
-        // Build _x402 metadata
-        const x402Meta = splitMeta
-            ? {
-                payment:               price + ' USDC',
-                split_mode:            'native',
-                provider_share:        splitMeta.provider_amount + ' USDC',
-                platform_fee:          splitMeta.platform_amount + ' USDC',
-                tx_hash_provider:      splitMeta.tx_hash_provider,
-                tx_hash_platform:      splitMeta.tx_hash_platform,
-                platform_split_status: splitMeta.platform_split_status,
-              }
-            : {
-                payment:        price + ' USDC',
-                provider_share: (price * 0.95).toFixed(6) + ' USDC',
-                platform_fee:   (price * 0.05).toFixed(6) + ' USDC',
-                tx_hash:        txHash,
-              };
-
-        return res.status(proxyRes.status).json({
-            success: proxyRes.ok,
-            service: { id: service.id, name: service.name },
-            data:    responseData,
-            _x402:   x402Meta,
-        });
-
-    } catch (err) {
-        logger.error('Proxy', `Proxy call failed for "${service.name}": ${err.message}`);
-
-        // Even if the proxy call fails, record legacy payout (payment was received)
-        if (payoutManager && service.owner_address && splitMode === 'legacy') {
-            payoutManager.recordPayout({
-                serviceId:      service.id,
-                serviceName:    service.name,
-                providerWallet: service.owner_address,
-                grossAmount:    price,
-                txHashIn:       txHash,
-                chain: req.headers['x-payment-chain'] || 'base',
-            }).catch(err => {
-                logger.error('Proxy', `Failed to record fallback payout for "${service.name}": ${err.message}`);
-            });
-        }
-
-        const x402ErrMeta = splitMeta
-            ? {
-                payment:          price + ' USDC',
-                status:           'Payment received, split recorded. External API unreachable.',
-                tx_hash_provider: splitMeta.tx_hash_provider,
-              }
-            : {
-                payment: price + ' USDC',
-                status:  'Payment received, payout recorded. External API unreachable.',
-                tx_hash: txHash,
-              };
-
-        return res.status(502).json({
-            error:   'Bad Gateway',
-            message: 'The upstream service is temporarily unavailable. Your payment has been recorded.',
-            _x402:   x402ErrMeta,
-        });
     }
+
+    // --- ALL RETRIES EXHAUSTED ---
+    // DON'T call onSuccess → tx NOT consumed → user can retry with same hash
+    logger.error('Proxy', `All ${MAX_RETRIES} attempts failed for "${service.name}": ${lastError?.message}`);
+
+    return res.status(502).json({
+        error:   'Bad Gateway',
+        message: 'Upstream service unavailable. Payment NOT consumed \u2014 you can retry with the same transaction hash.',
+        _x402: {
+            retry_eligible: true,
+            tx_hash:        txHash,
+            payment:        price + ' USDC',
+            status:         'Payment verified but not consumed. Retry with the same X-Payment-TxHash.',
+        },
+    });
 }
 
 module.exports = createProxyRouter;
