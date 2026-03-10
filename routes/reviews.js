@@ -21,6 +21,23 @@ const logger = require('../lib/logger');
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Max drift accepted between client timestamp and server time (5 minutes)
+const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000;
+
+// Lazy-load viem recoverMessageAddress (ESM module via dynamic require fallback)
+let _recoverMessageAddress = null;
+function getRecoverMessageAddress() {
+    if (_recoverMessageAddress) return _recoverMessageAddress;
+    try {
+        // viem is a direct dependency — require works with commonjs interop
+        const viem = require('viem');
+        _recoverMessageAddress = viem.recoverMessageAddress;
+    } catch {
+        _recoverMessageAddress = null;
+    }
+    return _recoverMessageAddress;
+}
+
 // Strip HTML tags for comment sanitization
 function stripHtml(str) {
     return str.replace(/<[^>]*>/g, '').trim();
@@ -29,7 +46,11 @@ function stripHtml(str) {
 const reviewLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
-    keyGenerator: (req) => (req.headers['x-wallet-address'] || req.ip || '').toLowerCase(),
+    keyGenerator: (req) => {
+        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        const wallet = (req.headers['x-wallet-address'] || '').toLowerCase();
+        return `${ip}:${wallet}`;
+    },
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many reviews', message: 'Rate limit: max 10 reviews per hour per wallet.' }
@@ -66,6 +87,45 @@ function createReviewsRouter(supabase) {
                 error: 'Invalid rating',
                 message: 'rating must be an integer between 1 and 5'
             });
+        }
+
+        // Validate wallet signature (optional for backward compatibility)
+        const { signature, timestamp } = req.body;
+        let signatureVerified = false;
+
+        if (signature && timestamp) {
+            const ts = Number(timestamp);
+            if (isNaN(ts) || Math.abs(Date.now() - ts) > MAX_TIMESTAMP_DRIFT_MS) {
+                return res.status(400).json({
+                    error: 'Invalid timestamp',
+                    message: 'Timestamp must be within 5 minutes of server time (milliseconds).'
+                });
+            }
+
+            const recoverMessageAddress = getRecoverMessageAddress();
+            if (recoverMessageAddress) {
+                try {
+                    const message = `x402-review:${service_id}:${rating}:${timestamp}`;
+                    const recovered = await recoverMessageAddress({ message, signature });
+                    if (recovered.toLowerCase() === wallet.toLowerCase()) {
+                        signatureVerified = true;
+                    } else {
+                        return res.status(401).json({
+                            error: 'Signature mismatch',
+                            message: 'The signature does not match the declared wallet address.'
+                        });
+                    }
+                } catch (sigErr) {
+                    return res.status(400).json({
+                        error: 'Invalid signature',
+                        message: 'Could not recover address from signature.'
+                    });
+                }
+            } else {
+                logger.warn('Reviews', 'viem recoverMessageAddress unavailable — skipping signature check');
+            }
+        } else {
+            logger.warn('Reviews', `Review submitted without signature from wallet ${wallet.slice(0, 8)}... — not verified`);
         }
 
         // Validate + sanitize comment
@@ -140,8 +200,8 @@ function createReviewsRouter(supabase) {
             return res.status(500).json({ error: 'Failed to save review' });
         }
 
-        logger.info('Reviews', `Review submitted: service=${service_id} wallet=${wallet.slice(0, 8)}... rating=${ratingNum}`);
-        return res.status(201).json({ success: true, data });
+        logger.info('Reviews', `Review submitted: service=${service_id} wallet=${wallet.slice(0, 8)}... rating=${ratingNum} verified=${signatureVerified}`);
+        return res.status(201).json({ success: true, verified: signatureVerified, data });
     });
 
     // GET /api/reviews/:serviceId — Get reviews for a service

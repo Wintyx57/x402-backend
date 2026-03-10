@@ -347,6 +347,12 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             const chainKey = req.query.chain || 'base';
             if (!txHash) return res.status(400).json({ error: 'Missing ?tx= parameter' });
 
+            // Validate txHash format before any usage
+            const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+            if (!TX_HASH_REGEX.test(txHash)) {
+                return res.status(400).json({ error: 'Invalid tx hash format — expected 0x followed by 64 hex characters' });
+            }
+
             const { getChainConfig } = require('../lib/chains');
             const chain = getChainConfig(chainKey);
             const steps = [];
@@ -357,7 +363,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
                 const serverAddress = process.env.WALLET_ADDRESS?.toLowerCase();
                 steps.push({ step: 'serverAddress', address: serverAddress, env_set: !!process.env.WALLET_ADDRESS });
 
-                steps.push({ step: 'chain', chainKey, label: chain.label, rpcUrls: chain.rpcUrls, usdcContract: chain.usdcContract });
+                steps.push({ step: 'chain', chainKey, label: chain.label, rpcCount: (chain.rpcUrls || [chain.rpcUrl]).filter(Boolean).length, usdcContract: chain.usdcContract });
 
                 // Fetch receipt
                 const rpcUrl = chain.rpcUrls?.[0] || chain.rpcUrl;

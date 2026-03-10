@@ -266,7 +266,7 @@ app.use(createHealthRouter(supabase));
 app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
 app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager));
-app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity));
+app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity, adminDashboardLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 app.use(createMonitoringRouter(supabase));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));

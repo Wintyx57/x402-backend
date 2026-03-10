@@ -70,6 +70,79 @@ function createHealthRouter(supabase) {
         });
     });
 
+    // --- DEEP HEALTH CHECK ---
+    // Checks external dependencies: Supabase and Base RPC.
+    // Returns HTTP 200 if all deps are healthy, 503 if at least one is degraded.
+    router.get('/health/deep', async (req, res) => {
+        const { version } = require('../package.json');
+        const checks = {};
+        let allOk = true;
+
+        // 1. Supabase — simple count query on the services table
+        try {
+            const start = Date.now();
+            const { error } = await supabase
+                .from('services')
+                .select('*', { count: 'exact', head: true });
+            const latencyMs = Date.now() - start;
+            if (error) {
+                checks.supabase = { status: 'error', latency_ms: latencyMs, error: error.message };
+                allOk = false;
+            } else {
+                checks.supabase = { status: 'ok', latency_ms: latencyMs };
+            }
+        } catch (e) {
+            checks.supabase = { status: 'error', error: e.message };
+            allOk = false;
+        }
+
+        // 2. Base RPC — eth_blockNumber via the first available RPC URL
+        const baseRpcUrls = CHAINS.base ? CHAINS.base.rpcUrls : [];
+        let rpcChecked = false;
+        for (const rpcUrl of baseRpcUrls) {
+            try {
+                const start = Date.now();
+                const response = await fetch(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
+                    signal: AbortSignal.timeout(5000),
+                });
+                const latencyMs = Date.now() - start;
+                const json = await response.json();
+                if (json.result) {
+                    checks.rpc_base = {
+                        status: 'ok',
+                        latency_ms: latencyMs,
+                        block_number: parseInt(json.result, 16),
+                        url: rpcUrl,
+                    };
+                } else {
+                    checks.rpc_base = { status: 'error', latency_ms: latencyMs, url: rpcUrl, error: json.error?.message || 'No result' };
+                    allOk = false;
+                }
+                rpcChecked = true;
+                break;
+            } catch (e) {
+                // Try next RPC URL
+                logger.warn('health/deep', `RPC ${rpcUrl} unreachable: ${e.message}`);
+            }
+        }
+        if (!rpcChecked) {
+            checks.rpc_base = { status: 'error', error: 'All RPC endpoints unreachable' };
+            allOk = false;
+        }
+
+        const status = allOk ? 'ok' : 'degraded';
+        res.status(allOk ? 200 : 503).json({
+            status,
+            timestamp: new Date().toISOString(),
+            version,
+            uptime_seconds: Math.floor(process.uptime()),
+            checks,
+        });
+    });
+
     // --- ROUTE PUBLIQUE (Gratuite) ---
     router.get('/', async (req, res) => {
         let count = 0;

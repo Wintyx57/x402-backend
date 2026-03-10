@@ -448,7 +448,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 
         return res.status(502).json({
             error:   'Bad Gateway',
-            message: `External API call to "${service.name}" failed: ${err.message}`,
+            message: 'The upstream service is temporarily unavailable. Your payment has been recorded.',
             _x402:   x402ErrMeta,
         });
     }

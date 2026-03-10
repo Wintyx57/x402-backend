@@ -5,6 +5,7 @@ const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
 const { ServiceRegistrationSchema } = require('../schemas');
 const { verifyService } = require('../lib/service-verifier');
+const { safeUrl } = require('../lib/safe-url');
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
@@ -25,6 +26,16 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             return res.status(400).json({
                 error: 'Validation failed',
                 details: errors,
+            });
+        }
+
+        // SSRF protection: validate the service URL before inserting
+        try {
+            await safeUrl(validatedData.url);
+        } catch (urlErr) {
+            return res.status(400).json({
+                error: 'Invalid service URL',
+                message: 'URL must point to a publicly reachable address'
             });
         }
 
@@ -142,6 +153,14 @@ const WEBHOOK_TIMEOUT = 5000;
 
 async function notifyCommunityAgent({ name, description, price }) {
     if (!COMMUNITY_AGENT_WEBHOOK) return;
+
+    // SSRF protection: validate the webhook URL before fetching
+    try {
+        await safeUrl(COMMUNITY_AGENT_WEBHOOK);
+    } catch (e) {
+        logger.warn('Webhook', `Blocked unsafe webhook URL: ${e.message}`);
+        return;
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);

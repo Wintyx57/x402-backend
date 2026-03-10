@@ -35,8 +35,12 @@ async function getCachedBalance() {
     return balance;
 }
 
-function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity) {
+function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity, adminDashboardLimiter) {
     const router = express.Router();
+
+    // adminDashboardLimiter is applied on all /api/admin/* routes.
+    // Fall back to a no-op middleware if not provided (backward compatibility).
+    const adminRateLimit = adminDashboardLimiter || ((req, res, next) => next());
 
     // Redirect old dashboard to frontend admin
     router.get('/dashboard', (req, res) => {
@@ -230,7 +234,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Revenue overview ---
-    router.get('/api/admin/revenue', dashboardApiLimiter, adminAuth, async (req, res) => {
+    router.get('/api/admin/revenue', adminRateLimit, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
@@ -242,7 +246,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Pending payouts ---
-    router.get('/api/admin/payouts', dashboardApiLimiter, adminAuth, async (req, res) => {
+    router.get('/api/admin/payouts', adminRateLimit, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
@@ -254,7 +258,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // --- ADMIN: Mark payouts as paid ---
-    router.post('/api/admin/payouts/mark-paid', dashboardApiLimiter, adminAuth, async (req, res) => {
+    router.post('/api/admin/payouts/mark-paid', adminRateLimit, adminAuth, async (req, res) => {
         if (!payoutManager) {
             return res.status(501).json({ error: 'Payout system not configured' });
         }
@@ -283,7 +287,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     });
 
     // Daily E2E tester status (admin-only diagnostic)
-    router.get('/api/admin/daily-tester', adminAuth, (req, res) => {
+    router.get('/api/admin/daily-tester', adminRateLimit, adminAuth, (req, res) => {
         const { getDailyTesterStatus } = require('../lib/daily-tester');
         res.json(getDailyTesterStatus());
     });
