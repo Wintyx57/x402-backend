@@ -92,10 +92,18 @@ async function autoTestService(service, supabase) {
     const report = await verifyService(url);
 
     // Update service verified status in Supabase
+    const updateData = { verified_status: report.verdict, verified_at: new Date().toISOString() };
+
+    // Auto-save detected required_parameters if provider didn't provide them
+    if (report.detectedParams && !service.required_parameters) {
+        updateData.required_parameters = report.detectedParams;
+        logger.info('AutoTest', `Auto-detected required params for "${name}": ${report.detectedParams.required.join(', ')}`);
+    }
+
     try {
         await supabase
             .from('services')
-            .update({ verified_status: report.verdict, verified_at: new Date().toISOString() })
+            .update(updateData)
             .eq('id', id);
     } catch {
         // Column might not exist yet, that's OK
