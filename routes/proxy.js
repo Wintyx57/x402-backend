@@ -357,10 +357,27 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             }
         } catch { /* invalid URL — safeUrl already checked above */ }
 
-        const proxyRes = await fetch(service.url, {
-            method: service.method || 'GET',
+        // Build target URL: forward query params from request body/query to the service
+        let targetUrl = service.url;
+        const params = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+        // Also merge any query params from the incoming request
+        if (req.query && Object.keys(req.query).length > 0) {
+            Object.assign(params, req.query);
+        }
+        // For GET services: append params as query string
+        if (Object.keys(params).length > 0) {
+            const url = new URL(targetUrl);
+            for (const [key, value] of Object.entries(params)) {
+                if (value !== undefined && value !== null) {
+                    url.searchParams.set(key, String(value));
+                }
+            }
+            targetUrl = url.toString();
+        }
+
+        const proxyRes = await fetch(targetUrl, {
+            method: 'GET',
             headers: proxyHeaders,
-            body: service.method === 'POST' ? JSON.stringify(req.body) : undefined,
             signal: controller.signal,
         });
         clearTimeout(timeout);

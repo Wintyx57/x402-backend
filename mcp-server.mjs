@@ -631,9 +631,11 @@ server.tool(
                     if (matchingService) {
                         console.error(`[Split] Redirected Bazaar URL to proxy for split enforcement: ${url} → /api/call/${matchingService.id}`);
                         const proxyUrl = `${SERVER_URL}/api/call/${matchingService.id}`;
+                        // Preserve query params from original URL as body so proxy forwards them
+                        const originalParams = Object.fromEntries(parsedUrl.searchParams.entries());
                         const result = await payAndRequest(
                             proxyUrl,
-                            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) },
+                            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(originalParams) },
                             selectedChain,
                         );
                         result._split_enforced = true;
