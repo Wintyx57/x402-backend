@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 26/02/2026 — PHASE 1-3 COMPLETE + Bazaar Discovery LIVE)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 10/03/2026 — PHASE 1-3 COMPLETE + Gatekeeper + MCP v2.4.0)
 
 ### Vue d'ensemble
 
@@ -85,7 +85,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 
 **Localisation:** `HACKATHON/x402-bazaar-cli/`
 **npm package size:** 13.4 KB (11 fichiers)
-**Version actuelle:** x402-bazaar@3.0.0
+**Version actuelle:** x402-bazaar@3.1.0
 
 ```
 x402-bazaar-cli/
@@ -156,11 +156,12 @@ HACKATHON/
 │   │   ├── chains.js     # Config networks (Base, SKALE)
 │   │   ├── activity.js   # Activity tracking
 │   │   ├── payment.js    # Payment verification (with budget integration + Bazaar Discovery extensions)
-│   │   ├── bazaar-discovery.js # 69 declareDiscoveryExtension() + generateDiscoveryForService() (@x402/extensions v2.5.0)
+│   │   ├── bazaar-discovery.js # 69 declareDiscoveryExtension() + generateDiscoveryForService() + getInputSchemaForUrl() (@x402/extensions v2.5.0)
 │   │   ├── budget.js     # Budget Guardian (spending caps, alerts at 50/75/90%)
 │   │   ├── monitor.js    # Monitoring engine (69 endpoints, 5min checks, Telegram alerts)
-│   │   └── telegram-bot.js # Interactive Telegram bot (11 commands, polling, secured by chat_id)
-│   ├── mcp-server.mjs    # Serveur MCP v2.3.0 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, split 95/5)
+│   │   ├── service-verifier.js # Deep verification (chain, USDC, headers, auto-detect inputSchema from 402 body)
+│   │   └── telegram-bot.js # Interactive Telegram bot (12 commands incl /verif, polling, secured by chat_id)
+│   ├── mcp-server.mjs    # Serveur MCP v2.4.0 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, split 95/5, 10 tools incl export_private_key, auto-faucet CREDITS)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
@@ -201,9 +202,9 @@ HACKATHON/
 │   ├── data/              # settings.json, history.json, queue.json (persistent)
 │   └── package.json       # deps: dotenv, viem
 │
-├── n8n-nodes-x402-bazaar/  # n8n community node (GitHub: Wintyx57/n8n-nodes-x402-bazaar)
+├── n8n-nodes-x402-bazaar/  # n8n community node v1.4.0 (GitHub: Wintyx57/n8n-nodes-x402-bazaar)
 │   ├── credentials/         # X402BazaarCredentials (wallet key, network, budget)
-│   ├── nodes/X402Bazaar/    # Universal node (4 ops: Call API, List, Balance, Info)
+│   ├── nodes/X402Bazaar/    # Universal node (5 ops: Call API, List, Balance, Info, Register + split)
 │   └── package.json         # deps: viem (CJS), peerDep: n8n-workflow
 │
 ├── x402-fast-monetization-template/  # Template Python pour creer un wrapper x402 (FastAPI)
@@ -309,7 +310,7 @@ HACKATHON/
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
-   - 416 tests total (326 unit + 90 e2e, node:test, zero deps)
+   - ~858 tests total (785 backend [772 pass, 13 skipped E2E] + 73 safe-url tests + frontend)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
    - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
    - Rate limits optimized: paid requests (X-Payment-TxHash) skip rate limiting entirely
@@ -330,7 +331,10 @@ HACKATHON/
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
    - timingSafeCompare avec pad-to-maxLen (previent timing leak sur longueur)
    - X-Agent-Wallet validation regex `/^0x[a-fA-F0-9]{40}$/`
-   - SSRF centralise dans `lib/safe-url.js` (utilise par ai.js, intelligence.js, web.js)
+   - SSRF centralise dans `lib/safe-url.js` (utilise par ai.js, intelligence.js, web.js, service-verifier.js)
+   - Parameter Gatekeeper : validation des params requis AVANT paiement (400 + `_payment_status: not_charged`)
+   - 3-level required_parameters : (1) internal wrappers via `_inputSchemaMap` (62 endpoints), (2) external provider-submitted via Register, (3) auto-detected from 402 body via `extractInputSchema()`
+   - Auto-Faucet CREDITS SERVER-SIDE : `POST /api/faucet/claim` dans routes/health.js (rate limit 3/hr/IP). MCP appelle le backend via HTTP — plus besoin de `FAUCET_PRIVATE_KEY` en local. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a`. SKALE recommande dans tous les outils MCP payes.
    - Caching : public-stats 60s, RPC balance 5min, Cache-Control headers
 
 3. **Frontend React — 20 pages deployees** :
@@ -363,17 +367,19 @@ HACKATHON/
    - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base (--key wallet.json)
    - `npx x402-bazaar wallet` — gestion wallet agent
 
-5. **Ecosysteme (8 integrations)** :
+5. **Ecosysteme (10 integrations)** :
    - x402-langchain : package Python sur GitHub (Wintyx57/x402-langchain)
    - x402-autogpt-plugin : plugin Auto-GPT v0.1.0 sur GitHub (Wintyx57/x402-autogpt-plugin)
-   - x402-fast-monetization-template : template FastAPI
-   - n8n-nodes-x402-bazaar : n8n community node v1.0.0 sur GitHub (Wintyx57/n8n-nodes-x402-bazaar)
+   - x402-fast-monetization-template : template FastAPI/Flask (SKALE on Base)
+   - n8n-nodes-x402-bazaar : n8n community node v1.4.0 sur GitHub (Wintyx57/n8n-nodes-x402-bazaar) — 5 ops + split
    - Bazaar Discovery : @x402/extensions v2.5.0, 69 APIs avec inputSchema + exemples I/O dans reponses 402
+   - SDK : @wintyx/x402-sdk v1.0.3 sur npm (auto-wallet AES-256-GCM, dual ESM+CJS, 55 tests)
+   - MCP : v2.4.0 (10 tools incl export_private_key, setup_wallet enrichi SKALE)
    - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
 
 6. **Supabase** :
    - URL : https://kucrowtjsgusdxnjglug.supabase.co
-   - Tables : `services`, `activity`, `used_transactions`, `monitoring_checks`
+   - Tables : `services` (+ `required_parameters` JSONB), `activity`, `used_transactions`, `monitoring_checks`, `reviews`, `budgets`, `pending_payouts`, `daily_checks`, `migrations_applied`
 
 ### Credentials (NE PAS AFFICHER)
 
@@ -417,6 +423,7 @@ VITE_NETWORK=mainnet
 | MetaMask (reception) | 0xfb1c478BD5567BdcD39782E0D6D23418bFda2430 | WALLET_ADDRESS - recoit tous les paiements |
 | Server wallet | WALLET_ID 81a05b08 (addr 0x5E83...) | Coinbase SDK, 2.3 USDC, 0 ETH |
 | Agent wallet | Seed dans agent-seed.json (addr 0xA986...) | Utilise pour la demo agent mainnet |
+| Faucet wallet | 0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a | Distribue 0.01 CREDITS aux nouveaux wallets (15 CREDITS) |
 | Server seed wallet | Seed dans server-seed.json (wallet df759258) | Wallet vide, non utilise |
 
 ### Prochaines etapes
@@ -577,17 +584,49 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [x] Migrated from SKALE Europa (2046399126) to SKALE on Base (1187947933)
 - [x] ChainSelector component (Base / SKALE on Base toggle) — frontend LIVE
 - [x] Backend verifies SKALE payments on-chain (payment.js + X-Payment-Chain: skale)
-- [x] MCP v2.3.0: multi-chain (Base + SKALE), confirmations:2, legacy tx type for SKALE, native split 95/5
+- [x] MCP v2.4.0: multi-chain (Base + SKALE), confirmations:2, legacy tx type for SKALE, native split 95/5, 10 tools (incl export_private_key, enriched setup_wallet)
 - [x] Marketing fix: "zero gas"/"FREE" → "ultra-low gas"/"~$0.0007" across all files
 - [x] Payment verification fix: server-side retry (4 attempts × 3s) for receipt + confirmations
 - [x] **SKALE payment tested & confirmed on-chain** (joke API paid via SKALE)
 - Gas: ~$0.0007/tx via CREDITS token (10 USDC = 40 CREDITS = ~10K transfers)
 - Agent wallet needs CREDITS for gas (send from MetaMask on SKALE on Base network)
+- [x] **Auto-Faucet CREDITS SERVER-SIDE**: `POST /api/faucet/claim` dans routes/health.js. MCP appelle le backend via HTTP. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a` (15 CREDITS). `FAUCET_PRIVATE_KEY` sur Render uniquement. SKALE recommande dans tous les outils MCP.
+
+### Session 56 — Auto-Faucet CREDITS + InputSchemaMap Fixes (10/03/2026)
+- [x] **InputSchemaMap audit**: fixed 3 mismatches — airquality (`city`→`lat,lon`), geocoding (`address`→`city`), headers (missing→added `url`)
+- [x] **Auto-Faucet CREDITS**: `autoFundCredits()` in mcp-server.mjs — 0.01 CREDITS to new wallets with 0 balance. Faucet wallet `0x73FE...0a30` (15 CREDITS ~1499 drips). `FAUCET_PRIVATE_KEY` env var on Render.
+- [x] **setup_wallet restructured**: separate `chains: { base, skale }` blocks, `auto_faucet` result
+- [x] **MetaMask mentions removed** from MCP export_private_key + console.error
+- [x] **Live tested**: 0.01 CREDITS sent to fresh wallet — SUCCESS
+- [x] Backend commits: `d4fd558` (inputSchemaMap fixes), `355467e` (auto-faucet + restructure). All pushed.
+
+### Session 57 — Faucet Server-Side Migration + SKALE Emphasis (10/03/2026)
+- [x] **Faucet migre cote serveur**: `POST /api/faucet/claim` dans routes/health.js (viem, rate limit 3/hr/IP, validation adresse, check balance CREDITS, envoi 0.01 CREDITS)
+- [x] **MCP autoFundCredits() simplifie**: ~40 lignes → ~15 lignes, appel HTTP au backend. Plus besoin de `FAUCET_PRIVATE_KEY` en local.
+- [x] **SKALE emphasis**: les 5 outils MCP payes recommandent SKALE (`"skale" (ultra-low gas)`), setup_wallet priorise SKALE dans next_steps
+- [x] **Live tested**: faucet endpoint fonctionne sur Render (already_has_credits, funded, invalid_address, rate_limited — tous OK)
+- [x] Backend commit: `cf8dece`. MCP copie dans runtime dir. All pushed.
+
+### Session 58 — Full Production Audit + 34 Fixes + 159 Tests (10/03/2026)
+- [x] **6-agent parallel audit**: security, code review, performance, tests, infrastructure, API design — comprehensive production readiness review
+- [x] **Security fixes (9)**: trust proxy `1` (was missing); CORS `!origin → false` (blocked null origin); err.message masked in faucet + /health/deep (x3); faucet balance check before send; adminAuthLimiter `skipSuccessfulRequests` removed; uncaughtException handler with graceful shutdown; prototype pollution protection in proxy required_parameters; faucet_not_configured → HTTP 503
+- [x] **Performance fixes (7)**: fetchWithTimeout timer leak (clearTimeout on success); hoist `require('../package.json')` to module level; hoist viem publicClient as singleton; `.limit(500)` on monitor loadPreviousStatuses; `.limit(5000)` on public-stats activity; enrichWithParams short-circuit; Cache-Control on openapi.json
+- [x] **Infrastructure fixes (10)**: Dockerfile remove dashboard.html + --chown node_modules + pin node:20.19-alpine; .node-version file; CI permissions block + SHA-pinned actions (8 occurrences) + security gate; retention.js .unref(); monitor.js .unref() x2; FAUCET_PRIVATE_KEY in render.yaml; unhandledRejection stack trace; engines >=20.19.0
+- [x] **Code quality fixes (8)**: SELECT * → SERVICE_COLUMNS (services.js x2); float → integer math in split display (proxy.js x2); NETWORK warning (chains.js); activity.js .then→.catch; dead ServiceListQuerySchema removed; budget.js explicit columns; select('*', head:true) → select('id',...) x3; reviews signature mandatory in production
+- [x] **159 new tests**: faucet.test.js (19), gatekeeper.test.js (57), payment-edge-cases.test.js (31), proxy-unit.test.js (40), retention.test.js (12)
+- [x] **Total: 785 tests** (772 pass, 0 fail, 13 skipped E2E). 24 files changed, 1766 insertions, 106 deletions.
+- [x] Backend commit: `ef78ba3`. All pushed → auto-deploy Render.
+
+### Session 59 — Hotfix Production Crash (10/03/2026)
+- [x] **Root cause 1**: `activity.js` — audit changed `.then(null, handler)` to `.catch(handler)`, but Supabase PostgrestFilterBuilder has NO `.catch()` method → `TypeError` on every `logActivity()` call → all paid endpoints crash (500 instead of 402)
+- [x] **Root cause 2**: `reviews.js` — express-rate-limit v7 IPv6 validation error with `trust proxy: 1` enabled. Custom `keyGenerator` using `req.ip` directly throws `ValidationError` at module load. Fixed with `validate: { keyGeneratorIpFallback: false }`
+- [x] **Cascade effect**: payment middleware calls `logActivity('402',...)` → crash → global error handler calls `logActivity('error',...)` → crash again → raw HTML 500 response
+- [x] All 785 tests pass (772 pass, 0 fail, 13 skipped). Backend `f74d7e7`. All pushed.
 
 ### P1 — Scale & Polish
-- Scale APIs 61→100, Agent SDK JS/TS, Ratings & Reviews, Landing refonte
+- Scale APIs 69→100, Agent SDK JS/TS, Ratings & Reviews, Landing refonte
 
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 05/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 9 integrations + SKALE on Base WORKING + Native on-chain 95/5 split across all 4 clients (backend, CLI v3.1.0, MCP v2.3.0, n8n v1.4.0)*
+*Derniere mise a jour: 10/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.0 (10 tools) + SDK v1.0.3 + n8n v1.4.0 + Session 59 Hotfix*
