@@ -14,7 +14,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
-    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at';
+    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters';
 
     // --- LISTE DES SERVICES (0.05 USDC) ---
     router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "List Services"), async (req, res) => {
