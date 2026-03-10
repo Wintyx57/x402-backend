@@ -8,12 +8,13 @@ const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment'
 const { ServiceSearchSchema } = require('../schemas/index');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
+const { getInputSchemaForUrl } = require('../lib/bazaar-discovery');
 
 function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
-    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at';
+    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters';
 
     // --- LISTE DES SERVICES (0.05 USDC) ---
     router.get('/services', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "List Services"), async (req, res) => {
@@ -198,7 +199,15 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
                 return res.status(404).json({ error: 'Service not found' });
             }
 
-            res.json(data);
+            // Enrich with inputSchema from discoveryMap for internal wrappers
+            const enriched = { ...data };
+            if (!enriched.required_parameters) {
+                const schema = getInputSchemaForUrl(data.url);
+                if (schema) {
+                    enriched.required_parameters = schema;
+                }
+            }
+            res.json(enriched);
         } catch (err) {
             logger.error('Supabase', `/api/services/:id error: ${err.message}`);
             res.status(500).json({ error: 'Internal server error' });

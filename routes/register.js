@@ -48,6 +48,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             tags: validatedData.tags,
         };
         if (txHash) insertData.tx_hash = txHash;
+        if (validatedData.required_parameters) {
+            insertData.required_parameters = validatedData.required_parameters;
+        }
 
         const { data, error } = await supabase
             .from('services')

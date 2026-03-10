@@ -5,6 +5,7 @@ const express = require('express');
 const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
+const { getInputSchemaForUrl } = require('../lib/bazaar-discovery');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -41,12 +42,34 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('id, name, url, price_usdc, owner_address, tags, description')
+            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters')
             .eq('id', serviceId)
             .single();
 
         if (fetchErr || !service) {
             return res.status(404).json({ error: 'Service not found' });
+        }
+
+        // --- GATEKEEPER: validate required parameters BEFORE payment ---
+        const inputSchema = service.required_parameters || getInputSchemaForUrl(service.url);
+        if (inputSchema && inputSchema.required && inputSchema.required.length > 0) {
+            const params = {};
+            if (req.body && typeof req.body === 'object') Object.assign(params, req.body);
+            if (req.query && Object.keys(req.query).length > 0) Object.assign(params, req.query);
+
+            const missing = inputSchema.required.filter(p =>
+                params[p] === undefined || params[p] === null || params[p] === ''
+            );
+
+            if (missing.length > 0) {
+                return res.status(400).json({
+                    error: 'Missing required parameters',
+                    missing,
+                    required_parameters: inputSchema,
+                    message: `This service requires: ${missing.join(', ')}. No payment was made.`,
+                    _payment_status: 'not_charged',
+                });
+            }
         }
 
         // 3. Determine the price (from service or override)

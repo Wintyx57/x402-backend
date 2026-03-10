@@ -42,6 +42,14 @@ const ServiceRegistrationSchema = z.object({
     .max(10, 'Maximum 10 tags allowed')
     .optional()
     .default([]),
+
+  required_parameters: z
+    .object({
+        properties: z.record(z.any()).optional(),
+        required: z.array(z.string().max(100)).max(50).optional(),
+    })
+    .optional()
+    .nullable(),
 });
 
 
