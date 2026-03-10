@@ -53,8 +53,8 @@ const CHAINS = {
 
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
 const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
-const DEFAULT_CHAIN_KEY = process.env.NETWORK === 'skale' ? 'skale'
-    : (process.env.NETWORK === 'testnet' ? 'base-sepolia' : 'base');
+const DEFAULT_CHAIN_KEY = process.env.NETWORK === 'testnet' ? 'base-sepolia'
+    : (process.env.NETWORK === 'base' ? 'base' : 'skale');
 
 const USDC_ABI = parseAbi([
     'function transfer(address to, uint256 amount) returns (bool)',
@@ -452,7 +452,7 @@ server.tool(
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
     },
     async ({ query, chain: chainKey }) => {
         try {
@@ -478,7 +478,7 @@ server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
     },
     async ({ chain: chainKey }) => {
         try {
@@ -501,7 +501,7 @@ server.tool(
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
     },
     async ({ task, chain: chainKey }) => {
         try {
@@ -565,7 +565,7 @@ server.tool(
     {
         service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
         body: z.string().optional().describe('Optional JSON body string to send with the request (e.g. \'{"query":"hello"}\')'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
     },
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
@@ -644,7 +644,7 @@ server.tool(
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         url: z.string().url().describe('The full API URL to call'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
     },
     async ({ url, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
