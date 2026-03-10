@@ -34,7 +34,7 @@
   "homepage": "https://x402bazaar.org",
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19.0"
   },
   "dependencies": {
     "@coinbase/coinbase-sdk": "^0.25.0",

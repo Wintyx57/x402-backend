@@ -54,3 +54,5 @@ services:
       #   value: "true"
       # - key: GEMINI_API_KEY
       #   sync: false
+      - key: FAUCET_PRIVATE_KEY
+        sync: false

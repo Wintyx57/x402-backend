@@ -59,9 +59,10 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
             if (req.body && typeof req.body === 'object') Object.assign(params, req.body);
             if (req.query && Object.keys(req.query).length > 0) Object.assign(params, req.query);
 
-            const missing = inputSchema.required.filter(p =>
-                params[p] === undefined || params[p] === null || params[p] === ''
-            );
+            const DANGEROUS_PROPS = ['__proto__', 'constructor', 'prototype'];
+            const missing = inputSchema.required
+                .filter(p => typeof p === 'string' && !DANGEROUS_PROPS.includes(p))
+                .filter(p => params[p] === undefined || params[p] === null || params[p] === '');
 
             if (missing.length > 0) {
                 return res.status(400).json({
@@ -131,9 +132,12 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
             res.json = function(body) {
                 if (res.statusCode === 402 && body && body.payment_details) {
                     body.payment_details.provider_wallet = service.owner_address;
+                    const grossRaw = Math.round(price * 1e6);
+                    const platformRaw = Math.floor(grossRaw * 5 / 100);
+                    const providerRaw = grossRaw - platformRaw;
                     body.payment_details.split = {
-                        provider_amount: parseFloat((price * 0.95).toFixed(6)),
-                        platform_amount: parseFloat((price * 0.05).toFixed(6)),
+                        provider_amount: providerRaw / 1e6,
+                        platform_amount: platformRaw / 1e6,
                         provider_percent: 95,
                         platform_percent: 5,
                     };
@@ -484,12 +488,17 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                     tx_hash_platform:      splitMeta.tx_hash_platform,
                     platform_split_status: splitMeta.platform_split_status,
                   }
-                : {
-                    payment:        price + ' USDC',
-                    provider_share: (price * 0.95).toFixed(6) + ' USDC',
-                    platform_fee:   (price * 0.05).toFixed(6) + ' USDC',
-                    tx_hash:        txHash,
-                  };
+                : (() => {
+                    const grossRaw = Math.round(price * 1e6);
+                    const platformRaw = Math.floor(grossRaw * 5 / 100);
+                    const providerRaw = grossRaw - platformRaw;
+                    return {
+                        payment:        price + ' USDC',
+                        provider_share: (providerRaw / 1e6).toFixed(6) + ' USDC',
+                        platform_fee:   (platformRaw / 1e6).toFixed(6) + ' USDC',
+                        tx_hash:        txHash,
+                    };
+                  })();
 
             return res.status(proxyRes.status).json({
                 success: proxyRes.ok,

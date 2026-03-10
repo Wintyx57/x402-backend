@@ -7,6 +7,7 @@ const { privateKeyToAccount } = require('viem/accounts');
 const { NETWORK, CHAINS, NETWORK_LABEL, DEFAULT_CHAIN_KEY } = require('../lib/chains');
 const { verifyAgent, getAgentInfo, IDENTITY_REGISTRY, REPUTATION_REGISTRY } = require('../erc8004');
 const logger = require('../lib/logger');
+const { version: PKG_VERSION } = require('../package.json');
 
 // SKALE on Base chain definition for viem
 const skaleOnBase = defineChain({
@@ -16,6 +17,9 @@ const skaleOnBase = defineChain({
     rpcUrls: { default: { http: [CHAINS.skale?.rpcUrl || 'https://skale-base.skalenodes.com/v1/base'] } },
     blockExplorers: { default: { name: 'SKALE Explorer', url: CHAINS.skale?.explorer || 'https://skale-base-explorer.skalenodes.com' } },
 });
+
+// Singleton public client for SKALE — avoids re-creating on every faucet request
+const _skalePublicClient = createPublicClient({ chain: skaleOnBase, transport: http() });
 
 // Faucet rate limiter: 3 requests per IP per hour
 const faucetLimiter = rateLimit({
@@ -32,6 +36,7 @@ function createHealthRouter(supabase) {
     // --- OpenAPI spec for GPT Actions ---
     const openApiSpec = require('../openapi.json');
     router.get('/.well-known/openapi.json', (req, res) => {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
         res.json(openApiSpec);
     });
 
@@ -76,7 +81,6 @@ function createHealthRouter(supabase) {
 
     // --- HEALTH CHECK ---
     router.get('/health', (req, res) => {
-        const { version } = require('../package.json');
         const supportedNetworks = Object.entries(CHAINS)
             .filter(([key]) => NETWORK === 'testnet' ? key === 'base-sepolia' : key !== 'base-sepolia')
             .map(([key, cfg]) => ({ network: key, label: cfg.label, chainId: cfg.chainId }));
@@ -85,7 +89,7 @@ function createHealthRouter(supabase) {
             network: NETWORK_LABEL,
             networks: supportedNetworks,
             timestamp: new Date().toISOString(),
-            version,
+            version: PKG_VERSION,
             uptime_seconds: Math.floor(process.uptime()),
             ...(process.env.NODE_ENV !== 'production' && { node_version: process.version }),
         });
@@ -95,7 +99,6 @@ function createHealthRouter(supabase) {
     // Checks external dependencies: Supabase and Base RPC.
     // Returns HTTP 200 if all deps are healthy, 503 if at least one is degraded.
     router.get('/health/deep', async (req, res) => {
-        const { version } = require('../package.json');
         const checks = {};
         let allOk = true;
 
@@ -104,16 +107,18 @@ function createHealthRouter(supabase) {
             const start = Date.now();
             const { error } = await supabase
                 .from('services')
-                .select('*', { count: 'exact', head: true });
+                .select('id', { count: 'exact', head: true });
             const latencyMs = Date.now() - start;
             if (error) {
-                checks.supabase = { status: 'error', latency_ms: latencyMs, error: error.message };
+                logger.error('HealthDeep', 'Supabase check failed:', error.message);
+                checks.supabase = { status: 'error', latency_ms: latencyMs };
                 allOk = false;
             } else {
                 checks.supabase = { status: 'ok', latency_ms: latencyMs };
             }
         } catch (e) {
-            checks.supabase = { status: 'error', error: e.message };
+            logger.error('HealthDeep', 'Supabase check exception:', e.message);
+            checks.supabase = { status: 'error' };
             allOk = false;
         }
 
@@ -158,7 +163,7 @@ function createHealthRouter(supabase) {
         res.status(allOk ? 200 : 503).json({
             status,
             timestamp: new Date().toISOString(),
-            version,
+            version: PKG_VERSION,
             uptime_seconds: Math.floor(process.uptime()),
             checks,
         });
@@ -168,7 +173,7 @@ function createHealthRouter(supabase) {
     router.get('/', async (req, res) => {
         let count = 0;
         try {
-            const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+            const result = await supabase.from('services').select('id', { count: 'exact', head: true });
             count = result.count || 0;
         } catch (err) {
             logger.error('Root', 'Supabase error:', err.message);
@@ -252,12 +257,12 @@ function createHealthRouter(supabase) {
         // 2. Check FAUCET_PRIVATE_KEY
         const faucetKey = process.env.FAUCET_PRIVATE_KEY;
         if (!faucetKey) {
-            return res.json({ funded: false, reason: 'faucet_not_configured' });
+            return res.status(503).json({ funded: false, reason: 'faucet_not_configured' });
         }
 
         try {
-            // 3. Check target CREDITS balance on SKALE
-            const pubClient = createPublicClient({ chain: skaleOnBase, transport: http() });
+            // 3. Check target CREDITS balance on SKALE (reuse singleton client)
+            const pubClient = _skalePublicClient;
             const balance = await pubClient.getBalance({ address });
 
             // If already has CREDITS (> 0.001), skip
@@ -269,9 +274,17 @@ function createHealthRouter(supabase) {
                 });
             }
 
-            // 4. Create faucet wallet client
+            // 4. Create faucet wallet + check faucet balance
             const normalizedKey = faucetKey.startsWith('0x') ? faucetKey : `0x${faucetKey}`;
             const faucetAccount = privateKeyToAccount(normalizedKey);
+            const DRIP_AMOUNT = 10_000_000_000_000_000n; // 0.01 CREDITS
+
+            const faucetBalance = await pubClient.getBalance({ address: faucetAccount.address });
+            if (faucetBalance < DRIP_AMOUNT * 2n) {
+                logger.warn('Faucet', `Low faucet balance: ${(Number(faucetBalance) / 1e18).toFixed(6)} CREDITS`);
+                return res.json({ funded: false, reason: 'faucet_low_balance' });
+            }
+
             const faucetWallet = createWalletClient({
                 account: faucetAccount,
                 chain: skaleOnBase,
@@ -279,7 +292,6 @@ function createHealthRouter(supabase) {
             });
 
             // 5. Send 0.01 CREDITS (~10 transactions worth)
-            const DRIP_AMOUNT = 10_000_000_000_000_000n; // 0.01 CREDITS
             const txHash = await faucetWallet.sendTransaction({
                 to: address,
                 value: DRIP_AMOUNT,
@@ -298,7 +310,7 @@ function createHealthRouter(supabase) {
             });
         } catch (err) {
             logger.error('Faucet', `Failed to fund ${address}: ${err.message}`);
-            res.status(500).json({ funded: false, reason: 'error', error: err.message });
+            res.status(500).json({ funded: false, reason: 'send_failed' });
         }
     });
 

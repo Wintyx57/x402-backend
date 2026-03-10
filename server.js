@@ -79,6 +79,7 @@ const { paymentMiddleware } = paymentSystem;
 
 // --- Express app ---
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
 
 // --- SECURITY HEADERS (Helmet) ---
@@ -121,7 +122,7 @@ const ALLOWED_ORIGINS = process.env.NODE_ENV === 'production'
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true);
+        if (!origin) return callback(null, false);
         if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
         callback(new Error('CORS not allowed'));
     },
@@ -199,7 +200,6 @@ const adminAuthLimiter = rateLimit({
     max: 10,
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: true,
     message: { error: 'Too many requests', message: 'Too many admin auth attempts. Try again in 5 minutes.' }
 });
 
@@ -294,7 +294,7 @@ app.use((err, req, res, next) => {
 const serverInstance = app.listen(PORT, async () => {
     let count = 0;
     try {
-        const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+        const result = await supabase.from('services').select('id', { count: 'exact', head: true });
         count = result.count || 0;
     } catch (err) { logger.warn('server', `Failed to count services at startup: ${err.message}`); }
     const maskedWallet = process.env.WALLET_ADDRESS
@@ -368,5 +368,10 @@ async function gracefulShutdown(signal) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('unhandledRejection', (reason) => {
-    logger.error('process', `Unhandled rejection: ${reason}`);
+    logger.error('process', `Unhandled rejection: ${reason?.stack || reason}`);
+});
+
+process.on('uncaughtException', (err) => {
+    logger.error('process', `Uncaught exception: ${err.stack || err.message}`);
+    gracefulShutdown('uncaughtException').catch(() => process.exit(1));
 });

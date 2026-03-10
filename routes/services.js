@@ -20,10 +20,9 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     function enrichWithParams(services) {
         if (!Array.isArray(services)) return services;
         return services.map(s => {
-            if (!s.required_parameters) {
-                const schema = getInputSchemaForUrl(s.url);
-                if (schema) return { ...s, required_parameters: schema };
-            }
+            if (s.required_parameters) return s;
+            const schema = getInputSchemaForUrl(s.url);
+            if (schema) return { ...s, required_parameters: schema };
             return s;
         });
     }
@@ -77,7 +76,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
         const { data, error } = await supabase
             .from('services')
-            .select('*')
+            .select(SERVICE_COLUMNS)
             .or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
 
         if (error) {
@@ -310,7 +309,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             // Fetch service from DB
             const { data: services, error: fetchErr } = await supabase
                 .from('services')
-                .select('*')
+                .select('id, name, url, price_usdc, verified_status, owner_address, required_parameters')
                 .eq('id', id)
                 .limit(1);
 

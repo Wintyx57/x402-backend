@@ -19,6 +19,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const logger = require('../lib/logger');
 const { UUID_REGEX } = require('../lib/payment');
+const { NETWORK } = require('../lib/chains');
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
@@ -135,8 +136,10 @@ function createReviewsRouter(supabase) {
             } else {
                 logger.warn('Reviews', 'viem recoverMessageAddress unavailable — skipping signature check');
             }
+        } else if (NETWORK !== 'testnet') {
+            return res.status(400).json({ error: 'Signature required', message: 'Reviews require wallet signature in production.' });
         } else {
-            logger.warn('Reviews', `Review submitted without signature from wallet ${wallet.slice(0, 8)}... — not verified`);
+            logger.warn('Reviews', `Review submitted without signature from ${wallet.slice(0, 8)}... (testnet mode — allowed)`);
         }
 
         // Validate + sanitize comment

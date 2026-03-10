@@ -124,7 +124,7 @@ function createMonitoringRouter(supabase, statsLimiter) {
       supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'api_call').gte('created_at', since24h),
       supabase.from('monitoring_checks').select('status').gte('checked_at', since24h),
       supabase.from('services').select('url, name, owner_address'),
-      supabase.from('activity').select('detail').eq('type', 'payment'),
+      supabase.from('activity').select('detail').eq('type', 'payment').order('created_at', { ascending: false }).limit(5000),
     ]);
 
     // Extraire chaque resultat avec fallback

@@ -70,50 +70,6 @@ const ServiceSearchSchema = z.object({
     ),
 });
 
-// ─── Service List Query Schema ─────────────────────────────────────────
-/**
- * Schema for GET /api/services query parameters with filters
- * Validates filtering and pagination parameters
- */
-const ServiceListQuerySchema = z.object({
-  q: z
-    .string()
-    .trim()
-    .max(100, 'Search query must be at most 100 characters')
-    .optional(),
-
-  chain: z
-    .enum(['base', 'skale', 'ethereum', 'optimism', 'arbitrum'])
-    .optional(),
-
-  category: z
-    .string()
-    .trim()
-    .max(50, 'Category must be at most 50 characters')
-    .optional(),
-
-  free: z
-    .enum(['true', 'false'])
-    .transform((val) => val === 'true')
-    .optional(),
-
-  limit: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .refine((val) => !isNaN(val), 'limit must be a number')
-    .refine((val) => val > 0 && val <= 100, 'limit must be between 1 and 100')
-    .optional()
-    .default('20'),
-
-  offset: z
-    .string()
-    .transform((val) => parseInt(val, 10))
-    .refine((val) => !isNaN(val), 'offset must be a number')
-    .refine((val) => val >= 0, 'offset must be at least 0')
-    .optional()
-    .default('0'),
-});
-
 
 // ─── Web Scraper URL Schema ────────────────────────────────────────────
 /**
