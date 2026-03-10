@@ -41,7 +41,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('id, name, url, method, price_usdc, owner_address, chain')
+            .select('id, name, url, price_usdc, owner_address, tags, description')
             .eq('id', serviceId)
             .single();
 
