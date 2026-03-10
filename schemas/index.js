@@ -214,7 +214,6 @@ const CodeExecutionSchema = z.object({
 module.exports = {
   ServiceRegistrationSchema,
   ServiceSearchSchema,
-  ServiceListQuerySchema,
   ScraperUrlSchema,
   WebSearchQuerySchema,
   ImageGenerationSchema,

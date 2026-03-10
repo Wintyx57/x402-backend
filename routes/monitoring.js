@@ -8,7 +8,7 @@ const { getStatus, getEndpoints } = require('../lib/monitor');
 const STATS_CACHE = { data: null, ts: 0 };
 const STATS_TTL = 60_000;
 
-function createMonitoringRouter(supabase) {
+function createMonitoringRouter(supabase, statsLimiter) {
   const router = express.Router();
 
   // GET /api/status — Current status of all endpoints (public, free)
@@ -21,7 +21,7 @@ function createMonitoringRouter(supabase) {
   });
 
   // GET /api/status/uptime?period=24h|7d|30d — Uptime % per endpoint
-  router.get('/api/status/uptime', async (req, res) => {
+  router.get('/api/status/uptime', statsLimiter, async (req, res) => {
     const period = req.query.period || '24h';
 
     const periodMap = {
@@ -96,7 +96,7 @@ function createMonitoringRouter(supabase) {
   });
 
   // GET /api/public-stats — Public stats for homepage + analytics (no auth required)
-  router.get('/api/public-stats', async (req, res) => {
+  router.get('/api/public-stats', statsLimiter, async (req, res) => {
     // Servir depuis le cache si encore frais (TTL 60s)
     if (STATS_CACHE.data && Date.now() - STATS_CACHE.ts < STATS_TTL) {
       res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
@@ -224,7 +224,7 @@ function createMonitoringRouter(supabase) {
   });
 
   // GET /api/status/history?endpoint=/api/weather&limit=50 — Check history for one endpoint
-  router.get('/api/status/history', async (req, res) => {
+  router.get('/api/status/history', statsLimiter, async (req, res) => {
     const endpoint = req.query.endpoint;
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
 

@@ -4,7 +4,7 @@
 
 const express = require('express');
 const logger = require('../lib/logger');
-const { fetchWithTimeout } = require('../lib/payment');
+const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
 const { ServiceSearchSchema } = require('../schemas/index');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
@@ -57,15 +57,14 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
         const query = parseResult.data.q;
 
-        // Sanitize: escape special Postgres LIKE characters
-        const sanitized = query.replace(/[%_\\]/g, '\\$&');
+        // Sanitize: whitelist only safe characters to prevent ILIKE injection
+        const safe = query.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().slice(0, 100);
+        if (!safe) return res.status(400).json({ error: 'Invalid search query' });
 
-        // Recherche floue sur name et description
-        const pgSafe = sanitized.replace(/[(),."']/g, '');
         const { data, error } = await supabase
             .from('services')
             .select('*')
-            .or(`name.ilike.%${pgSafe}%,description.ilike.%${pgSafe}%`);
+            .or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
 
         if (error) {
             logger.error('Supabase', '/search error:', error.message);
@@ -185,14 +184,13 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             const { id } = req.params;
 
             // Validate UUID format
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-            if (!uuidRegex.test(id)) {
+            if (!UUID_REGEX.test(id)) {
                 return res.status(400).json({ error: 'Invalid service ID format' });
             }
 
             const { data, error } = await supabase
                 .from('services')
-                .select('*')
+                .select(SERVICE_COLUMNS)
                 .eq('id', id)
                 .single();
 
@@ -348,7 +346,6 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             if (!txHash) return res.status(400).json({ error: 'Missing ?tx= parameter' });
 
             // Validate txHash format before any usage
-            const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
             if (!TX_HASH_REGEX.test(txHash)) {
                 return res.status(400).json({ error: 'Invalid tx hash format — expected 0x followed by 64 hex characters' });
             }

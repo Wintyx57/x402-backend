@@ -14,12 +14,13 @@
 // CREATE UNIQUE INDEX idx_reviews_unique ON reviews(service_id, wallet_address);
 // -----------------------------------------------------
 
+const crypto = require('crypto');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const logger = require('../lib/logger');
+const { UUID_REGEX } = require('../lib/payment');
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Max drift accepted between client timestamp and server time (5 minutes)
 const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000;
@@ -54,6 +55,13 @@ const reviewLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many reviews', message: 'Rate limit: max 10 reviews per hour per wallet.' }
+});
+
+const readLimiter = rateLimit({
+    windowMs: 60000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false
 });
 
 function createReviewsRouter(supabase) {
@@ -105,7 +113,10 @@ function createReviewsRouter(supabase) {
             const recoverMessageAddress = getRecoverMessageAddress();
             if (recoverMessageAddress) {
                 try {
-                    const message = `x402-review:${service_id}:${rating}:${timestamp}`;
+                    const commentHash = comment
+                        ? crypto.createHash('sha256').update(comment).digest('hex').slice(0, 8)
+                        : 'nocomment';
+                    const message = `x402-review:${service_id}:${rating}:${commentHash}:${timestamp}`;
                     const recovered = await recoverMessageAddress({ message, signature });
                     if (recovered.toLowerCase() === wallet.toLowerCase()) {
                         signatureVerified = true;
@@ -205,7 +216,7 @@ function createReviewsRouter(supabase) {
     });
 
     // GET /api/reviews/:serviceId — Get reviews for a service
-    router.get('/api/reviews/:serviceId', async (req, res) => {
+    router.get('/api/reviews/:serviceId', readLimiter, async (req, res) => {
         const { serviceId } = req.params;
 
         if (!UUID_REGEX.test(serviceId)) {
@@ -240,7 +251,7 @@ function createReviewsRouter(supabase) {
     });
 
     // GET /api/reviews/:serviceId/stats — Aggregate stats
-    router.get('/api/reviews/:serviceId/stats', async (req, res) => {
+    router.get('/api/reviews/:serviceId/stats', readLimiter, async (req, res) => {
         const { serviceId } = req.params;
 
         if (!UUID_REGEX.test(serviceId)) {

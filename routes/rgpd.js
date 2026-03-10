@@ -1,16 +1,20 @@
 // routes/rgpd.js — RGPD data access & deletion endpoints (Art. 15 & 17 GDPR)
 
 const express = require('express');
-const { ethers } = require('ethers');
+const { verifyMessage } = require('viem');
+const logger = require('../lib/logger');
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 // Verify a signed message to prove wallet ownership
 // Message format: "x402 RGPD request: <action> <wallet> <timestamp>"
-function verifyWalletOwnership(wallet, message, signature) {
+async function verifyWalletOwnership(wallet, message, signature) {
     try {
-        const recovered = ethers.verifyMessage(message, signature);
-        return recovered.toLowerCase() === wallet.toLowerCase();
+        return await verifyMessage({
+            address: /** @type {`0x${string}`} */ (wallet),
+            message,
+            signature: /** @type {`0x${string}`} */ (signature),
+        });
     } catch {
         return false;
     }
@@ -38,7 +42,7 @@ function createRgpdRouter(supabase) {
             });
         }
 
-        if (!verifyWalletOwnership(wallet, message, signature)) {
+        if (!await verifyWalletOwnership(wallet, message, signature)) {
             return res.status(401).json({ error: 'Signature verification failed. Sign the message with your wallet.' });
         }
 
@@ -75,7 +79,8 @@ function createRgpdRouter(supabase) {
                 }
             });
         } catch (err) {
-            return res.status(500).json({ error: 'Failed to retrieve data', details: err.message });
+            logger.error('RGPD', `GET /api/user/:wallet/data error: ${err.message}`);
+            return res.status(500).json({ error: 'Operation failed. Please try again later.' });
         }
     });
 
@@ -97,7 +102,7 @@ function createRgpdRouter(supabase) {
             });
         }
 
-        if (!verifyWalletOwnership(wallet, message, signature)) {
+        if (!await verifyWalletOwnership(wallet, message, signature)) {
             return res.status(401).json({ error: 'Signature verification failed.' });
         }
 
@@ -115,11 +120,8 @@ function createRgpdRouter(supabase) {
                 .eq('wallet', wallet);
 
             if (activityErr || budgetErr) {
-                return res.status(500).json({
-                    error: 'Partial deletion failure',
-                    activity_error: activityErr?.message,
-                    budget_error: budgetErr?.message
-                });
+                logger.error('RGPD', `DELETE /api/user/:wallet partial failure: activity=${activityErr?.message} budget=${budgetErr?.message}`);
+                return res.status(500).json({ error: 'Operation failed. Please try again later.' });
             }
 
             return res.json({
@@ -130,7 +132,8 @@ function createRgpdRouter(supabase) {
                 contact: 'https://github.com/Wintyx57/x402-backend/issues'
             });
         } catch (err) {
-            return res.status(500).json({ error: 'Deletion failed', details: err.message });
+            logger.error('RGPD', `DELETE /api/user/:wallet error: ${err.message}`);
+            return res.status(500).json({ error: 'Operation failed. Please try again later.' });
         }
     });
 

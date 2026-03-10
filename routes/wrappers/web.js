@@ -9,7 +9,7 @@ const { fetchWithTimeout } = require('../../lib/payment');
 const { safeUrl } = require('../../lib/safe-url');
 const { WebSearchQuerySchema, ScraperUrlSchema } = require('../../schemas/index');
 
-function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
     // --- WEB SEARCH API WRAPPER (0.005 USDC) ---

@@ -5,7 +5,7 @@ const express = require('express');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 
-function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
     // --- RANDOM JOKE API WRAPPER (0.01 USDC) ---

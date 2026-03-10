@@ -3,7 +3,7 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
-const { fetchWithTimeout } = require('../lib/payment');
+const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
 let _balanceCache = { value: null, ts: 0 };
@@ -93,7 +93,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             network: NETWORK_LABEL,
             explorer: EXPLORER_URL,
             usdcContract: USDC_CONTRACT,
-            ...(balanceError && { balanceError }),
+            ...(balanceError && { balanceError: 'Balance temporarily unavailable' }),
         });
     });
 
@@ -267,13 +267,10 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             return res.status(400).json({ error: 'Required: ids (array) and txHashOut (string)' });
         }
 
-        const TX_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
-        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
         if (!TX_HASH_REGEX.test(txHashOut)) {
             return res.status(400).json({ error: 'txHashOut must be a valid transaction hash (0x + 64 hex chars)' });
         }
-        if (!ids.every(id => UUID_RE.test(id))) {
+        if (!ids.every(id => UUID_REGEX.test(id))) {
             return res.status(400).json({ error: 'All ids must be valid UUIDs' });
         }
         if (ids.length > 100) {

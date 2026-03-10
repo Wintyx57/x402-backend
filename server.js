@@ -268,7 +268,7 @@ app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerL
 app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager));
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity, adminDashboardLimiter));
 app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
-app.use(createMonitoringRouter(supabase));
+app.use(createMonitoringRouter(supabase, dashboardApiLimiter));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use(createRgpdRouter(supabase));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
@@ -341,7 +341,7 @@ const serverInstance = app.listen(PORT, async () => {
             } catch (err) {
                 logger.warn('KeepAlive', `Ping failed: ${err.message}`);
             }
-        }, KEEP_ALIVE_INTERVAL);
+        }, KEEP_ALIVE_INTERVAL).unref();
         logger.info('KeepAlive', `Self-ping every 10min to ${externalUrl}`);
     }
 });

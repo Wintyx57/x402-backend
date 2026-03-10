@@ -373,6 +373,10 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) 
         }
 
         try {
+            // SSRF guard: block internal IPs before opening a TLS connection
+            try { await safeUrl('https://' + hostname); } catch (_e) {
+                return res.status(400).json({ error: 'Blocked domain', message: 'Domain resolves to internal IP' });
+            }
             const socket = tls.connect(443, hostname, { servername: hostname, timeout: 8000 });
 
             const result = await new Promise((resolve, reject) => {
@@ -407,7 +411,7 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) 
             res.json({ success: true, domain: hostname, certificate: result });
         } catch (err) {
             logger.error('SSL Check API', err.message);
-            return res.status(500).json({ error: 'SSL check failed', domain: hostname, details: err.message });
+            return res.status(500).json({ error: 'SSL check failed', domain: hostname });
         }
     });
 
@@ -482,6 +486,11 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) 
         }
 
         try {
+            // SSRF guard: block internal IPs before performing DNS resolution
+            try { await safeUrl('https://' + domain); } catch (_e) {
+                return res.status(400).json({ error: 'Blocked domain', message: 'Domain resolves to internal IP' });
+            }
+
             let records;
 
             switch (type) {

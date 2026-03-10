@@ -188,7 +188,8 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
                 images: images.slice(0, 10)
             });
         } catch (err) {
-            return res.status(400).json({ error: 'Failed to parse HTML', details: err.message });
+            const safeMsg = (err.message || 'Invalid input').slice(0, 200).replace(/\/[^\s]*/g, '[path]');
+            return res.status(400).json({ error: 'Failed to parse HTML', details: safeMsg });
         }
     });
 
@@ -242,7 +243,8 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
             logActivity('api_call', `CSV to JSON API: ${lines.length} lines -> ${data.length} records`);
             res.json({ success: true, rows: data.length, columns: hasHeader ? parseLine(lines[0]).length : (data[0] || []).length, data });
         } catch (err) {
-            return res.status(400).json({ error: 'Failed to parse CSV', details: err.message });
+            const safeMsg = (err.message || 'Invalid input').slice(0, 200).replace(/\/[^\s]*/g, '[path]');
+            return res.status(400).json({ error: 'Failed to parse CSV', details: safeMsg });
         }
     });
 

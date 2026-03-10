@@ -4,7 +4,7 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
-const { TX_HASH_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
+const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -34,15 +34,14 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         const { serviceId } = req.params;
 
         // 1. Validate serviceId (UUID format)
-        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-        if (!uuidRegex.test(serviceId)) {
+        if (!UUID_REGEX.test(serviceId)) {
             return res.status(400).json({ error: 'Invalid service ID format' });
         }
 
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('*')
+            .select('id, name, url, method, price_usdc, owner_address, chain')
             .eq('id', serviceId)
             .single();
 

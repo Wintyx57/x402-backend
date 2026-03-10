@@ -15,13 +15,13 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
     const router = express.Router();
 
     // Mount all sub-routers
-    router.use(createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
-    router.use(createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
+    router.use(createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
-    router.use(createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
-    router.use(createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
+    router.use(createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
-    router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
 
     return router;

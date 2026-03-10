@@ -150,7 +150,8 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
                 is_https: parsed.protocol === 'https:'
             });
         } catch (err) {
-            return res.status(400).json({ error: 'Invalid URL', details: err.message });
+            const safeMsg = (err.message || 'Invalid input').slice(0, 200).replace(/\/[^\s]*/g, '[path]');
+            return res.status(400).json({ error: 'Invalid URL', details: safeMsg });
         }
     });
 
@@ -245,7 +246,8 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
                 note: 'Signature NOT verified (decode only, no secret key)'
             });
         } catch (err) {
-            return res.status(400).json({ error: 'Failed to decode JWT', details: err.message });
+            const safeMsg = (err.message || 'Invalid input').slice(0, 200).replace(/\/[^\s]*/g, '[path]');
+            return res.status(400).json({ error: 'Failed to decode JWT', details: safeMsg });
         }
     });
 
@@ -308,7 +310,15 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
 
     // --- REGEX TESTER API (0.001 USDC) ---
     // ReDoS protection: reject patterns > 100 chars or containing catastrophic backtracking structures
-    const REDOS_PATTERN = /(\(.+\+\))\+|(\(.+\*\))\*/;
+    const REDOS_PATTERNS = [
+        /\(.+\+\)\+/,          // (x+)+
+        /\(.+\*\)\*/,          // (x*)*
+        /\(.+\+\)\*/,          // (x+)*
+        /\(.+\*\)\+/,          // (x*)+
+        /\(.+\|.+\)[\+\*]/,   // (a|b)+ or (a|b)*
+        /\(.+\)\{[0-9]+,\}/,  // (x){n,}
+    ];
+    const REGEX_TIMEOUT_MS = 1000;
     router.get('/api/regex', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Regex Tester API"), async (req, res) => {
         const pattern = (req.query.pattern || '').slice(0, 500);
         const text = (req.query.text || '').slice(0, 5000);
@@ -322,9 +332,9 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
         if (pattern.length > 100) {
             return res.status(400).json({ error: 'Pattern too long (max 100 characters)' });
         }
-        if (REDOS_PATTERN.test(pattern)) {
+        if (REDOS_PATTERNS.some(p => p.test(pattern))) {
             logger.warn('Regex', `Rejected potentially catastrophic pattern: ${pattern.slice(0, 50)}`);
-            return res.status(400).json({ error: 'Pattern rejected: contains potentially catastrophic backtracking structure' });
+            return res.status(400).json({ error: 'Potentially unsafe regex pattern (catastrophic backtracking risk)' });
         }
 
         try {
@@ -336,21 +346,29 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
             const matches = [];
             let m;
             let safety = 0;
+            const start = Date.now();
             if (flags.includes('g')) {
                 while ((m = regex.exec(text)) !== null && safety < 100) {
+                    if (Date.now() - start > REGEX_TIMEOUT_MS) {
+                        return res.status(408).json({ error: 'Regex execution timed out' });
+                    }
                     matches.push({ match: m[0], index: m.index, groups: m.slice(1) });
                     safety++;
                     if (m.index === regex.lastIndex) regex.lastIndex++;
                 }
             } else {
                 m = regex.exec(text);
+                if (Date.now() - start > REGEX_TIMEOUT_MS) {
+                    return res.status(408).json({ error: 'Regex execution timed out' });
+                }
                 if (m) matches.push({ match: m[0], index: m.index, groups: m.slice(1) });
             }
 
             logActivity('api_call', `Regex Tester API: /${pattern}/${flags} -> ${matches.length} matches`);
             res.json({ success: true, pattern, flags, text_length: text.length, match_count: matches.length, matches });
         } catch (err) {
-            return res.status(400).json({ error: 'Invalid regex pattern', details: err.message });
+            const safeMsg = (err.message || 'Invalid input').slice(0, 200).replace(/\/[^\s]*/g, '[path]');
+            return res.status(400).json({ error: 'Invalid regex pattern', details: safeMsg });
         }
     });
 

@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: x402-bazaar-backend
+    env: node
+    region: oregon
+    plan: starter
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: NETWORK
+        value: mainnet
+      # --- Required ---
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: WALLET_ADDRESS
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      # --- Payment / RPC ---
+      - key: COINBASE_API_KEY
+        sync: false
+      - key: COINBASE_API_SECRET
+        sync: false
+      # --- AI ---
+      - key: OPENAI_API_KEY
+        sync: false
+      # --- Monitoring (recommended) ---
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      # --- MCP Agent wallet ---
+      - key: AGENT_PRIVATE_KEY
+        sync: false
+      # --- Keep-alive (prevents free-tier spin-down) ---
+      - key: RENDER_EXTERNAL_URL
+        value: https://x402-api.onrender.com
+      # --- Daily E2E tester (real USDC payments — enable with caution) ---
+      # - key: ENABLE_DAILY_TESTER
+      #   value: "true"
+      # --- Community Agent companion ---
+      # - key: ENABLE_COMMUNITY_AGENT
+      #   value: "true"
+      # - key: GEMINI_API_KEY
+      #   sync: false

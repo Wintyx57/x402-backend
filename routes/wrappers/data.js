@@ -303,11 +303,6 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
             return res.status(400).json({ error: 'Invalid URL format' });
         }
 
-        const blockedHostname = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])|0\.0\.0\.0|0\.|169\.254\.|fc00:|fe80:|::1|\[::1\])/i;
-        if (blockedHostname.test(parsed.hostname)) {
-            return res.status(400).json({ error: 'Internal URLs not allowed' });
-        }
-
         try {
             await safeUrl(targetUrl);
         } catch (e) {
