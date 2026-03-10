@@ -49,12 +49,13 @@ const reviewLimiter = rateLimit({
     windowMs: 60 * 60 * 1000, // 1 hour
     max: 10,
     keyGenerator: (req) => {
-        const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+        const ip = req.ip || req.socket?.remoteAddress || 'unknown';
         const wallet = (req.headers['x-wallet-address'] || '').toLowerCase();
         return `${ip}:${wallet}`;
     },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: { keyGeneratorIpFallback: false },
     message: { error: 'Too many reviews', message: 'Rate limit: max 10 reviews per hour per wallet.' }
 });
 
