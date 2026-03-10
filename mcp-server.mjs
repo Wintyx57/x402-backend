@@ -184,6 +184,8 @@ function getPrivateKey() {
     console.error(`[Wallet]   Ultra-low gas (~$0.0007/tx). Best for AI agents.`);
     console.error(`[Wallet]   Pass chain: "skale" to any paid tool.`);
     console.error(`[Wallet]   CREDITS auto-funded on first setup_wallet call.`);
+    console.error(`[Wallet]   Bridge USDC: https://bridge.skale.space`);
+    console.error(`[Wallet]   Explorer: https://skale-base-explorer.skalenodes.com`);
     console.error(`[Wallet] ── Base ──────────────────────`);
     console.error(`[Wallet]   Alternative: higher gas but same USDC payments.`);
     return privateKey;
@@ -832,7 +834,7 @@ server.tool(
                     credits_balance: `${(Number(creditsRaw) / 1e18).toFixed(8)} CREDITS`,
                     explorer: `${skaleCfg.explorer}/address/${account.address}`,
                     gas_token: 'CREDITS (~$0.0007/tx — 40 CREDITS ≈ 10,000 transactions)',
-                    how_to_fund: 'CREDITS auto-funded on first setup. Bridge USDC from Base via https://bridge.skale.space',
+                    how_to_fund: 'CREDITS auto-funded on first setup. Bridge USDC from Base via https://bridge.skale.space | Explorer: https://skale-base-explorer.skalenodes.com',
                 };
             } catch (err) {
                 chains.skale = { network: skaleCfg.label, error: err.message };
