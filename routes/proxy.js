@@ -6,6 +6,7 @@ const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 const { getInputSchemaForUrl } = require('../lib/bazaar-discovery');
+const { DEFAULT_CHAIN_KEY } = require('../lib/chains');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -80,7 +81,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 4. Detect payment mode
         const txHashProvider = req.headers['x-payment-txhash-provider'];
         const txHashPlatform = req.headers['x-payment-txhash-platform']; // optional
-        const chainKey       = req.headers['x-payment-chain'] || 'base';
+        const chainKey       = req.headers['x-payment-chain'] || DEFAULT_CHAIN_KEY;
 
         // A service without owner_address falls back to legacy mode automatically
         // (the 69 native wrappers — platform is both provider and operator)
@@ -149,7 +150,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
 
         dynamicPayment(req, res, async () => {
             const txHash = req.headers['x-payment-txhash'];
-            const chain  = req.headers['x-payment-chain'] || 'base';
+            const chain  = req.headers['x-payment-chain'] || DEFAULT_CHAIN_KEY;
 
             const onSuccess = async () => {
                 const claimed = await req._markTxUsed(req._paymentReplayKey, `API Call: ${service.name}`);

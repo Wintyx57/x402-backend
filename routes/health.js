@@ -78,7 +78,7 @@ function createHealthRouter(supabase) {
     router.get('/health', (req, res) => {
         const { version } = require('../package.json');
         const supportedNetworks = Object.entries(CHAINS)
-            .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
+            .filter(([key]) => NETWORK === 'testnet' ? key === 'base-sepolia' : key !== 'base-sepolia')
             .map(([key, cfg]) => ({ network: key, label: cfg.label, chainId: cfg.chainId }));
         res.json({
             status: 'ok',

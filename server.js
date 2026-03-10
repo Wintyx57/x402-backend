@@ -301,7 +301,7 @@ const serverInstance = app.listen(PORT, async () => {
         ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
         : 'NOT SET';
     const activeNetworks = Object.entries(CHAINS)
-        .filter(([key]) => NETWORK === 'mainnet' ? key !== 'base-sepolia' : key === 'base-sepolia')
+        .filter(([key]) => NETWORK === 'testnet' ? key === 'base-sepolia' : key !== 'base-sepolia')
         .map(([, cfg]) => cfg.label).join(', ');
     logger.info('server', `x402 Bazaar active on http://localhost:${PORT}`, { port: PORT, wallet: maskedWallet, networks: activeNetworks, services: count });
 
