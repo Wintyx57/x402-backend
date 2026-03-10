@@ -42,7 +42,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters')
+            .select('id, name, url, price_usdc, owner_address, tags, description')
             .eq('id', serviceId)
             .single();
 
@@ -51,7 +51,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         }
 
         // --- GATEKEEPER: validate required parameters BEFORE payment ---
-        const inputSchema = service.required_parameters || getInputSchemaForUrl(service.url);
+        const inputSchema = getInputSchemaForUrl(service.url);
         if (inputSchema && inputSchema.required && inputSchema.required.length > 0) {
             const params = {};
             if (req.body && typeof req.body === 'object') Object.assign(params, req.body);
