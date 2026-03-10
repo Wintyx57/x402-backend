@@ -5,7 +5,7 @@ const express = require('express');
 const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
-const { getInputSchemaForUrl } = require('../lib/bazaar-discovery');
+const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discovery');
 const { DEFAULT_CHAIN_KEY } = require('../lib/chains');
 
 // Hostname of this server — used to detect internal service URLs
@@ -379,20 +379,30 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
         return res.status(403).json({ error: 'Service URL is not allowed' });
     }
 
-    // Build target URL once (immutable across retries)
+    // Determine upstream HTTP method (POST for /api/code, /api/contract-risk, etc.)
+    const upstreamMethod = getMethodForUrl(service.url);
+
+    // Build target URL and request body
     let targetUrl = service.url;
     const params = req.body && typeof req.body === 'object' ? { ...req.body } : {};
     if (req.query && Object.keys(req.query).length > 0) {
         Object.assign(params, req.query);
     }
-    if (Object.keys(params).length > 0) {
-        const url = new URL(targetUrl);
-        for (const [key, value] of Object.entries(params)) {
-            if (value !== undefined && value !== null) {
-                url.searchParams.set(key, String(value));
+    let fetchBody;
+    if (upstreamMethod === 'POST') {
+        // POST endpoints: send params as JSON body, keep URL clean
+        fetchBody = Object.keys(params).length > 0 ? JSON.stringify(params) : undefined;
+    } else {
+        // GET endpoints: append params as query string
+        if (Object.keys(params).length > 0) {
+            const url = new URL(targetUrl);
+            for (const [key, value] of Object.entries(params)) {
+                if (value !== undefined && value !== null) {
+                    url.searchParams.set(key, String(value));
+                }
             }
+            targetUrl = url.toString();
         }
-        targetUrl = url.toString();
     }
 
     let lastError = null;
@@ -420,8 +430,9 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             } catch { /* invalid URL — safeUrl already checked */ }
 
             const proxyRes = await fetch(targetUrl, {
-                method: 'GET',
+                method: upstreamMethod,
                 headers: proxyHeaders,
+                body: fetchBody,
                 signal: controller.signal,
             });
             clearTimeout(timeout);

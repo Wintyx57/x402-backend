@@ -256,7 +256,7 @@ describe('gatekeeper — all 50 gated endpoints have schemas', () => {
         ['/api/holidays',          ['country']],
         ['/api/airquality',        ['lat', 'lon']],
         ['/api/readability',       ['url']],
-        ['/api/qrcode',            ['data']],
+        ['/api/qrcode',            ['text']],
         ['/api/qrcode-gen',        ['data']],
         ['/api/json-validate',     ['json']],
     ];
