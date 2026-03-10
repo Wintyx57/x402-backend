@@ -1,9 +1,30 @@
-// routes/health.js — GET /health, GET /, /.well-known/agent-registration.json, /api/agent/:agentId
+// routes/health.js — GET /health, GET /, /.well-known/*, /api/agent/:agentId, /api/faucet/claim
 
 const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { createPublicClient, createWalletClient, http, defineChain } = require('viem');
+const { privateKeyToAccount } = require('viem/accounts');
 const { NETWORK, CHAINS, NETWORK_LABEL, DEFAULT_CHAIN_KEY } = require('../lib/chains');
 const { verifyAgent, getAgentInfo, IDENTITY_REGISTRY, REPUTATION_REGISTRY } = require('../erc8004');
 const logger = require('../lib/logger');
+
+// SKALE on Base chain definition for viem
+const skaleOnBase = defineChain({
+    id: 1187947933,
+    name: 'SKALE on Base',
+    nativeCurrency: { name: 'CREDITS', symbol: 'CREDITS', decimals: 18 },
+    rpcUrls: { default: { http: [CHAINS.skale?.rpcUrl || 'https://skale-base.skalenodes.com/v1/base'] } },
+    blockExplorers: { default: { name: 'SKALE Explorer', url: CHAINS.skale?.explorer || 'https://skale-base-explorer.skalenodes.com' } },
+});
+
+// Faucet rate limiter: 3 requests per IP per hour
+const faucetLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    message: { funded: false, reason: 'rate_limited', message: 'Max 3 faucet claims per hour' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 function createHealthRouter(supabase) {
     const router = express.Router();
@@ -217,6 +238,68 @@ function createHealthRouter(supabase) {
                 registrationURI: 'https://x402-api.onrender.com/.well-known/agent-registration.json',
             }
         });
+    });
+
+    // --- FAUCET: auto-distribute CREDITS to new wallets on SKALE ---
+    router.post('/api/faucet/claim', faucetLimiter, async (req, res) => {
+        const { address } = req.body || {};
+
+        // 1. Validate address format
+        if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+            return res.status(400).json({ funded: false, reason: 'invalid_address' });
+        }
+
+        // 2. Check FAUCET_PRIVATE_KEY
+        const faucetKey = process.env.FAUCET_PRIVATE_KEY;
+        if (!faucetKey) {
+            return res.json({ funded: false, reason: 'faucet_not_configured' });
+        }
+
+        try {
+            // 3. Check target CREDITS balance on SKALE
+            const pubClient = createPublicClient({ chain: skaleOnBase, transport: http() });
+            const balance = await pubClient.getBalance({ address });
+
+            // If already has CREDITS (> 0.001), skip
+            if (balance > 1_000_000_000_000_000n) {
+                return res.json({
+                    funded: false,
+                    reason: 'already_has_credits',
+                    balance: (Number(balance) / 1e18).toFixed(8),
+                });
+            }
+
+            // 4. Create faucet wallet client
+            const normalizedKey = faucetKey.startsWith('0x') ? faucetKey : `0x${faucetKey}`;
+            const faucetAccount = privateKeyToAccount(normalizedKey);
+            const faucetWallet = createWalletClient({
+                account: faucetAccount,
+                chain: skaleOnBase,
+                transport: http(),
+            });
+
+            // 5. Send 0.01 CREDITS (~10 transactions worth)
+            const DRIP_AMOUNT = 10_000_000_000_000_000n; // 0.01 CREDITS
+            const txHash = await faucetWallet.sendTransaction({
+                to: address,
+                value: DRIP_AMOUNT,
+                type: 'legacy',
+            });
+
+            // 6. Wait confirmation (SKALE instant finality)
+            await pubClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1, timeout: 30_000 });
+
+            logger.info('Faucet', `Sent 0.01 CREDITS to ${address} — tx: ${txHash}`);
+            res.json({
+                funded: true,
+                amount_credits: '0.01',
+                estimated_transactions: '~10',
+                tx_hash: txHash,
+            });
+        } catch (err) {
+            logger.error('Faucet', `Failed to fund ${address}: ${err.message}`);
+            res.status(500).json({ funded: false, reason: 'error', error: err.message });
+        }
     });
 
     return router;

@@ -449,7 +449,7 @@ server.tool(
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
     },
     async ({ query, chain: chainKey }) => {
         try {
@@ -475,7 +475,7 @@ server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
     },
     async ({ chain: chainKey }) => {
         try {
@@ -498,7 +498,7 @@ server.tool(
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
     },
     async ({ task, chain: chainKey }) => {
         try {
@@ -562,7 +562,7 @@ server.tool(
     {
         service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
         body: z.string().optional().describe('Optional JSON body string to send with the request (e.g. \'{"query":"hello"}\')'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
     },
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
@@ -641,7 +641,7 @@ server.tool(
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         url: z.string().url().describe('The full API URL to call'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" (default) or "skale" (ultra-low gas)'),
+        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (ultra-low gas)'),
     },
     async ({ url, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
@@ -761,45 +761,22 @@ server.tool(
     }
 );
 
-// --- Auto-Faucet: distribute CREDITS to new wallets on SKALE ---
+// --- Auto-Faucet: request CREDITS from backend faucet for new wallets on SKALE ---
 async function autoFundCredits(targetAddress) {
-    const faucetKey = process.env.FAUCET_PRIVATE_KEY;
-    if (!faucetKey) return { funded: false, reason: 'no_faucet_configured' };
-
     try {
-        // 1. Check target CREDITS balance
-        const { public: pubClient } = getClients('skale');
-        const balance = await pubClient.getBalance({ address: targetAddress });
-
-        // If already has CREDITS (> 0.001), skip
-        if (balance > 1_000_000_000_000_000n) { // 0.001 CREDITS in wei
-            return { funded: false, reason: 'already_has_credits', balance: (Number(balance) / 1e18).toFixed(8) };
+        const res = await fetch(`${SERVER_URL}/api/faucet/claim`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address: targetAddress }),
+            signal: AbortSignal.timeout(45_000),
+        });
+        const data = await res.json();
+        if (data.funded) {
+            console.error(`[Faucet] Server funded 0.01 CREDITS to ${targetAddress} — tx: ${data.tx_hash}`);
         }
-
-        // 2. Create faucet wallet client
-        const normalizedKey = faucetKey.startsWith('0x') ? faucetKey : `0x${faucetKey}`;
-        const faucetAccount = privateKeyToAccount(normalizedKey);
-        const faucetClient = createWalletClient({
-            account: faucetAccount,
-            chain: CHAINS.skale.chain,
-            transport: http(),
-        });
-
-        // 3. Send 0.01 CREDITS (~10 transactions worth)
-        const DRIP_AMOUNT = 10_000_000_000_000_000n; // 0.01 CREDITS
-        const txHash = await faucetClient.sendTransaction({
-            to: targetAddress,
-            value: DRIP_AMOUNT,
-            type: 'legacy',
-        });
-
-        // 4. Wait confirmation (SKALE instant finality)
-        await pubClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1, timeout: 30_000 });
-
-        console.error(`[Faucet] Sent 0.01 CREDITS to ${targetAddress} — tx: ${txHash}`);
-        return { funded: true, amount_credits: '0.01', estimated_transactions: '~10', tx_hash: txHash };
+        return data;
     } catch (err) {
-        console.error(`[Faucet] Failed to fund ${targetAddress}: ${err.message}`);
+        console.error(`[Faucet] Backend faucet request failed: ${err.message}`);
         return { funded: false, reason: 'error', error: err.message };
     }
 }
@@ -854,7 +831,7 @@ server.tool(
                     credits_balance: `${(Number(creditsRaw) / 1e18).toFixed(8)} CREDITS`,
                     explorer: `${skaleCfg.explorer}/address/${account.address}`,
                     gas_token: 'CREDITS (~$0.0007/tx — 40 CREDITS ≈ 10,000 transactions)',
-                    how_to_fund: 'Bridge USDC from Base via https://bridge.skale.space | Get CREDITS at https://base.skalenodes.com/credits',
+                    how_to_fund: 'CREDITS auto-funded on first setup. Bridge USDC from Base via https://bridge.skale.space',
                 };
             } catch (err) {
                 chains.skale = { network: skaleCfg.label, error: err.message };
@@ -892,13 +869,14 @@ server.tool(
                         auto_faucet: autoFaucet?.funded ? autoFaucet : (autoFaucet?.reason === 'no_faucet_configured' ? undefined : autoFaucet),
                         next_steps: totalUsdc === 0
                             ? [
+                                'RECOMMENDED: Use chain: "skale" for ultra-low gas (~$0.0007/tx) — best for AI agents',
                                 `Send USDC to ${account.address} on Base or SKALE on Base`,
                                 'Minimum recommended: 1 USDC (covers ~20 API calls at 0.05 USDC each)',
-                                'Use chain: "skale" for ultra-low gas (~$0.0007/tx)',
                                 `Session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC to change)`,
                             ]
                             : [
                                 `Wallet funded with ${totalUsdc.toFixed(6)} USDC total — ready to use paid APIs`,
+                                'TIP: Use chain: "skale" for ultra-low gas (~$0.0007/tx)',
                                 `Session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC to change)`,
                             ],
                         wallet_backup_info: {
