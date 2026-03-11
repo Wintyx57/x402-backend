@@ -310,7 +310,7 @@ HACKATHON/
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
-   - ~858 tests total (785 backend [772 pass, 13 skipped E2E] + 73 safe-url tests + frontend)
+   - ~951 tests total (918 backend [905 pass, 13 skipped E2E] incl 133 daily-tester tests + frontend)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
    - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
    - Rate limits optimized: paid requests (X-Payment-TxHash) skip rate limiting entirely
@@ -336,6 +336,7 @@ HACKATHON/
    - 3-level required_parameters : (1) internal wrappers via `_inputSchemaMap` (62 endpoints), (2) external provider-submitted via Register, (3) auto-detected from 402 body via `extractInputSchema()`
    - Auto-Faucet CREDITS SERVER-SIDE : `POST /api/faucet/claim` dans routes/health.js (rate limit 3/hr/IP). MCP appelle le backend via HTTP — plus besoin de `FAUCET_PRIVATE_KEY` en local. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a`. SKALE recommande dans tous les outils MCP payes.
    - Caching : public-stats 60s, RPC balance 5min, Cache-Control headers
+   - Daily E2E Agent : `lib/daily-tester.js` — 10 audit fixes (session 61): MAX_PRICE_PER_SERVICE 0.10 cap, SSRF /api/ filter, 30min safety timer, sanitizeErrorBody(), validatePayment(), safeParseJson() OOM guard, MIN_BALANCE 1.50, TX_TIMEOUT 15s, escapeMarkdown() fix, end-of-run balance tracking
 
 3. **Frontend React — 20 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
@@ -374,7 +375,7 @@ HACKATHON/
    - n8n-nodes-x402-bazaar : n8n community node v1.4.0 sur GitHub (Wintyx57/n8n-nodes-x402-bazaar) — 5 ops + split
    - Bazaar Discovery : @x402/extensions v2.5.0, 69 APIs avec inputSchema + exemples I/O dans reponses 402
    - SDK : @wintyx/x402-sdk v1.0.3 sur npm (auto-wallet AES-256-GCM, dual ESM+CJS, 55 tests)
-   - MCP : v2.4.0 (10 tools incl export_private_key, setup_wallet enrichi SKALE)
+   - MCP : v2.4.1 (10 tools incl export_private_key, setup_wallet enrichi SKALE, enrichPaymentError bridge hints)
    - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
 
 6. **Supabase** :
