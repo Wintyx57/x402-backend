@@ -583,6 +583,30 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "crypto", "intelligence", "defi", "finance", "coingecko", "live"]
     },
+    {
+        name: "x402 Article to Markdown",
+        description: "Convert any article/blog URL to clean Markdown. Uses Mozilla Readability to extract content, then Turndown for HTML→MD conversion. Returns title, byline, excerpt, word count, and full Markdown content. Usage: /api/article-to-md?url=https://blog.example.com/post",
+        url: `${BASE_URL}/api/article-to-md`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "web", "content", "markdown", "conversion", "readability", "live"]
+    },
+    {
+        name: "x402 OpenGraph Extractor",
+        description: "Extract OpenGraph and Twitter Card metadata from any URL for rich link previews. Returns title, description, image, site_name, type, locale, favicon, and twitter_card info. Usage: /api/opengraph?url=https://example.com",
+        url: `${BASE_URL}/api/opengraph`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "web", "metadata", "opengraph", "seo", "preview", "live"]
+    },
+    {
+        name: "x402 SVG Avatar Generator",
+        description: "Generate unique, deterministic SVG avatars from any name or seed string. 3 styles: geometric (circles/triangles/rects), pixel (5x5 mirrored grid), initials (gradient + text). Size 32-512px. Returns SVG image or JSON with data_uri. Usage: /api/avatar?name=Alice&style=geometric&size=128",
+        url: `${BASE_URL}/api/avatar`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "image", "avatar", "svg", "generator", "identity", "live"]
+    },
 ];
 
 async function seedWrappers() {
