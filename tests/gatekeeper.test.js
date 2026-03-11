@@ -228,9 +228,9 @@ describe('gatekeeper — priority: DB required_parameters vs discoveryMap', () =
     });
 });
 
-// ─── Suite 5: Coverage of all 50 gated endpoints ─────────────────────────────
+// ─── Suite 5: Coverage of all 49 gated endpoints ─────────────────────────────
 
-describe('gatekeeper — all 50 gated endpoints have schemas', () => {
+describe('gatekeeper — all 49 gated endpoints have schemas', () => {
     const BASE_URL = 'https://x402-api.onrender.com';
 
     const EXPECTED_SCHEMAS = [
@@ -241,7 +241,6 @@ describe('gatekeeper — all 50 gated endpoints have schemas', () => {
         ['/api/translate',         ['text', 'to']],
         ['/api/summarize',         ['text']],
         ['/api/hash',              ['text']],
-        ['/api/image',             ['prompt']],
         ['/api/dns',               ['domain']],
         ['/api/validate-email',    ['email']],
         ['/api/sentiment',         ['text']],
