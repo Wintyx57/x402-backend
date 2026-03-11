@@ -311,6 +311,7 @@ HACKATHON/
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
    - ~951 tests total (918 backend [905 pass, 13 skipped E2E] incl 133 daily-tester tests + frontend)
+   - Service status columns: `services.status` (online|offline|degraded|unknown) + `services.last_checked_at` (migration 009)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
    - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
    - Rate limits optimized: paid requests (X-Payment-TxHash) skip rate limiting entirely
@@ -337,6 +338,7 @@ HACKATHON/
    - Auto-Faucet CREDITS SERVER-SIDE : `POST /api/faucet/claim` dans routes/health.js (rate limit 3/hr/IP). MCP appelle le backend via HTTP — plus besoin de `FAUCET_PRIVATE_KEY` en local. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a`. SKALE recommande dans tous les outils MCP payes.
    - Caching : public-stats 60s, RPC balance 5min, Cache-Control headers
    - Daily E2E Agent : `lib/daily-tester.js` — 10 audit fixes (session 61): MAX_PRICE_PER_SERVICE 0.10 cap, SSRF /api/ filter, 30min safety timer, sanitizeErrorBody(), validatePayment(), safeParseJson() OOM guard, MIN_BALANCE 1.50, TX_TIMEOUT 15s, escapeMarkdown() fix, end-of-run balance tracking
+   - **Service Status Pipeline** (session 62): daily-tester + monitor propagate `status` (online/offline/degraded/unknown) + `last_checked_at` to `services` table. Monitor updates every 5min (internes), daily-tester every 24h (tous). MCP `call_service` bloque les services offline AVANT paiement. Frontend simplifie (plus de healthMap/health-check live).
 
 3. **Frontend React — 20 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
@@ -380,7 +382,7 @@ HACKATHON/
 
 6. **Supabase** :
    - URL : https://kucrowtjsgusdxnjglug.supabase.co
-   - Tables : `services` (+ `required_parameters` JSONB), `activity`, `used_transactions`, `monitoring_checks`, `reviews`, `budgets`, `pending_payouts`, `daily_checks`, `migrations_applied`
+   - Tables : `services` (+ `required_parameters` JSONB + `status` + `last_checked_at`), `activity`, `used_transactions`, `monitoring_checks`, `reviews`, `budgets`, `pending_payouts`, `daily_checks`, `migrations_applied`
 
 ### Credentials (NE PAS AFFICHER)
 
@@ -636,6 +638,17 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [x] **SDK README**: `fundWallet()` method documented in API section
 - [x] Frontend commits: `9aa435e`→`6f5cc14`. Backend: MCP v2.4.1. All pushed.
 
+### Session 62 — Service Status Pipeline (11/03/2026)
+- [x] **Migration 009**: `status TEXT DEFAULT 'unknown'` + `last_checked_at TIMESTAMPTZ` on `services` table + index
+- [x] **daily-tester.js**: `updateServiceStatus()` — maps pass→online, partial→degraded, fail→offline. Called after each internal + external test.
+- [x] **monitor.js**: `updateServicesStatus()` — batch-updates services.status every 5min (internal endpoints only). URL pattern matching via `.like()`.
+- [x] **services.js**: `status, last_checked_at` added to `SERVICE_COLUMNS` — auto-propagated to all API consumers
+- [x] **mcp-server.mjs**: `call_service` blocks offline services BEFORE payment (returns error). `find_tool_for_task` adds statusWarning for offline/degraded.
+- [x] **Frontend simplified**: removed `healthMap` + `GET /api/health-check` fetch. Uses `service.status` directly from DB.
+- [x] **Frontend types**: `status` + `last_checked_at` in Service interface. i18n: degraded/lastChecked keys EN+FR.
+- [x] **Pipeline verified**: monitor.js updates every 5min (internes: online), daily-tester updates every 24h (tous incl. externes)
+- [x] Backend commit: `308fadc`. Frontend commit: `4c93f47`. All pushed.
+
 ### Session 59 — Hotfix Production Crash (10/03/2026)
 - [x] **Root cause 1**: `activity.js` — audit changed `.then(null, handler)` to `.catch(handler)`, but Supabase PostgrestFilterBuilder has NO `.catch()` method → `TypeError` on every `logActivity()` call → all paid endpoints crash (500 instead of 402)
 - [x] **Root cause 2**: `reviews.js` — express-rate-limit v7 IPv6 validation error with `trust proxy: 1` enabled. Custom `keyGenerator` using `req.ip` directly throws `ValidationError` at module load. Fixed with `validate: { keyGeneratorIpFallback: false }`
@@ -648,4 +661,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE (2-step, tested) + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Session 60 Trails + All integrations bridge-aware*
+*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Service Status Pipeline (daily-tester+monitor→DB→frontend+MCP) + Session 62*
