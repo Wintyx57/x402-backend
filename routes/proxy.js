@@ -439,7 +439,8 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 
             // 5xx → retry (upstream error)
             if (proxyRes.status >= 500) {
-                logger.warn('Proxy', `Upstream ${proxyRes.status} for "${service.name}" (attempt ${attempt + 1}/${MAX_RETRIES})`);
+                const errBody = await proxyRes.text().catch(() => '');
+                logger.warn('Proxy', `Upstream ${proxyRes.status} for "${service.name}" (attempt ${attempt + 1}/${MAX_RETRIES}): ${errBody.slice(0, 300)}`);
                 lastError = new Error(`Upstream returned ${proxyRes.status}`);
                 continue;
             }
