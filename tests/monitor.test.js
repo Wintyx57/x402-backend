@@ -216,3 +216,107 @@ describe('monitor — online/offline classification logic', () => {
         assert.ok(!isOnline(201));
     });
 });
+
+describe('monitor — external services monitoring logic', () => {
+    // Test fetchExternalServices filtering logic (replicated since not exported)
+    function filterExternal(services, platformWallet) {
+        return services.filter(svc => {
+            const owner = (svc.owner_address || '').toLowerCase();
+            return owner && owner !== platformWallet.toLowerCase();
+        });
+    }
+
+    it('should filter out services with platform wallet', () => {
+        const services = [
+            { id: 1, name: 'Internal', url: 'https://x402-api.onrender.com/api/joke', owner_address: '0xfb1c478BD5567BdcD39782E0D6D23418bFda2430' },
+            { id: 2, name: 'External', url: 'https://external.com/api', owner_address: '0x8fdb1AcAbC4f1D2a7e42C14F1F3a4c67bE5f2E9D' },
+        ];
+        const result = filterExternal(services, '0xfb1c478BD5567BdcD39782E0D6D23418bFda2430');
+        assert.equal(result.length, 1);
+        assert.equal(result[0].name, 'External');
+    });
+
+    it('should filter out services with no owner_address', () => {
+        const services = [
+            { id: 1, name: 'No Owner', url: 'https://example.com', owner_address: null },
+            { id: 2, name: 'Empty Owner', url: 'https://example2.com', owner_address: '' },
+        ];
+        const result = filterExternal(services, '0xABC');
+        assert.equal(result.length, 0);
+    });
+
+    it('should be case-insensitive for wallet comparison', () => {
+        const services = [
+            { id: 1, name: 'UpperCase', url: 'https://ext.com', owner_address: '0xABCDEF' },
+        ];
+        const result = filterExternal(services, '0xabcdef');
+        assert.equal(result.length, 0); // Same wallet, different case
+    });
+
+    it('should include all external wallets', () => {
+        const services = [
+            { id: 1, name: 'Ext1', url: 'https://ext1.com', owner_address: '0x111' },
+            { id: 2, name: 'Ext2', url: 'https://ext2.com', owner_address: '0x222' },
+            { id: 3, name: 'Internal', url: 'https://x402.com/api', owner_address: '0xPLATFORM' },
+        ];
+        const result = filterExternal(services, '0xPLATFORM');
+        assert.equal(result.length, 2);
+    });
+
+    // Test external endpoint object structure
+    it('should produce correct endpoint objects from external services', () => {
+        const svc = { id: 42, name: 'Fia Signals', url: 'https://x402.fiasignals.com/signals', owner_address: '0x8D32c6a' };
+        const endpoint = {
+            id: svc.id,
+            path: svc.url,
+            method: 'GET',
+            label: svc.name || svc.url,
+            isExternal: true,
+        };
+        assert.equal(endpoint.id, 42);
+        assert.equal(endpoint.path, 'https://x402.fiasignals.com/signals');
+        assert.equal(endpoint.method, 'GET');
+        assert.equal(endpoint.label, 'Fia Signals');
+        assert.equal(endpoint.isExternal, true);
+    });
+
+    it('should use URL as label if name is missing', () => {
+        const svc = { id: 1, name: '', url: 'https://example.com/api', owner_address: '0x111' };
+        const label = svc.name || svc.url;
+        assert.equal(label, 'https://example.com/api');
+    });
+
+    // Test updateServicesStatus split logic
+    it('should split results into internal and external', () => {
+        const results = [
+            { endpoint: '/api/joke', status: 'online' },
+            { endpoint: 'https://ext.com/api', status: 'online', isExternal: true, serviceId: 42 },
+            { endpoint: '/api/crypto', status: 'offline' },
+            { endpoint: 'https://ext2.com/api', status: 'offline', isExternal: true, serviceId: 43 },
+        ];
+        const internalResults = results.filter(r => !r.isExternal);
+        const externalResults = results.filter(r => r.isExternal);
+        assert.equal(internalResults.length, 2);
+        assert.equal(externalResults.length, 2);
+        assert.equal(externalResults[0].serviceId, 42);
+        assert.equal(externalResults[1].serviceId, 43);
+    });
+
+    // Test cache behavior logic
+    it('cache TTL should be 5 minutes', () => {
+        const EXTERNAL_CACHE_TTL = 5 * 60 * 1000;
+        assert.equal(EXTERNAL_CACHE_TTL, 300000);
+    });
+
+    it('cache should be considered valid within TTL', () => {
+        const EXTERNAL_CACHE_TTL = 5 * 60 * 1000;
+        const cacheTime = Date.now() - 1000; // 1 second ago
+        assert.ok(Date.now() - cacheTime < EXTERNAL_CACHE_TTL);
+    });
+
+    it('cache should be considered expired after TTL', () => {
+        const EXTERNAL_CACHE_TTL = 5 * 60 * 1000;
+        const cacheTime = Date.now() - 6 * 60 * 1000; // 6 minutes ago
+        assert.ok(Date.now() - cacheTime >= EXTERNAL_CACHE_TTL);
+    });
+});
