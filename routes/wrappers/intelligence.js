@@ -21,7 +21,7 @@ function createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLi
 
         try {
             const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 systemInstruction: `You are a legal contract analyst. Analyze the contract text and identify risky clauses. Respond ONLY with valid JSON in this exact format:
 {"overall_risk":"high|medium|low","risk_score":0-100,"summary":"brief overall assessment","clauses":[{"text":"exact problematic text (max 200 chars)","risk_level":"high|medium|low","category":"liability|privacy|termination|payment|ip|non-compete|arbitration|other","explanation":"why this is risky"}]}
 Focus on: unlimited liability, data sharing, automatic renewals, unilateral changes, IP ownership transfers, non-compete, mandatory arbitration.`
@@ -57,7 +57,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
 
         try {
             const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 systemInstruction: `Extract CRM data from this email. Respond ONLY with valid JSON:
 {"sender_name":"full name or null","sender_email":"email or null","company":"company name or null","phone":"phone or null","intent":"inquiry|complaint|purchase|partnership|support|other","sentiment":"positive|neutral|negative","urgency":"high|medium|low","key_topics":["topic1","topic2"],"follow_up_action":"suggested action in one sentence","summary":"2-sentence summary of the email"}`
             });
@@ -93,7 +93,7 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
 
         try {
             const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 systemInstruction: `You are a senior code reviewer. Review the provided code and respond ONLY with valid JSON:
 {"language":"detected language","quality_score":0-100,"summary":"one sentence overall assessment","issues":[{"line":line_number_or_null,"severity":"critical|major|minor|info","type":"bug|security|performance|style|maintainability","message":"description of the issue","suggestion":"how to fix it"}],"strengths":["thing done well"]}
 Be thorough. Focus on bugs, security vulnerabilities, performance, and maintainability.`
@@ -129,7 +129,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
 
         try {
             const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 systemInstruction: `You are a data analyst. Analyze the CSV/table data and respond ONLY with valid JSON:
 {"rows":total_row_count,"columns":["col1","col2"],"insights":["insight 1","insight 2","insight 3"],"anomalies":["anomaly 1"],"trends":["trend 1"],"recommendations":["action 1"],"summary":"2-sentence overview of the dataset"}`
             });

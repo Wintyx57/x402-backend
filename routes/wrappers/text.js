@@ -77,7 +77,7 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
 
         try {
             const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 systemInstruction: `You are a text summarization assistant. Summarize the provided text in approximately ${maxLength} words or less. Keep the summary concise, informative, and in the same language as the original text.`
             });
 

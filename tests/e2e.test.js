@@ -217,14 +217,9 @@ describe('Paid endpoints (should return 402 without payment)', () => {
     assert.ok(data.error);
   });
 
-  it('GET /api/image?prompt=test should return 402 Payment Required', async () => {
+  it('GET /api/image should return 404 (removed — no free image generation provider)', async () => {
     const res = await fetchWithTimeout(`${BASE_URL}/api/image?prompt=test`);
-
-    assert.strictEqual(res.status, 402);
-
-    const data = await res.json();
-    assert.ok(data.error);
-    assert.ok(data.payment_details);
+    assert.strictEqual(res.status, 404);
   });
 });
 
