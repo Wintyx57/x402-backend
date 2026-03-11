@@ -346,7 +346,7 @@ HACKATHON/
    - i18n FR/EN avec toggle (137+ cles pour blog bilingue)
    - useSEO hook pour meta tags dynamiques
    - Wallet connect via wagmi (MetaMask + Coinbase Wallet)
-   - 20 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground, /analytics, /compare, /for-providers
+   - 21 routes live : /, /services, /register, /integrate, /developers, /mcp, /docs, /config, /about, /pricing, /blog, /faq, /demos, /status, /privacy, /terms, /playground, /analytics, /compare, /for-providers, /fund
    - Documentation centralisee /docs (7 sections, sidebar sticky, scroll-spy, API reference auto-fetch)
    - Config Generator /config (formulaire + preview JSON + copier)
    - Playground interactif /playground (12 APIs, appels reels, JSON highlighting, code gen)
@@ -617,6 +617,18 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [x] **Total: 785 tests** (772 pass, 0 fail, 13 skipped E2E). 24 files changed, 1766 insertions, 106 deletions.
 - [x] Backend commit: `ef78ba3`. All pushed → auto-deploy Render.
 
+### Session 60 — Trails SDK Bridge Integration (11/03/2026)
+- [x] **Trails SDK**: `0xtrails@0.9.6` — cross-chain USDC bridge to SKALE on Base via IMA DepositBoxERC20
+- [x] **FundWallet.tsx**: new page /fund — TrailsWidget, recipient input, success state, How it Works, FAQ, dark/light, i18n EN/FR (~60 keys)
+- [x] **wagmi.ts**: +mainnet, polygon, optimism, arbitrum source chains
+- [x] **main.tsx**: TrailsProvider in provider stack
+- [x] **App.tsx**: lazy route /fund + Navbar link
+- [x] **vercel.json**: CSP for sequence.app + trails.build
+- [x] **vite.config.js**: vendor-trails chunk (2.5MB gzip 660KB, isolated)
+- [x] **Deps**: ethers + valtio (transitive). Build OK.
+- [x] Frontend commit: `9aa435e`. All pushed.
+- [ ] **Pending**: VITE_TRAILS_API_KEY on Vercel + real bridge test
+
 ### Session 59 — Hotfix Production Crash (10/03/2026)
 - [x] **Root cause 1**: `activity.js` — audit changed `.then(null, handler)` to `.catch(handler)`, but Supabase PostgrestFilterBuilder has NO `.catch()` method → `TypeError` on every `logActivity()` call → all paid endpoints crash (500 instead of 402)
 - [x] **Root cause 2**: `reviews.js` — express-rate-limit v7 IPv6 validation error with `trust proxy: 1` enabled. Custom `keyGenerator` using `req.ip` directly throws `ValidationError` at module load. Fixed with `validate: { keyGeneratorIpFallback: false }`
@@ -629,4 +641,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 10/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.0 (10 tools) + SDK v1.0.3 + n8n v1.4.0 + Session 59 Hotfix*
+*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.0 (10 tools) + SDK v1.0.3 + n8n v1.4.0 + Session 60 Trails*
