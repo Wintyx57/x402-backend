@@ -1,9 +1,11 @@
 // routes/wrappers/web.js — Web-related API wrappers
-// search, scrape, twitter (+ twitter-search), news, reddit, hn, youtube
+// search, scrape, article-to-md, opengraph, twitter (+ twitter-search), news, reddit, hn, youtube
 
 const express = require('express');
 const cheerio = require('cheerio');
 const TurndownService = require('turndown');
+const { Readability } = require('@mozilla/readability');
+const { JSDOM } = require('jsdom');
 const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { safeUrl } = require('../../lib/safe-url');
@@ -183,6 +185,193 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         } catch (err) {
             logger.error('Scraper API', err.message);
             return res.status(500).json({ error: 'Scraper API request failed' });
+        }
+    });
+
+    // --- ARTICLE TO MARKDOWN API (0.005 USDC) ---
+    // Uses Mozilla Readability to extract clean article content, then converts to Markdown
+    router.get('/api/article-to-md', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Article to Markdown API"), async (req, res) => {
+        const parseResult = ScraperUrlSchema.safeParse({ url: req.query.url || '' });
+
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
+        }
+
+        const targetUrl = parseResult.data.url;
+
+        let parsed;
+        try {
+            parsed = await safeUrl(targetUrl);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+
+        try {
+            const pageRes = await fetchWithTimeout(targetUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' },
+                redirect: 'follow',
+            }, 15000);
+
+            const contentLength = parseInt(pageRes.headers.get('content-length') || '0');
+            if (contentLength > 5 * 1024 * 1024) {
+                return res.status(400).json({ error: 'Page too large (max 5MB)' });
+            }
+
+            const contentType = pageRes.headers.get('content-type') || '';
+            if (!contentType.includes('text/html')) {
+                return res.status(400).json({ error: 'URL does not return HTML content', content_type: contentType });
+            }
+
+            const html = await pageRes.text();
+            if (html.length > 5 * 1024 * 1024) {
+                return res.status(400).json({ error: 'Page too large (max 5MB)' });
+            }
+
+            // Use Mozilla Readability to extract article content
+            const dom = new JSDOM(html, { url: targetUrl });
+            const reader = new Readability(dom.window.document);
+            const article = reader.parse();
+
+            if (!article || !article.content) {
+                return res.status(422).json({ error: 'Could not extract article content. The page may not be an article.', url: targetUrl });
+            }
+
+            // Convert extracted HTML to Markdown
+            const turndown = new TurndownService({
+                headingStyle: 'atx',
+                codeBlockStyle: 'fenced',
+                linkStyle: 'inlined',
+            });
+            turndown.addRule('fixProtocolRelativeUrls', {
+                filter: 'a',
+                replacement: (content, node) => {
+                    let href = node.getAttribute('href') || '';
+                    if (href.startsWith('//')) href = 'https:' + href;
+                    return content ? `[${content}](${href})` : '';
+                }
+            });
+
+            let markdown = turndown.turndown(article.content);
+            markdown = markdown.replace(/\n{3,}/g, '\n\n').trim();
+
+            if (markdown.length > 100000) {
+                markdown = markdown.slice(0, 100000) + '\n\n[...truncated]';
+            }
+
+            logActivity('api_call', `Article-to-MD API: ${parsed.hostname} -> ${markdown.length} chars`);
+
+            res.json({
+                success: true,
+                url: targetUrl,
+                title: article.title || '',
+                byline: article.byline || '',
+                excerpt: article.excerpt || '',
+                site_name: article.siteName || '',
+                word_count: markdown.split(/\s+/).length,
+                content: markdown,
+                content_length: markdown.length,
+            });
+        } catch (err) {
+            logger.error('Article-to-MD API', err.message);
+            return res.status(500).json({ error: 'Article to Markdown API request failed' });
+        }
+    });
+
+    // --- OPENGRAPH / LINK PREVIEW API (0.005 USDC) ---
+    // Extracts OpenGraph meta tags from any URL for rich link previews
+    router.get('/api/opengraph', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "OpenGraph Link Preview API"), async (req, res) => {
+        const parseResult = ScraperUrlSchema.safeParse({ url: req.query.url || '' });
+
+        if (!parseResult.success) {
+            const errors = parseResult.error.errors.map(err => err.message).join(', ');
+            return res.status(400).json({ error: errors });
+        }
+
+        const targetUrl = parseResult.data.url;
+
+        let parsed;
+        try {
+            parsed = await safeUrl(targetUrl);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+
+        try {
+            const pageRes = await fetchWithTimeout(targetUrl, {
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' },
+                redirect: 'follow',
+            }, 10000);
+
+            const contentType = pageRes.headers.get('content-type') || '';
+            if (!contentType.includes('text/html')) {
+                return res.status(400).json({ error: 'URL does not return HTML content', content_type: contentType });
+            }
+
+            const html = await pageRes.text();
+            if (html.length > 2 * 1024 * 1024) {
+                return res.status(400).json({ error: 'Page too large (max 2MB for OG extraction)' });
+            }
+
+            const $ = cheerio.load(html);
+
+            // Extract OpenGraph tags
+            const og = {};
+            $('meta[property^="og:"]').each((_, el) => {
+                const prop = $(el).attr('property').replace('og:', '');
+                if (!og[prop]) og[prop] = $(el).attr('content') || '';
+            });
+
+            // Extract Twitter Card tags as fallback
+            const twitter = {};
+            $('meta[name^="twitter:"]').each((_, el) => {
+                const name = $(el).attr('name').replace('twitter:', '');
+                if (!twitter[name]) twitter[name] = $(el).attr('content') || '';
+            });
+
+            // Build response with fallbacks
+            const title = og.title || twitter.title || $('title').text().trim() || '';
+            const description = og.description || twitter.description || $('meta[name="description"]').attr('content') || '';
+            const image = og.image || twitter.image || '';
+            const siteName = og.site_name || '';
+            const type = og.type || '';
+            const locale = og.locale || '';
+
+            // Resolve relative image URLs
+            let imageUrl = image;
+            if (imageUrl && !imageUrl.startsWith('http')) {
+                try {
+                    imageUrl = new URL(imageUrl, targetUrl).href;
+                } catch { /* keep as-is */ }
+            }
+
+            const favicon = $('link[rel="icon"]').attr('href')
+                || $('link[rel="shortcut icon"]').attr('href')
+                || '';
+            let faviconUrl = favicon;
+            if (faviconUrl && !faviconUrl.startsWith('http')) {
+                try {
+                    faviconUrl = new URL(faviconUrl, targetUrl).href;
+                } catch { /* keep as-is */ }
+            }
+
+            logActivity('api_call', `OpenGraph API: ${parsed.hostname}`);
+
+            res.json({
+                success: true,
+                url: targetUrl,
+                title,
+                description,
+                image: imageUrl,
+                site_name: siteName,
+                type,
+                locale,
+                favicon: faviconUrl,
+                twitter_card: twitter.card || '',
+            });
+        } catch (err) {
+            logger.error('OpenGraph API', err.message);
+            return res.status(500).json({ error: 'OpenGraph API request failed' });
         }
     });
 

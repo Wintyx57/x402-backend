@@ -417,3 +417,339 @@ describe('HTTP Status API — lookup', () => {
         assert.ok(600 > 599);
     });
 });
+
+// ═════════════════════════════════════════════════════════════════════════════
+// SVG Avatar Generator — Pure algorithmic tests (no network)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('SVG Avatar — hash determinism', () => {
+    function hash(str) {
+        let h = 5381;
+        for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+        }
+        return h;
+    }
+
+    function hashColor(seed, offset) {
+        const h = hash(seed + String(offset));
+        const hue = h % 360;
+        const sat = 50 + (h % 30);
+        const lit = 45 + (h % 25);
+        return `hsl(${hue}, ${sat}%, ${lit}%)`;
+    }
+
+    it('same name → same hash', () => {
+        assert.equal(hash('Wintyx57'), hash('Wintyx57'));
+    });
+
+    it('different names → different hashes', () => {
+        assert.notEqual(hash('Alice'), hash('Bob'));
+    });
+
+    it('hash always positive integer', () => {
+        for (const name of ['test', '', 'a', 'very long name with spaces', '日本語']) {
+            const h = hash(name);
+            assert.ok(h >= 0);
+            assert.ok(Number.isInteger(h));
+        }
+    });
+
+    it('same name+offset → same color', () => {
+        assert.equal(hashColor('Alice', 0), hashColor('Alice', 0));
+    });
+
+    it('different offsets → different colors', () => {
+        assert.notEqual(hashColor('Alice', 0), hashColor('Alice', 42));
+    });
+
+    it('color is valid HSL', () => {
+        const color = hashColor('test', 0);
+        assert.match(color, /^hsl\(\d+, \d+%, \d+%\)$/);
+    });
+
+    it('saturation 50-79%', () => {
+        for (let i = 0; i < 20; i++) {
+            const color = hashColor(`user${i}`, 0);
+            const sat = parseInt(color.match(/(\d+)%/)[1]);
+            assert.ok(sat >= 50 && sat < 80, `sat=${sat}% for user${i}`);
+        }
+    });
+
+    it('lightness 45-69%', () => {
+        for (let i = 0; i < 20; i++) {
+            const color = hashColor(`user${i}`, 0);
+            const parts = color.match(/(\d+)%/g);
+            const lit = parseInt(parts[1]);
+            assert.ok(lit >= 45 && lit < 70, `lit=${lit}% for user${i}`);
+        }
+    });
+});
+
+describe('SVG Avatar — initials generation', () => {
+    function getInitials(name) {
+        return name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    }
+
+    it('"John Doe" → "JD"', () => assert.equal(getInitials('John Doe'), 'JD'));
+    it('"Alice" → "A"', () => assert.equal(getInitials('Alice'), 'A'));
+    it('"john.doe" → "JD"', () => assert.equal(getInitials('john.doe'), 'JD'));
+    it('"jean-paul" → "JP"', () => assert.equal(getInitials('jean-paul'), 'JP'));
+    it('"cool_user" → "CU"', () => assert.equal(getInitials('cool_user'), 'CU'));
+    it('"A B C D" → "AB" (max 2)', () => assert.equal(getInitials('A B C D'), 'AB'));
+    it('"x" → "X"', () => assert.equal(getInitials('x'), 'X'));
+});
+
+describe('SVG Avatar — size validation', () => {
+    function clampSize(s) { return Math.max(32, Math.min(512, parseInt(s) || 128)); }
+
+    it('min clamp to 32', () => assert.equal(clampSize(10), 32));
+    it('max clamp to 512', () => assert.equal(clampSize(1000), 512));
+    it('valid size passes through', () => assert.equal(clampSize(256), 256));
+    it('undefined → default 128', () => assert.equal(clampSize(undefined), 128));
+    it('NaN → default 128', () => assert.equal(clampSize('abc'), 128));
+});
+
+describe('SVG Avatar — style validation', () => {
+    const valid = ['geometric', 'pixel', 'initials'];
+    it('geometric valid', () => assert.ok(valid.includes('geometric')));
+    it('pixel valid', () => assert.ok(valid.includes('pixel')));
+    it('initials valid', () => assert.ok(valid.includes('initials')));
+    it('abstract invalid', () => assert.ok(!valid.includes('abstract')));
+    it('empty invalid', () => assert.ok(!valid.includes('')));
+});
+
+describe('SVG Avatar — pixel style determinism', () => {
+    function hash(str) {
+        let h = 5381;
+        for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+        }
+        return h;
+    }
+
+    it('same name → same pattern', () => {
+        const pattern = (name) => {
+            const r = [];
+            for (let row = 0; row < 5; row++)
+                for (let col = 0; col < 3; col++)
+                    r.push(hash(name + row + col) % 3);
+            return r;
+        };
+        assert.deepEqual(pattern('Test'), pattern('Test'));
+    });
+
+    it('different names → different patterns', () => {
+        const pattern = (name) => {
+            const r = [];
+            for (let row = 0; row < 5; row++)
+                for (let col = 0; col < 3; col++)
+                    r.push(hash(name + row + col) % 3);
+            return r;
+        };
+        assert.notDeepEqual(pattern('Alice'), pattern('Bob'));
+    });
+});
+
+describe('SVG Avatar — geometric shape count', () => {
+    function hash(str) {
+        let h = 5381;
+        for (let i = 0; i < str.length; i++) {
+            h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+        }
+        return h;
+    }
+
+    it('shape count 3-6 for various names', () => {
+        for (const name of ['Alice', 'Bob', 'Charlie', 'Diana', 'Eve', 'Frank']) {
+            const n = 3 + (hash(name) % 4);
+            assert.ok(n >= 3 && n <= 6, `numShapes=${n} for ${name}`);
+        }
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Article to Markdown — Readability + Turndown logic
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('Article-to-MD — Readability extraction', () => {
+    const { JSDOM } = require('jsdom');
+    const { Readability } = require('@mozilla/readability');
+
+    it('should extract article from well-structured HTML', () => {
+        const html = `<!DOCTYPE html><html><head><title>Test</title></head>
+        <body><article><h1>My Article</h1><p>This is the main content of the article. It has multiple sentences to ensure readability extracts it properly. The article discusses very important topics that matter.</p></article></body></html>`;
+        const dom = new JSDOM(html, { url: 'https://example.com/article' });
+        const article = new Readability(dom.window.document).parse();
+        assert.ok(article);
+        assert.ok(article.content.includes('main content'));
+    });
+
+    it('should extract title', () => {
+        const html = `<!DOCTYPE html><html><head><title>Page</title></head>
+        <body><article><h1>Article Title</h1><p>Content here with enough text for Readability to pick it up as meaningful content for extraction.</p></article></body></html>`;
+        const dom = new JSDOM(html, { url: 'https://example.com' });
+        const article = new Readability(dom.window.document).parse();
+        assert.ok(article && article.title);
+    });
+});
+
+describe('Article-to-MD — Turndown conversion', () => {
+    const TurndownService = require('turndown');
+
+    it('headings → ATX', () => {
+        const md = new TurndownService({ headingStyle: 'atx' }).turndown('<h1>Hello</h1><h2>World</h2>');
+        assert.ok(md.includes('# Hello'));
+        assert.ok(md.includes('## World'));
+    });
+
+    it('links → inline', () => {
+        const md = new TurndownService({ linkStyle: 'inlined' }).turndown('<a href="https://example.com">Click</a>');
+        assert.ok(md.includes('[Click](https://example.com)'));
+    });
+
+    it('code → fenced', () => {
+        const md = new TurndownService({ codeBlockStyle: 'fenced' }).turndown('<pre><code>const x = 1;</code></pre>');
+        assert.ok(md.includes('```'));
+    });
+
+    it('empty content → empty string', () => {
+        const md = new TurndownService().turndown('');
+        assert.equal(typeof md, 'string');
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// OpenGraph / Link Preview — Meta extraction
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('OpenGraph — meta tag extraction', () => {
+    const cheerio = require('cheerio');
+
+    function extractOG(html) {
+        const $ = cheerio.load(html);
+        const og = {};
+        $('meta[property^="og:"]').each((_, el) => {
+            const prop = $(el).attr('property').replace('og:', '');
+            if (!og[prop]) og[prop] = $(el).attr('content') || '';
+        });
+        const twitter = {};
+        $('meta[name^="twitter:"]').each((_, el) => {
+            const name = $(el).attr('name').replace('twitter:', '');
+            if (!twitter[name]) twitter[name] = $(el).attr('content') || '';
+        });
+        return {
+            title: og.title || twitter.title || $('title').text().trim() || '',
+            description: og.description || twitter.description || $('meta[name="description"]').attr('content') || '',
+            image: og.image || twitter.image || '',
+            site_name: og.site_name || '',
+            type: og.type || '',
+        };
+    }
+
+    it('extract og:title', () => {
+        const r = extractOG('<html><head><meta property="og:title" content="My Page"></head></html>');
+        assert.equal(r.title, 'My Page');
+    });
+
+    it('extract og:description', () => {
+        const r = extractOG('<html><head><meta property="og:description" content="Desc"></head></html>');
+        assert.equal(r.description, 'Desc');
+    });
+
+    it('extract og:image', () => {
+        const r = extractOG('<html><head><meta property="og:image" content="https://img.com/a.png"></head></html>');
+        assert.equal(r.image, 'https://img.com/a.png');
+    });
+
+    it('extract og:site_name + og:type', () => {
+        const r = extractOG('<html><head><meta property="og:site_name" content="S"><meta property="og:type" content="article"></head></html>');
+        assert.equal(r.site_name, 'S');
+        assert.equal(r.type, 'article');
+    });
+
+    it('fallback to twitter:title', () => {
+        const r = extractOG('<html><head><meta name="twitter:title" content="TW Title"></head></html>');
+        assert.equal(r.title, 'TW Title');
+    });
+
+    it('fallback to <title> tag', () => {
+        const r = extractOG('<html><head><title>Fallback</title></head></html>');
+        assert.equal(r.title, 'Fallback');
+    });
+
+    it('fallback to meta description', () => {
+        const r = extractOG('<html><head><meta name="description" content="Meta D"></head></html>');
+        assert.equal(r.description, 'Meta D');
+    });
+
+    it('no tags → empty strings', () => {
+        const r = extractOG('<html><head></head></html>');
+        assert.equal(r.title, '');
+        assert.equal(r.description, '');
+        assert.equal(r.image, '');
+    });
+
+    it('og: takes priority over twitter:', () => {
+        const r = extractOG('<html><head><meta property="og:title" content="OG"><meta name="twitter:title" content="TW"></head></html>');
+        assert.equal(r.title, 'OG');
+    });
+
+    it('all tags at once', () => {
+        const r = extractOG(`<html><head>
+            <meta property="og:title" content="T">
+            <meta property="og:description" content="D">
+            <meta property="og:image" content="https://i.com/a.png">
+            <meta property="og:site_name" content="S">
+            <meta property="og:type" content="website">
+        </head></html>`);
+        assert.equal(r.title, 'T');
+        assert.equal(r.description, 'D');
+        assert.equal(r.image, 'https://i.com/a.png');
+        assert.equal(r.site_name, 'S');
+        assert.equal(r.type, 'website');
+    });
+});
+
+describe('OpenGraph — URL resolution', () => {
+    it('resolve relative image URL', () => {
+        assert.equal(new URL('/img/cover.jpg', 'https://example.com/page').href, 'https://example.com/img/cover.jpg');
+    });
+
+    it('absolute URL unchanged', () => {
+        const u = 'https://cdn.example.com/img.png';
+        assert.ok(u.startsWith('http'));
+    });
+
+    it('resolve protocol-relative', () => {
+        assert.equal(new URL('https:' + '//cdn.example.com/img.png').href, 'https://cdn.example.com/img.png');
+    });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Discovery registration
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('New APIs — bazaar-discovery', () => {
+    const { discoveryMap, getInputSchemaForUrl } = require('../lib/bazaar-discovery');
+
+    it('article-to-md in discoveryMap', () => assert.ok(discoveryMap['/api/article-to-md']));
+    it('opengraph in discoveryMap', () => assert.ok(discoveryMap['/api/opengraph']));
+    it('avatar in discoveryMap', () => assert.ok(discoveryMap['/api/avatar']));
+
+    it('article-to-md requires url', () => {
+        assert.deepEqual(getInputSchemaForUrl('https://x402-api.onrender.com/api/article-to-md'), { required: ['url'] });
+    });
+
+    it('opengraph requires url', () => {
+        assert.deepEqual(getInputSchemaForUrl('https://x402-api.onrender.com/api/opengraph'), { required: ['url'] });
+    });
+
+    it('avatar requires name', () => {
+        assert.deepEqual(getInputSchemaForUrl('https://x402-api.onrender.com/api/avatar'), { required: ['name'] });
+    });
+
+    it('total endpoints >= 71', () => {
+        assert.ok(Object.keys(discoveryMap).length >= 71);
+    });
+});

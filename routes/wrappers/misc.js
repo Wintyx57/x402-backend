@@ -626,6 +626,128 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         }
     });
 
+    // --- SVG AVATAR GENERATOR API (0.005 USDC) ---
+    // Generates unique, deterministic SVG avatars from any name/seed string
+    router.get('/api/avatar', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "SVG Avatar Generator API"), async (req, res) => {
+        const name = (req.query.name || '').trim().slice(0, 100);
+        const sizeParam = parseInt(req.query.size) || 128;
+        const style = (req.query.style || 'geometric').toLowerCase();
+
+        if (!name) {
+            return res.status(400).json({ error: "Parameter 'name' required. Ex: /api/avatar?name=Wintyx57&size=128&style=geometric" });
+        }
+
+        if (!['geometric', 'pixel', 'initials'].includes(style)) {
+            return res.status(400).json({ error: "Invalid style. Choose: geometric, pixel, initials" });
+        }
+
+        const size = Math.max(32, Math.min(512, sizeParam));
+
+        // Deterministic hash from name (simple djb2)
+        function hash(str) {
+            let h = 5381;
+            for (let i = 0; i < str.length; i++) {
+                h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+            }
+            return h;
+        }
+
+        // Generate deterministic colors from hash
+        function hashColor(seed, offset) {
+            const h = hash(seed + String(offset));
+            const hue = h % 360;
+            const sat = 50 + (h % 30);
+            const lit = 45 + (h % 25);
+            return `hsl(${hue}, ${sat}%, ${lit}%)`;
+        }
+
+        const h = hash(name);
+        const bgColor = hashColor(name, 0);
+        const fgColor = hashColor(name, 42);
+        const accentColor = hashColor(name, 99);
+
+        let svgContent;
+
+        if (style === 'initials') {
+            // Clean initials avatar with gradient background
+            const initials = name.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+            const fontSize = initials.length === 1 ? size * 0.5 : size * 0.38;
+            svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="${bgColor}"/>
+    <stop offset="100%" stop-color="${fgColor}"/>
+  </linearGradient></defs>
+  <rect width="${size}" height="${size}" rx="${size * 0.15}" fill="url(#bg)"/>
+  <text x="50%" y="52%" dominant-baseline="central" text-anchor="middle" fill="white" font-family="system-ui,sans-serif" font-weight="600" font-size="${fontSize}">${initials}</text>
+</svg>`;
+        } else if (style === 'pixel') {
+            // 5x5 symmetric pixel grid (mirrored horizontally)
+            const cellSize = size / 5;
+            let rects = '';
+            for (let row = 0; row < 5; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const bit = hash(name + row + col) % 3;
+                    if (bit > 0) {
+                        const color = bit === 1 ? fgColor : accentColor;
+                        rects += `<rect x="${col * cellSize}" y="${row * cellSize}" width="${cellSize}" height="${cellSize}" fill="${color}"/>`;
+                        // Mirror horizontally
+                        if (col < 2) {
+                            rects += `<rect x="${(4 - col) * cellSize}" y="${row * cellSize}" width="${cellSize}" height="${cellSize}" fill="${color}"/>`;
+                        }
+                    }
+                }
+            }
+            svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <rect width="${size}" height="${size}" fill="${bgColor}" rx="8"/>
+  ${rects}
+</svg>`;
+        } else {
+            // Geometric: circles, triangles, arcs layered
+            const shapes = [];
+            const numShapes = 3 + (h % 4); // 3-6 shapes
+            for (let i = 0; i < numShapes; i++) {
+                const sh = hash(name + 'shape' + i);
+                const cx = (sh % size * 0.8) + size * 0.1;
+                const cy = (hash(name + 'y' + i) % (size * 0.8)) + size * 0.1;
+                const r = size * 0.1 + (sh % (size * 0.25));
+                const color = hashColor(name, i * 17);
+                const opacity = 0.5 + (sh % 40) / 100;
+                const shapeType = sh % 3;
+
+                if (shapeType === 0) {
+                    shapes.push(`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" opacity="${opacity.toFixed(2)}"/>`);
+                } else if (shapeType === 1) {
+                    const half = r * 0.8;
+                    shapes.push(`<polygon points="${cx.toFixed(1)},${(cy - half).toFixed(1)} ${(cx - half).toFixed(1)},${(cy + half).toFixed(1)} ${(cx + half).toFixed(1)},${(cy + half).toFixed(1)}" fill="${color}" opacity="${opacity.toFixed(2)}"/>`);
+                } else {
+                    shapes.push(`<rect x="${(cx - r / 2).toFixed(1)}" y="${(cy - r / 2).toFixed(1)}" width="${r.toFixed(1)}" height="${r.toFixed(1)}" rx="${(r * 0.2).toFixed(1)}" fill="${color}" opacity="${opacity.toFixed(2)}"/>`);
+                }
+            }
+            svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+  <rect width="${size}" height="${size}" fill="${bgColor}" rx="${(size * 0.1).toFixed(0)}"/>
+  ${shapes.join('\n  ')}
+</svg>`;
+        }
+
+        logActivity('api_call', `SVG Avatar API: "${name}" (${style}, ${size}px)`);
+
+        // Return SVG directly with correct content type
+        if (req.query.format === 'json') {
+            return res.json({
+                success: true,
+                name,
+                style,
+                size,
+                svg: svgContent,
+                data_uri: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString('base64')}`,
+            });
+        }
+
+        res.set('Content-Type', 'image/svg+xml');
+        res.set('Cache-Control', 'public, max-age=86400');
+        res.send(svgContent);
+    });
+
     return router;
 }
 
