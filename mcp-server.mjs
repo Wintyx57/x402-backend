@@ -227,6 +227,16 @@ const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
 
+// ─── Error enrichment: suggest bridge when payment fails ─────────────
+const FUND_HINT = '\n💰 Need USDC? Bridge from any chain → SKALE in 1 click: https://x402bazaar.org/fund';
+function enrichPaymentError(msg) {
+    const lower = msg.toLowerCase();
+    if (lower.includes('insufficient') || lower.includes('revert') || lower.includes('balance') || lower.includes('budget limit')) {
+        return msg + FUND_HINT;
+    }
+    return msg;
+}
+
 // ─── USDC Transfer Helper ────────────────────────────────────────────
 async function sendUsdcTransfer(chainKey, toAddress, amountRaw) {
     const cfg = CHAINS[chainKey];
@@ -466,7 +476,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
                 isError: true,
             };
         }
@@ -488,7 +498,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
                 isError: true,
             };
         }
@@ -551,7 +561,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
                 isError: true,
             };
         }
@@ -613,7 +623,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
                 isError: true,
             };
         }
@@ -696,7 +706,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
                 isError: true,
             };
         }

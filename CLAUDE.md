@@ -626,8 +626,14 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [x] **vercel.json**: CSP for sequence.app + trails.build
 - [x] **vite.config.js**: vendor-trails chunk (2.5MB gzip 660KB, isolated)
 - [x] **Deps**: ethers + valtio (transitive). Build OK.
-- [x] Frontend commit: `9aa435e`. All pushed.
-- [ ] **Pending**: VITE_TRAILS_API_KEY on Vercel + real bridge test
+- [x] **2-step flow**: Step 1 = Trails fund (any chain → USDC on Base), Step 2 = IMA bridge (Base → SKALE). Trails doesn't natively support SKALE.
+- [x] **Fixes**: react-query dedup (vite alias), Vercel 404 (static route gen), wagmi hook reset (Bridge More)
+- [x] **Real bridge test**: 1 USDC bridged Base → SKALE via IMA DepositBoxERC20 — arrived quasi-instantly
+- [x] **MCP enriched**: `enrichPaymentError()` — 5 paid tools show bridge URL on insufficient balance
+- [x] **CLI updated**: `init.js` SKALE+Base funding instructions → x402bazaar.org/fund
+- [x] **All READMEs**: n8n, Express template, Python template, Community Agent, SDK — bridge link added
+- [x] **SDK README**: `fundWallet()` method documented in API section
+- [x] Frontend commits: `9aa435e`→`6f5cc14`. Backend: MCP v2.4.1. All pushed.
 
 ### Session 59 — Hotfix Production Crash (10/03/2026)
 - [x] **Root cause 1**: `activity.js` — audit changed `.then(null, handler)` to `.catch(handler)`, but Supabase PostgrestFilterBuilder has NO `.catch()` method → `TypeError` on every `logActivity()` call → all paid endpoints crash (500 instead of 402)
@@ -641,4 +647,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.0 (10 tools) + SDK v1.0.3 + n8n v1.4.0 + Session 60 Trails*
+*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE (2-step, tested) + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Session 60 Trails + All integrations bridge-aware*
