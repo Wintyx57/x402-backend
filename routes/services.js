@@ -9,8 +9,9 @@ const { ServiceSearchSchema } = require('../schemas/index');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { getInputSchemaForUrl } = require('../lib/bazaar-discovery');
+const { smartSearch } = require('../lib/smart-search');
 
-function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth) {
+function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth, getGemini) {
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
@@ -58,7 +59,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         });
     });
 
-    // --- RECHERCHE DE SERVICES (0.05 USDC) ---
+    // --- RECHERCHE DE SERVICES (0.05 USDC) — Smart Search (scoring + Gemini fallback) ---
     router.get('/search', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Search Services"), async (req, res) => {
         // Validate query parameters using Zod
         const parseResult = ServiceSearchSchema.safeParse({ q: req.query.q || '' });
@@ -74,25 +75,32 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         const safe = query.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().slice(0, 100);
         if (!safe) return res.status(400).json({ error: 'Invalid search query' });
 
-        const { data, error } = await supabase
-            .from('services')
-            .select(SERVICE_COLUMNS)
-            .or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
+        try {
+            // Safe Gemini getter: pass null if not configured (scoring-only mode)
+            let safeGetGemini = null;
+            try {
+                if (getGemini) {
+                    getGemini(); // Test if GEMINI_API_KEY is set
+                    safeGetGemini = getGemini;
+                }
+            } catch { /* Gemini not configured — scoring only */ }
 
-        if (error) {
-            logger.error('Supabase', '/search error:', error.message);
+            const searchResult = await smartSearch(supabase, safe, safeGetGemini);
+
+            logActivity('search', `Search "${query}" -> ${searchResult.results.length} result(s) [${searchResult.method}]`);
+
+            res.json({
+                success: true,
+                query,
+                count: searchResult.results.length,
+                data: searchResult.results,
+                search_method: searchResult.method,
+                keywords_used: searchResult.keywords_used,
+            });
+        } catch (err) {
+            logger.error('SmartSearch', `/search error: ${err.message}`);
             return res.status(500).json({ error: 'Search failed' });
         }
-
-        logActivity('search', `Search "${query}" -> ${data.length} result(s)`);
-
-        const enriched = enrichWithParams(data);
-        res.json({
-            success: true,
-            query,
-            count: enriched.length,
-            data: enriched
-        });
     });
 
     // --- API services (gratuit, pour le dashboard) ---

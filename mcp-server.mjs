@@ -515,15 +515,8 @@ server.tool(
     },
     async ({ task, chain: chainKey }) => {
         try {
-            const stopWords = new Set(['i', 'need', 'want', 'to', 'a', 'an', 'the', 'for', 'of', 'and', 'or', 'in', 'on', 'with', 'that', 'this', 'get', 'find', 'me', 'my', 'some', 'can', 'you', 'do', 'is', 'it', 'be', 'have', 'use', 'please', 'should', 'would', 'could']);
-            const keywords = task.toLowerCase()
-                .replace(/[^a-z0-9\s]/g, '')
-                .split(/\s+/)
-                .filter(w => w.length > 2 && !stopWords.has(w));
-            const query = keywords.slice(0, 3).join(' ') || task.slice(0, 30);
-
             const result = await payAndRequest(
-                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
+                `${SERVER_URL}/search?q=${encodeURIComponent(task)}`,
                 {},
                 chainKey || DEFAULT_CHAIN_KEY,
             );
@@ -533,7 +526,8 @@ server.tool(
                 return {
                     content: [{ type: 'text', text: JSON.stringify({
                         found: false,
-                        query_used: query,
+                        query_used: task,
+                        search_method: result.search_method || 'unknown',
                         message: `No services found matching "${task}". Try rephrasing or use search_services with different keywords.`,
                         _payment: result._payment,
                     }, null, 2) }],
@@ -542,14 +536,17 @@ server.tool(
 
             const best = services[0];
             const statusWarning = best.status === 'offline'
-                ? ' ⚠️ WARNING: This service is currently OFFLINE (last check failed). Payment may be wasted.'
+                ? ' WARNING: This service is currently OFFLINE (last check failed). Payment may be wasted.'
                 : best.status === 'degraded'
-                    ? ' ⚠️ This service is DEGRADED (partial responses).'
+                    ? ' This service is DEGRADED (partial responses).'
                     : '';
             return {
                 content: [{ type: 'text', text: JSON.stringify({
                     found: true,
-                    query_used: query,
+                    query_used: task,
+                    search_method: result.search_method || 'keyword',
+                    keywords_used: result.keywords_used || [],
+                    match_score: best._score || null,
                     service: {
                         name: best.name,
                         description: best.description,
