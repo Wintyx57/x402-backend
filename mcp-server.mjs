@@ -541,6 +541,11 @@ server.tool(
             }
 
             const best = services[0];
+            const statusWarning = best.status === 'offline'
+                ? ' ⚠️ WARNING: This service is currently OFFLINE (last check failed). Payment may be wasted.'
+                : best.status === 'degraded'
+                    ? ' ⚠️ This service is DEGRADED (partial responses).'
+                    : '';
             return {
                 content: [{ type: 'text', text: JSON.stringify({
                     found: true,
@@ -551,10 +556,12 @@ server.tool(
                         url: best.url,
                         price_usdc: best.price_usdc,
                         tags: best.tags,
+                        status: best.status || 'unknown',
+                        last_checked_at: best.last_checked_at || null,
                     },
                     action: best.id
-                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.`
-                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}`,
+                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.${statusWarning}`
+                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}${statusWarning}`,
                     alternatives_count: services.length - 1,
                     _payment: result._payment,
                 }, null, 2) }],
@@ -580,11 +587,26 @@ server.tool(
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
         try {
-            // --- GATEKEEPER: validate required params BEFORE payment ---
+            // --- GATEKEEPER: validate required params + status BEFORE payment ---
             try {
                 const infoRes = await fetch(`${SERVER_URL}/api/services/${service_id}`);
                 if (infoRes.ok) {
                     const serviceInfo = await infoRes.json();
+
+                    // Warn if service is offline (prevent USDC waste)
+                    if (serviceInfo.status === 'offline') {
+                        return {
+                            content: [{ type: 'text', text: JSON.stringify({
+                                error: 'Service is currently OFFLINE',
+                                service: serviceInfo.name,
+                                status: serviceInfo.status,
+                                last_checked_at: serviceInfo.last_checked_at,
+                                message: `⚠️ This service failed its last health check and is currently offline. Calling it would likely waste your USDC. Try again later or use search_services to find an alternative.`,
+                            }, null, 2) }],
+                            isError: true,
+                        };
+                    }
+
                     const schema = serviceInfo.required_parameters;
                     if (schema && schema.required && schema.required.length > 0) {
                         const userParams = requestBody ? (() => { try { return JSON.parse(requestBody); } catch { return {}; } })() : {};
