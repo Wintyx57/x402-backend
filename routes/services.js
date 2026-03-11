@@ -108,10 +108,27 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
         const offset = (page - 1) * limit;
+        const rawSearch = (req.query.search || '').trim().slice(0, 200);
+        const rawTag = (req.query.tag || '').trim().slice(0, 100);
 
-        const { data, count, error } = await supabase
+        // Sanitize for PostgREST ILIKE (escape %, _, and PostgREST operators)
+        const sanitize = (s) => s.replace(/[%_\\]/g, '\\$&').replace(/[.,()]/g, '');
+
+        let query = supabase
             .from('services')
-            .select(SERVICE_COLUMNS, { count: 'exact' })
+            .select(SERVICE_COLUMNS, { count: 'exact' });
+
+        if (rawSearch) {
+            const safe = sanitize(rawSearch);
+            query = query.or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
+        }
+
+        if (rawTag) {
+            const safeTag = sanitize(rawTag);
+            query = query.contains('tags', [safeTag]);
+        }
+
+        const { data, count, error } = await query
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1);
 
