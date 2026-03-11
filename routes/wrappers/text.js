@@ -7,7 +7,7 @@ const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { openaiRetry } = require('../../lib/openai-retry');
 
-function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
     const router = express.Router();
 
     // --- TRANSLATION API WRAPPER (0.005 USDC) ---
@@ -76,23 +76,20 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         }
 
         try {
-            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [
-                    {
-                        role: 'system',
-                        content: `You are a text summarization assistant. Summarize the provided text in approximately ${maxLength} words or less. Keep the summary concise, informative, and in the same language as the original text.`
-                    },
-                    {
-                        role: 'user',
-                        content: text
-                    }
-                ],
-                temperature: 0.3,
-                max_tokens: Math.min(Math.ceil(maxLength * 1.5), 4000)
+            const model = getGemini().getGenerativeModel({
+                model: 'gemini-2.0-flash',
+                systemInstruction: `You are a text summarization assistant. Summarize the provided text in approximately ${maxLength} words or less. Keep the summary concise, informative, and in the same language as the original text.`
+            });
+
+            const response = await openaiRetry(() => model.generateContent({
+                contents: [{ role: 'user', parts: [{ text }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: Math.min(Math.ceil(maxLength * 1.5), 4000)
+                }
             }), 'Summarize API');
 
-            const summary = response.choices[0].message.content.trim();
+            const summary = response.response.text().trim();
             logActivity('api_call', `Summarize API: ${text.length} chars -> ${summary.length} chars`);
 
             res.json({
@@ -104,10 +101,10 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         } catch (err) {
             logger.error('Summarize API', err.message);
 
-            if (err.status === 429) {
+            if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
                 return res.status(429).json({
                     error: 'Rate limit exceeded',
-                    message: 'OpenAI rate limit reached. Please try again in a few seconds.'
+                    message: 'AI rate limit reached. Please try again in a few seconds.'
                 });
             }
 

@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
-const OpenAI = require('openai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const swaggerUi = require('swagger-ui-express');
 
 const logger = require('./lib/logger');
@@ -51,14 +51,14 @@ if (process.env.ADMIN_TOKEN && process.env.ADMIN_TOKEN.trim().length < 32) {
     logger.warn('Config', 'ADMIN_TOKEN is too short (< 32 chars). Use a strong random token in production (e.g.: openssl rand -hex 32).');
 }
 
-// --- Lazy OpenAI client ---
-let _openai = null;
-function getOpenAI() {
-    if (!_openai) {
-        if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY not configured');
-        _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// --- Lazy Gemini client ---
+let _gemini = null;
+function getGemini() {
+    if (!_gemini) {
+        if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
+        _gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     }
-    return _openai;
+    return _gemini;
 }
 
 // --- Supabase ---
@@ -267,7 +267,7 @@ app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpo
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
 app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager));
 app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity, adminDashboardLimiter));
-app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
 app.use(createMonitoringRouter(supabase, dashboardApiLimiter));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use(createRgpdRouter(supabase));

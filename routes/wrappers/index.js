@@ -11,18 +11,18 @@ const createAiRouter = require('./ai');
 const createMiscRouter = require('./misc');
 const createIntelligenceRouter = require('./intelligence');
 
-function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
     const router = express.Router();
 
     // Mount all sub-routers
     router.use(createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
-    router.use(createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
     router.use(createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
-    router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
     router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
-    router.use(createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI));
+    router.use(createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
 
     return router;
 }

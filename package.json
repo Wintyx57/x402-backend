@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@coinbase/coinbase-sdk": "^0.25.0",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "^2.99.0",
     "@x402/extensions": "^2.5.0",

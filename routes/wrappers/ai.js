@@ -1,5 +1,6 @@
 // routes/wrappers/ai.js — AI-powered API wrappers
-// image (DALL-E), sentiment, code, readability, math
+// sentiment, code, readability, math
+// (Image generation removed — no free upstream provider)
 
 const express = require('express');
 const cheerio = require('cheerio');
@@ -8,71 +9,10 @@ const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { openaiRetry } = require('../../lib/openai-retry');
 const { safeUrl } = require('../../lib/safe-url');
-const { ImageGenerationSchema, SentimentAnalysisSchema, CodeExecutionSchema } = require('../../schemas/index');
+const { SentimentAnalysisSchema, CodeExecutionSchema } = require('../../schemas/index');
 
-function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getOpenAI) {
+function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
     const router = express.Router();
-
-    // --- IMAGE GENERATION API (DALL-E 3) - 0.05 USDC ---
-    const IMAGE_SIZES = ['1024x1024', '1024x1792', '1792x1024'];
-    const IMAGE_QUALITIES = ['standard', 'hd'];
-
-    router.get('/api/image', paidEndpointLimiter, paymentMiddleware(50000, 0.05, "Image Generation API"), async (req, res) => {
-        try {
-            // Validate query parameters using Zod
-            const parseResult = ImageGenerationSchema.safeParse({
-                prompt: req.query.prompt || '',
-                size: req.query.size || '1024x1024',
-                quality: req.query.quality || 'standard'
-            });
-
-            if (!parseResult.success) {
-                const errors = parseResult.error.errors.map(err => err.message).join(', ');
-                return res.status(400).json({ error: errors });
-            }
-
-            const prompt = parseResult.data.prompt;
-            const size = parseResult.data.size;
-            const quality = parseResult.data.quality;
-
-            const response = await openaiRetry(() => getOpenAI().images.generate({
-                model: 'dall-e-3',
-                prompt,
-                size,
-                quality,
-                n: 1,
-            }), 'Image API');
-
-            const image = response.data[0];
-            logActivity('api_call', `Image API: "${prompt.slice(0, 80)}..." (${size}, ${quality})`);
-
-            res.json({
-                success: true,
-                prompt,
-                revised_prompt: image.revised_prompt,
-                image_url: image.url,
-                size,
-                quality,
-            });
-        } catch (err) {
-            logger.error('Image API', err.message);
-
-            if (err.status === 400 || err.code === 'content_policy_violation') {
-                return res.status(400).json({
-                    error: 'Content policy violation',
-                    message: 'Your prompt was rejected by the content safety system. Please modify your prompt.',
-                });
-            }
-            if (err.status === 429) {
-                return res.status(429).json({
-                    error: 'Rate limit exceeded',
-                    message: 'OpenAI rate limit reached. Please try again in a few seconds.',
-                });
-            }
-
-            return res.status(500).json({ error: 'Image generation failed' });
-        }
-    });
 
     // --- SENTIMENT ANALYSIS API WRAPPER (0.005 USDC) ---
     router.get('/api/sentiment', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Sentiment Analysis API"), async (req, res) => {
@@ -87,29 +27,27 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
         const text = parseResult.data.text;
 
         try {
-            const response = await openaiRetry(() => getOpenAI().chat.completions.create({
-                model: 'gpt-4o-mini',
-                messages: [
-                    {
-                        role: 'system',
-                        content: 'You are a sentiment analysis assistant. Analyze the sentiment of the provided text and respond ONLY with valid JSON in this exact format: {"sentiment": "positive|negative|neutral", "score": 0.0-1.0, "keywords": ["word1", "word2", "word3"]}. The score represents confidence (0=low, 1=high). Extract 3-5 keywords that influenced the sentiment.'
-                    },
-                    {
-                        role: 'user',
-                        content: text
-                    }
-                ],
-                temperature: 0.3,
-                max_tokens: 200
+            const model = getGemini().getGenerativeModel({
+                model: 'gemini-2.0-flash',
+                systemInstruction: 'You are a sentiment analysis assistant. Analyze the sentiment of the provided text and respond ONLY with valid JSON in this exact format: {"sentiment": "positive|negative|neutral", "score": 0.0-1.0, "keywords": ["word1", "word2", "word3"]}. The score represents confidence (0=low, 1=high). Extract 3-5 keywords that influenced the sentiment.'
+            });
+
+            const response = await openaiRetry(() => model.generateContent({
+                contents: [{ role: 'user', parts: [{ text }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 200,
+                    responseMimeType: 'application/json'
+                }
             }), 'Sentiment API');
 
-            const resultText = response.choices[0].message.content.trim();
+            const resultText = response.response.text().trim();
             let analysis;
 
             try {
                 analysis = JSON.parse(resultText);
             } catch {
-                // Fallback if OpenAI doesn't return valid JSON
+                // Fallback if Gemini doesn't return valid JSON
                 analysis = {
                     sentiment: 'neutral',
                     score: 0.5,
@@ -129,10 +67,10 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
         } catch (err) {
             logger.error('Sentiment Analysis API', err.message);
 
-            if (err.status === 429) {
+            if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
                 return res.status(429).json({
                     error: 'Rate limit exceeded',
-                    message: 'OpenAI rate limit reached. Please try again in a few seconds.'
+                    message: 'AI rate limit reached. Please try again in a few seconds.'
                 });
             }
 
