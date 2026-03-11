@@ -752,6 +752,13 @@ server.tool(
                         address: account.address,
                         chains: balances,
                         default_chain: DEFAULT_CHAIN_KEY,
+                        funding_options: {
+                            bridge_url: 'https://x402bazaar.org/fund',
+                            description: 'Bridge USDC from any chain (ETH, Polygon, Arbitrum, Optimism, Base) to SKALE on Base in 1 click via Trails SDK',
+                            supported_source_chains: ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'Base'],
+                            bridge_time: '5-15 minutes (IMA bridge)',
+                            minimum_amount: '0.10 USDC',
+                        },
                     }, null, 2),
                 }],
             };
@@ -787,7 +794,7 @@ async function autoFundCredits(targetAddress) {
 // --- Tool: setup_wallet (FREE — plug-and-play onboarding) ---
 server.tool(
     'setup_wallet',
-    'Initialize your agent wallet (auto-generates one if needed). Returns your wallet address, default chain, explorer link, USDC balance, and instructions to fund it. Free — run this first before using paid APIs.',
+    'Initialize your agent wallet (auto-generates one if needed). Returns your wallet address, default chain, explorer link, USDC balance, and instructions to fund it. Free — run this first before using paid APIs. Includes bridge instructions for funding via Trails SDK.',
     {},
     async () => {
         try {
@@ -872,6 +879,7 @@ server.tool(
                         auto_faucet: autoFaucet?.funded ? autoFaucet : (autoFaucet?.reason === 'no_faucet_configured' ? undefined : autoFaucet),
                         next_steps: totalUsdc === 0
                             ? [
+                                '💰 Fund your wallet: Bridge USDC from any chain to SKALE on Base at https://x402bazaar.org/fund (powered by Trails SDK — 1-click cross-chain bridge)',
                                 'RECOMMENDED: Use chain: "skale" for ultra-low gas (~$0.0007/tx) — best for AI agents',
                                 `Send USDC to ${account.address} on Base or SKALE on Base`,
                                 'Minimum recommended: 1 USDC (covers ~20 API calls at 0.05 USDC each)',
@@ -879,9 +887,17 @@ server.tool(
                             ]
                             : [
                                 `Wallet funded with ${totalUsdc.toFixed(6)} USDC total — ready to use paid APIs`,
+                                '💰 Need more USDC? Bridge from any chain at https://x402bazaar.org/fund (powered by Trails SDK)',
                                 'TIP: Use chain: "skale" for ultra-low gas (~$0.0007/tx)',
                                 `Session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC to change)`,
                             ],
+                        funding_info: {
+                            bridge_url: 'https://x402bazaar.org/fund',
+                            how_it_works: 'Trails SDK routes your tokens from any chain to USDC on Base, then bridges to SKALE via IMA (5-15 min)',
+                            supported_chains: ['Ethereum', 'Polygon', 'Arbitrum', 'Optimism', 'Base'],
+                            gas_on_skale: 'Ultra-low (~$0.0007/tx via CREDITS token)',
+                            auto_faucet: 'CREDITS are auto-funded for new wallets',
+                        },
                         wallet_backup_info: {
                             file_path: AUTO_WALLET_PATH,
                             encryption: 'AES-256-GCM (machine-bound key)',
