@@ -141,6 +141,23 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
     });
 
     // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
+    // Uses Wandbox (wandbox.org) — free, open-source, no API key required
+    const WANDBOX_COMPILER_MAP = {
+        python:     'cpython-3.12.7',
+        python3:    'cpython-3.12.7',
+        javascript: 'nodejs-20.17.0',
+        js:         'nodejs-20.17.0',
+        typescript: 'typescript-5.6.2',
+        ts:         'typescript-5.6.2',
+        ruby:       'ruby-3.3.6',
+        go:         'go-1.22.8',
+        rust:       'rust-1.82.0',
+        php:        'php-8.3.12',
+        bash:       'bash',
+        lua:        'lua-5.4.7',
+        r:          'r-4.4.1',
+    };
+
     router.post('/api/code', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Code Execution API"), async (req, res) => {
         // Validate request body using Zod
         const parseResult = CodeExecutionSchema.safeParse({
@@ -154,36 +171,40 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
             return res.status(400).json({ error: errors });
         }
 
-        const language = parseResult.data.language;
+        const language = parseResult.data.language.toLowerCase();
         const code = parseResult.data.code;
-        const timeout = parseInt(parseResult.data.timeout);
+
+        const compiler = WANDBOX_COMPILER_MAP[language];
+        if (!compiler) {
+            const supported = Object.keys(WANDBOX_COMPILER_MAP).join(', ');
+            return res.status(400).json({ error: `Unsupported language "${language}". Supported: ${supported}` });
+        }
 
         try {
-            const apiUrl = 'https://emkc.org/api/v2/piston/execute';
+            const apiUrl = 'https://wandbox.org/api/compile.json';
             const apiRes = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    language: language,
-                    version: '*',
-                    files: [{ content: code }]
-                })
-            }, 30000); // 30s timeout for code execution
+                body: JSON.stringify({ compiler, code })
+            }, 20000); // 20s timeout for code execution
+
+            if (!apiRes.ok) {
+                const errText = await apiRes.text().catch(() => '');
+                logger.error('Code Execution API', `Wandbox HTTP ${apiRes.status}: ${errText.slice(0, 100)}`);
+                return res.status(500).json({ error: 'Code execution failed', details: errText.slice(0, 200) });
+            }
 
             const data = await apiRes.json();
-
-            if (!data.run) {
-                return res.status(500).json({ error: 'Code execution failed', details: data.message || 'Unknown error' });
-            }
 
             logActivity('api_call', `Code Execution API: ${language} (${code.length} chars)`);
 
             res.json({
                 success: true,
-                language: data.language,
-                version: data.version,
-                output: data.run.stdout || '',
-                stderr: data.run.stderr || ''
+                language,
+                output: data.program_output || '',
+                stderr: data.program_error || '',
+                compiler_error: data.compiler_error || '',
+                exit_code: data.status || '0'
             });
         } catch (err) {
             logger.error('Code Execution API', err.message);

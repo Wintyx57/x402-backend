@@ -24,7 +24,7 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
 
         try {
             const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
-            const geocodeRes = await fetchWithTimeout(geocodeUrl, {}, 5000);
+            const geocodeRes = await fetchWithTimeout(geocodeUrl, {}, 10000);
             const geocodeData = await geocodeRes.json();
 
             if (!geocodeData.results || geocodeData.results.length === 0) {
@@ -35,7 +35,7 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
             const { latitude, longitude, name, country } = location;
 
             const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&timezone=auto`;
-            const weatherRes = await fetchWithTimeout(weatherUrl, {}, 5000);
+            const weatherRes = await fetchWithTimeout(weatherUrl, {}, 10000);
             const weatherData = await weatherRes.json();
 
             if (!weatherData.current_weather) {
