@@ -98,29 +98,47 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                 return res.status(503).json({ error: 'Image generation service not configured' });
             }
 
-            // Call Gemini REST API directly with responseModalities: IMAGE
-            const imageModel = 'gemini-2.0-flash-preview-image-generation';
-            const geminiRes = await fetchWithTimeout(
-                `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${apiKey}`,
-                {
+            // Try image generation models in order (models get deprecated frequently)
+            const IMAGE_MODELS = [
+                'gemini-2.5-flash-image',
+                'gemini-3.1-flash-image-preview',
+            ];
+
+            const requestBody = JSON.stringify({
+                contents: [{ parts: [{ text: `Generate an image: ${prompt}. Size: ${size}x${size} pixels.` }] }],
+                generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+            });
+
+            let geminiRes = null;
+            let usedModel = null;
+            for (const model of IMAGE_MODELS) {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+                const attempt = await fetchWithTimeout(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: `Generate an image: ${prompt}. Size: ${size}x${size} pixels.` }] }],
-                        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-                    })
-                },
-                30000 // 30s timeout for image generation
-            );
+                    body: requestBody
+                }, 30000);
+
+                if (attempt.status === 404) {
+                    logger.warn('Image Generation API', `Model ${model} not found (404), trying next`);
+                    continue;
+                }
+                geminiRes = attempt;
+                usedModel = model;
+                break;
+            }
+
+            if (!geminiRes) {
+                return res.status(503).json({ error: 'No working image generation model available' });
+            }
 
             if (!geminiRes.ok) {
                 const errBody = await geminiRes.text().catch(() => '');
-                logger.error('Image Generation API', `Gemini HTTP ${geminiRes.status}: ${errBody.slice(0, 200)}`);
+                logger.error('Image Generation API', `Gemini ${usedModel} HTTP ${geminiRes.status}: ${errBody.slice(0, 200)}`);
 
                 if (geminiRes.status === 429) {
                     return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
                 }
-                // Include sanitized error detail for debugging (no API key leak)
                 const safeDetail = errBody.replace(/key=[^&"}\s]+/g, 'key=***').slice(0, 150);
                 return res.status(500).json({ error: 'Image generation failed', detail: safeDetail });
             }
