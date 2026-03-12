@@ -88,10 +88,14 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // (the 69 native wrappers — platform is both provider and operator)
         const isSplitMode = !!(service.owner_address) && !!txHashProvider;
 
-        // --- Wallet rate limit + budget checks (applies to BOTH modes) ---
+        // --- Wallet rate limit + budget checks ---
+        // For split mode: check here (paymentMiddleware is not used).
+        // For legacy mode: paymentMiddleware already calls checkWalletRateLimit — skip here
+        // to avoid double-counting the wallet's rate limit window.
         const rawAgentWallet = req.headers['x-agent-wallet'];
         const agentWallet = /^0x[a-fA-F0-9]{40}$/.test(rawAgentWallet) ? rawAgentWallet : null;
-        if (agentWallet) {
+
+        if (agentWallet && isSplitMode) {
             const rlCheck = checkWalletRateLimit(agentWallet);
             res.setHeader('X-RateLimit-Remaining', rlCheck.remaining);
             res.setHeader('X-RateLimit-Limit', WALLET_RATE_LIMIT);

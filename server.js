@@ -235,7 +235,7 @@ function adminAuth(req, res, next) {
     }
     const token = (req.headers['x-admin-token'] || '').trim();
     if (!token || !timingSafeCompare(token, expected)) {
-        logger.warn('AdminAuth', `Rejected from ${req.ip || 'unknown'}: received ${token.length} chars`);
+        logger.warn('AdminAuth', `Rejected from ${req.ip || 'unknown'}`);
         return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
     }
     logger.info('AdminAuth', 'ACCESS GRANTED: ' + req.ip + ' -> ' + req.method + ' ' + req.path);

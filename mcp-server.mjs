@@ -227,14 +227,30 @@ const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
 
+// ─── Error sanitization: remove sensitive paths, IPs, and addresses from errors ─
+function sanitizeError(msg) {
+    if (!msg) return 'Unknown error';
+    return String(msg)
+        // Remove Windows and Unix absolute paths
+        .replace(/[A-Z]:\\[^\s]*/gi, '[path]')
+        .replace(/\/[^\s]*\/[^\s]+/g, '[path]')
+        // Redact IP addresses
+        .replace(/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/g, '[redacted]')
+        // Redact full Ethereum addresses (40+ hex chars after 0x)
+        .replace(/0x[a-fA-F0-9]{40,}/g, '0x...')
+        // Truncate to reasonable length
+        .slice(0, 500);
+}
+
 // ─── Error enrichment: suggest bridge when payment fails ─────────────
 const FUND_HINT = '\n💰 Need USDC? Bridge from any chain → SKALE in 1 click: https://x402bazaar.org/fund';
 function enrichPaymentError(msg) {
-    const lower = msg.toLowerCase();
+    const sanitized = sanitizeError(msg);
+    const lower = sanitized.toLowerCase();
     if (lower.includes('insufficient') || lower.includes('revert') || lower.includes('balance') || lower.includes('budget limit')) {
-        return msg + FUND_HINT;
+        return sanitized + FUND_HINT;
     }
-    return msg;
+    return sanitized;
 }
 
 // ─── USDC Transfer Helper ────────────────────────────────────────────
@@ -449,7 +465,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
                 isError: true,
             };
         }
@@ -792,7 +808,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${err.message}` }],
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
                 isError: true,
             };
         }
@@ -950,7 +966,7 @@ server.tool(
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error initializing wallet: ${err.message}` }],
+                content: [{ type: 'text', text: `Error initializing wallet: ${sanitizeError(err.message)}` }],
                 isError: true,
             };
         }
@@ -988,7 +1004,7 @@ server.tool(
             return {
                 content: [{ type: 'text', text: JSON.stringify({
                     error: 'Failed to export private key',
-                    message: err.message,
+                    message: sanitizeError(err.message),
                 }, null, 2) }],
                 isError: true,
             };

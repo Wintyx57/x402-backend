@@ -298,22 +298,25 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
                         results[url] = 'blocked';
                         return;
                     }
-                    try {
+                    {
                         const controller = new AbortController();
                         const timeout = setTimeout(() => controller.abort(), 5000);
-                        const response = await fetch(url, {
-                            method: 'HEAD',
-                            signal: controller.signal,
-                            redirect: 'follow',
-                        });
-                        clearTimeout(timeout);
-                        // Status 402 is normal for x402 (payment required = online)
-                        const status = (response.status >= 200 && response.status < 500) ? 'online' : 'offline';
-                        healthCache.set(url, { status, timestamp: Date.now() });
-                        results[url] = status;
-                    } catch {
-                        healthCache.set(url, { status: 'offline', timestamp: Date.now() });
-                        results[url] = 'offline';
+                        try {
+                            const response = await fetch(url, {
+                                method: 'HEAD',
+                                signal: controller.signal,
+                                redirect: 'follow',
+                            });
+                            // Status 402 is normal for x402 (payment required = online)
+                            const status = (response.status >= 200 && response.status < 500) ? 'online' : 'offline';
+                            healthCache.set(url, { status, timestamp: Date.now() });
+                            results[url] = status;
+                        } catch {
+                            healthCache.set(url, { status: 'offline', timestamp: Date.now() });
+                            results[url] = 'offline';
+                        } finally {
+                            clearTimeout(timeout);
+                        }
                     }
                 });
                 await Promise.all(checks);
@@ -330,6 +333,11 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     if (adminAuth) {
         router.post('/api/admin/services/:id/verify', adminAuth, async (req, res) => {
             const { id } = req.params;
+
+            // Validate UUID format to prevent injection via :id path parameter
+            if (!UUID_REGEX.test(id)) {
+                return res.status(400).json({ error: 'Invalid service ID format' });
+            }
 
             // Fetch service from DB
             const { data: services, error: fetchErr } = await supabase
@@ -362,6 +370,12 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     if (adminAuth) {
         router.delete('/api/admin/services/:id', adminAuth, async (req, res) => {
             const { id } = req.params;
+
+            // Validate UUID format to prevent injection via :id path parameter
+            if (!UUID_REGEX.test(id)) {
+                return res.status(400).json({ error: 'Invalid service ID format' });
+            }
+
             const { data, error } = await supabase
                 .from('services')
                 .delete()

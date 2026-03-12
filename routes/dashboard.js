@@ -4,6 +4,8 @@ const express = require('express');
 const logger = require('../lib/logger');
 const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
 const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
+const { getDailyTesterStatus } = require('../lib/daily-tester');
+const { getTrustBreakdown, recalculateAllScores } = require('../lib/trust-score');
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
 let _balanceCache = { value: null, ts: 0 };
@@ -285,14 +287,12 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
 
     // Daily E2E tester status (admin-only diagnostic)
     router.get('/api/admin/daily-tester', adminRateLimit, adminAuth, (req, res) => {
-        const { getDailyTesterStatus } = require('../lib/daily-tester');
         res.json(getDailyTesterStatus());
     });
 
     // --- ADMIN: TrustScore breakdown for a service (PRIVATE — algorithm details) ---
     router.get('/api/admin/trust-score/:serviceId', adminRateLimit, adminAuth, async (req, res) => {
         try {
-            const { getTrustBreakdown } = require('../lib/trust-score');
             const serviceId = req.params.serviceId;
             if (!UUID_REGEX.test(serviceId)) {
                 return res.status(400).json({ error: 'Invalid service ID' });
@@ -312,7 +312,6 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     // --- ADMIN: Force recalculate all TrustScores ---
     router.post('/api/admin/trust-score/recalculate', adminRateLimit, adminAuth, async (req, res) => {
         try {
-            const { recalculateAllScores } = require('../lib/trust-score');
             // Fire-and-forget — don't block the response
             recalculateAllScores(supabase).catch(err =>
                 logger.error('TrustScore', `Manual recalc failed: ${err.message}`)
