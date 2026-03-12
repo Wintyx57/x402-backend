@@ -99,9 +99,10 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
             }
 
             // Call Gemini REST API directly with responseModalities: IMAGE
-            // Use stable model name (gemini-2.0-flash-exp was sunset)
+            // gemini-2.0-flash-exp supports native image generation via responseModalities
+            const imageModel = 'gemini-2.0-flash-exp';
             const geminiRes = await fetchWithTimeout(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${apiKey}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -120,7 +121,9 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                 if (geminiRes.status === 429) {
                     return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
                 }
-                return res.status(500).json({ error: 'Image generation failed' });
+                // Include sanitized error detail for debugging (no API key leak)
+                const safeDetail = errBody.replace(/key=[^&"}\s]+/g, 'key=***').slice(0, 150);
+                return res.status(500).json({ error: 'Image generation failed', detail: safeDetail });
             }
 
             const data = await geminiRes.json();
