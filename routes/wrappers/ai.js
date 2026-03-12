@@ -1,6 +1,5 @@
 // routes/wrappers/ai.js — AI-powered API wrappers
-// sentiment, code, readability, math
-// (Image generation removed — no free upstream provider)
+// sentiment, image, code, readability, math
 
 const express = require('express');
 const cheerio = require('cheerio');
@@ -75,6 +74,96 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
             }
 
             return res.status(500).json({ error: 'Sentiment Analysis API request failed' });
+        }
+    });
+
+    // --- AI IMAGE GENERATION API (0.02 USDC) ---
+    // Uses Gemini native image generation (free upstream, rate-limited)
+    router.get('/api/image', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "AI Image Generation API"), async (req, res) => {
+        const prompt = (req.query.prompt || '').trim().slice(0, 1000);
+        const size = (req.query.size || '512').trim();
+
+        if (!prompt) {
+            return res.status(400).json({ error: "Parameter 'prompt' required. Ex: /api/image?prompt=a+sunset+over+mountains&size=512" });
+        }
+
+        const validSizes = ['256', '512', '1024'];
+        if (!validSizes.includes(size)) {
+            return res.status(400).json({ error: `Invalid size '${size}'. Supported: ${validSizes.join(', ')}` });
+        }
+
+        try {
+            const apiKey = process.env.GEMINI_API_KEY;
+            if (!apiKey) {
+                return res.status(503).json({ error: 'Image generation service not configured' });
+            }
+
+            // Call Gemini REST API directly with responseModalities: IMAGE
+            const geminiRes = await fetchWithTimeout(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${apiKey}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `Generate an image: ${prompt}. Size: ${size}x${size} pixels.` }] }],
+                        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+                    })
+                },
+                30000 // 30s timeout for image generation
+            );
+
+            if (!geminiRes.ok) {
+                const errBody = await geminiRes.text().catch(() => '');
+                logger.error('Image Generation API', `Gemini HTTP ${geminiRes.status}: ${errBody.slice(0, 200)}`);
+
+                if (geminiRes.status === 429) {
+                    return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
+                }
+                return res.status(500).json({ error: 'Image generation failed' });
+            }
+
+            const data = await geminiRes.json();
+            const parts = data.candidates?.[0]?.content?.parts || [];
+
+            let imageData = null;
+            let mimeType = 'image/png';
+            let textResponse = '';
+
+            for (const part of parts) {
+                if (part.inlineData) {
+                    imageData = part.inlineData.data;
+                    mimeType = part.inlineData.mimeType || 'image/png';
+                } else if (part.text) {
+                    textResponse = part.text;
+                }
+            }
+
+            if (!imageData) {
+                logger.warn('Image Generation API', `No image in response. Text: ${textResponse.slice(0, 200)}`);
+                return res.status(500).json({
+                    error: 'Image generation returned no image',
+                    message: textResponse.slice(0, 200) || 'The model could not generate an image for this prompt'
+                });
+            }
+
+            logActivity('api_call', `Image Generation API: "${prompt.slice(0, 50)}" (${size}px)`);
+
+            // Return as JSON with base64 data URI
+            res.json({
+                success: true,
+                prompt: prompt.slice(0, 200),
+                size: `${size}x${size}`,
+                mime_type: mimeType,
+                image_base64: imageData,
+                data_uri: `data:${mimeType};base64,${imageData}`,
+            });
+        } catch (err) {
+            logger.error('Image Generation API', err.message);
+
+            if (err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429')) {
+                return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
+            }
+            return res.status(500).json({ error: 'Image generation failed' });
         }
     });
 

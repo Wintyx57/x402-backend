@@ -183,11 +183,11 @@ const WRAPPER_SERVICES = [
     },
     {
         name: "x402 AI Image Generation",
-        description: "Generate images with DALL-E 3. Provide a text prompt, get a high-quality AI-generated image URL back. Supports 1024x1024, 1024x1792, 1792x1024 sizes and standard/hd quality. Usage: /api/image?prompt=a+cat+in+space&size=1024x1024&quality=standard",
+        description: "Generate images with Google Gemini AI. Provide a text prompt, get a high-quality AI-generated image (base64 PNG). Supports 256, 512, 1024px sizes. Returns JSON with data_uri for easy embedding. Usage: /api/image?prompt=a+cat+in+space&size=512",
         url: `${BASE_URL}/api/image`,
-        price_usdc: 0.05,
+        price_usdc: 0.02,
         owner_address: SERVER_WALLET,
-        tags: ["x402-native", "ai", "image", "dall-e", "generation", "live"]
+        tags: ["x402-native", "ai", "image", "gemini", "generation", "live"]
     },
 
     // --- NEW WRAPPERS (2026-02-12) ---
