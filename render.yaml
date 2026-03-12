@@ -46,16 +46,20 @@ services:
       # --- Keep-alive (prevents free-tier spin-down) ---
       - key: RENDER_EXTERNAL_URL
         value: https://x402-api.onrender.com
+      - key: FRONTEND_URL
+        value: https://x402bazaar.org
       # --- Daily E2E tester (real USDC payments — enable with caution) ---
       # - key: ENABLE_DAILY_TESTER
       #   value: "true"
       # --- Community Agent companion ---
       # - key: ENABLE_COMMUNITY_AGENT
       #   value: "true"
-      # - key: GEMINI_API_KEY
-      #   sync: false
+      - key: GEMINI_API_KEY
+        sync: false
       - key: FAUCET_PRIVATE_KEY
         sync: false
-      # --- ERC-8004 on-chain reputation (feedback wallet, must differ from AGENT_PRIVATE_KEY) ---
+      # --- ERC-8004 on-chain reputation ---
       - key: ERC8004_FEEDBACK_KEY
+        sync: false
+      - key: ERC8004_AGENT_ID
         sync: false

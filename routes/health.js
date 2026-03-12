@@ -196,6 +196,34 @@ function createHealthRouter(supabase) {
             allOk = false;
         }
 
+        // 3. SKALE RPC — eth_blockNumber
+        const skaleRpcUrl = CHAINS.skale?.rpcUrl || 'https://skale-base.skalenodes.com/v1/base';
+        try {
+            const skaleStart = Date.now();
+            const skaleRes = await fetch(skaleRpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
+                signal: AbortSignal.timeout(5000),
+            });
+            const skaleJson = await skaleRes.json();
+            if (skaleJson.result) {
+                checks.rpc_skale = {
+                    status: 'ok',
+                    latency_ms: Date.now() - skaleStart,
+                    block_number: parseInt(skaleJson.result, 16),
+                    url: skaleRpcUrl,
+                };
+            } else {
+                checks.rpc_skale = { status: 'error', latency_ms: Date.now() - skaleStart, url: skaleRpcUrl, error: skaleJson.error?.message || 'No result' };
+                allOk = false;
+            }
+        } catch (e) {
+            logger.warn('health/deep', `SKALE RPC ${skaleRpcUrl} unreachable: ${e.message}`);
+            checks.rpc_skale = { status: 'error', error: e.message };
+            allOk = false;
+        }
+
         const status = allOk ? 'ok' : 'degraded';
         res.status(allOk ? 200 : 503).json({
             status,
