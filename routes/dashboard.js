@@ -289,6 +289,61 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         res.json(getDailyTesterStatus());
     });
 
+    // --- ADMIN: TrustScore breakdown for a service (PRIVATE — algorithm details) ---
+    router.get('/api/admin/trust-score/:serviceId', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const { getTrustBreakdown } = require('../lib/trust-score');
+            const serviceId = req.params.serviceId;
+            if (!UUID_REGEX.test(serviceId)) {
+                return res.status(400).json({ error: 'Invalid service ID' });
+            }
+            const breakdown = await getTrustBreakdown(supabase, serviceId);
+            if (!breakdown) {
+                return res.status(404).json({ error: 'Service not found' });
+            }
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.json(breakdown);
+        } catch (err) {
+            logger.error('TrustScore', `Breakdown error: ${err.message}`);
+            res.status(500).json({ error: 'Failed to compute trust breakdown' });
+        }
+    });
+
+    // --- ADMIN: Force recalculate all TrustScores ---
+    router.post('/api/admin/trust-score/recalculate', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const { recalculateAllScores } = require('../lib/trust-score');
+            // Fire-and-forget — don't block the response
+            recalculateAllScores(supabase).catch(err =>
+                logger.error('TrustScore', `Manual recalc failed: ${err.message}`)
+            );
+            logActivity('admin', 'Triggered manual TrustScore recalculation');
+            res.json({ success: true, message: 'Recalculation started' });
+        } catch (err) {
+            logger.error('TrustScore', `Recalc trigger error: ${err.message}`);
+            res.status(500).json({ error: 'Failed to trigger recalculation' });
+        }
+    });
+
+    // --- ADMIN: TrustScore leaderboard (all services sorted by score) ---
+    router.get('/api/admin/trust-score', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const { data, error } = await supabase
+                .from('services')
+                .select('id, name, url, trust_score, trust_score_updated_at, status, price_usdc')
+                .not('trust_score', 'is', null)
+                .order('trust_score', { ascending: false })
+                .limit(200);
+
+            if (error) throw error;
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.json({ services: data || [], count: (data || []).length });
+        } catch (err) {
+            logger.error('TrustScore', `Leaderboard error: ${err.message}`);
+            res.status(500).json({ error: 'Failed to fetch trust scores' });
+        }
+    });
+
     return router;
 }
 

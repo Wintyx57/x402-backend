@@ -21,6 +21,7 @@ const { BudgetManager } = require('./lib/budget');
 const { startAgent, stopAgent } = require('./lib/agent-process');
 const { createPayoutManager } = require('./lib/payouts');
 const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
+const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -329,6 +330,9 @@ const serverInstance = app.listen(PORT, async () => {
         scheduleDailyTest(`http://localhost:${PORT}`, supabase);
     }
 
+    // Proof of Quality: recalculate TrustScores every 6h
+    scheduleTrustScore(supabase);
+
     // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
     // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
     const externalUrl = process.env.RENDER_EXTERNAL_URL;
@@ -352,6 +356,7 @@ async function gracefulShutdown(signal) {
     stopMonitor();
     stopTelegramBot();
     stopDailyTest();
+    stopTrustScore();
     await stopAgent().catch(err => {
         logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
     });
