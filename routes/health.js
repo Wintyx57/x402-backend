@@ -79,6 +79,43 @@ function createHealthRouter(supabase) {
         }
     });
 
+    // --- ERC-8004 AGENT METADATA (agentURI endpoint) ---
+    // Returns the registration JSON for a service, used by Identity Registry's agentURI.
+    router.get('/api/agents/:serviceId/metadata.json', async (req, res) => {
+        const { serviceId } = req.params;
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId)) {
+            return res.status(400).json({ error: 'Invalid service ID format' });
+        }
+
+        const { data: service, error } = await supabase
+            .from('services')
+            .select('id, name, description, url, price_usdc, tags, owner_address, erc8004_agent_id')
+            .eq('id', serviceId)
+            .single();
+
+        if (error || !service) {
+            return res.status(404).json({ error: 'Service not found' });
+        }
+
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.json({
+            type: 'https://eips.ethereum.org/EIPS/eip-8004#registration-v1',
+            name: service.name,
+            description: service.description || '',
+            image: 'https://x402bazaar.org/og-image.png',
+            services: [{ name: 'api', endpoint: service.url }],
+            supportedTrust: ['reputation'],
+            x402Support: true,
+            active: true,
+            marketplace: {
+                platform: 'x402 Bazaar',
+                price_usdc: service.price_usdc,
+                tags: service.tags || [],
+                listing_url: `https://x402bazaar.org/services/${serviceId}`,
+            },
+        });
+    });
+
     // --- HEALTH CHECK ---
     router.get('/health', (req, res) => {
         const supportedNetworks = Object.entries(CHAINS)

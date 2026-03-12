@@ -56,3 +56,6 @@ services:
       #   sync: false
       - key: FAUCET_PRIVATE_KEY
         sync: false
+      # --- ERC-8004 on-chain reputation (feedback wallet, must differ from AGENT_PRIVATE_KEY) ---
+      - key: ERC8004_FEEDBACK_KEY
+        sync: false

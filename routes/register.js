@@ -6,6 +6,7 @@ const { notifyAdmin } = require('../lib/telegram-bot');
 const { ServiceRegistrationSchema } = require('../schemas');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
+const { registerAgent } = require('../lib/erc8004-registry');
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
@@ -73,6 +74,11 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         // Notify Community Agent webhook (fire-and-forget)
         notifyCommunityAgent({ name: validatedData.name, description: validatedData.description, price: validatedData.price }).catch(err => {
             logger.error('Webhook', `Community agent webhook failed: ${err.message}`);
+        });
+
+        // Register on ERC-8004 Identity Registry (fire-and-forget)
+        registerOnChain(data[0], supabase).catch(err => {
+            logger.error('ERC8004', `On-chain registration failed for "${validatedData.name}": ${err.message}`);
         });
 
         res.status(201).json({
@@ -192,6 +198,26 @@ async function notifyCommunityAgent({ name, description, price }) {
     } catch (err) {
         clearTimeout(timeoutId);
         throw err;
+    }
+}
+
+// --- Register service on ERC-8004 Identity Registry (fire-and-forget) ---
+async function registerOnChain(service, supabase) {
+    const result = await registerAgent(
+        service.id, service.name, service.url, service.description || ''
+    );
+
+    if (result && result.agentId != null) {
+        await supabase
+            .from('services')
+            .update({
+                erc8004_agent_id: result.agentId,
+                erc8004_registered_at: new Date().toISOString(),
+            })
+            .eq('id', service.id);
+
+        logger.info('ERC8004', `"${service.name}" on-chain: agentId=${result.agentId}`);
+        await notifyAdmin(`\u26D3 *ERC-8004 Agent Registered*\n*Service:* ${service.name}\n*Agent ID:* ${result.agentId}\n*TX:* \`${result.txHash.slice(0, 18)}...\``).catch(() => {});
     }
 }
 

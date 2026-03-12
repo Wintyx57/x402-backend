@@ -333,6 +333,14 @@ const serverInstance = app.listen(PORT, async () => {
     // Proof of Quality: recalculate TrustScores every 6h
     scheduleTrustScore(supabase);
 
+    // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
+    try {
+        const { initClients: initERC8004 } = require('./lib/erc8004-registry');
+        initERC8004();
+    } catch (err) {
+        logger.warn('ERC8004', `On-chain registry init failed (non-blocking): ${err.message}`);
+    }
+
     // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
     // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
     const externalUrl = process.env.RENDER_EXTERNAL_URL;

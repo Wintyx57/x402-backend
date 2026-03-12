@@ -15,7 +15,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
-    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at';
+    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at, erc8004_agent_id, erc8004_registered_at';
 
     // Enrich services with required_parameters from discoveryMap when not set in DB
     function enrichWithParams(services) {

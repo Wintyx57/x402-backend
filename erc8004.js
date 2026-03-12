@@ -1,15 +1,15 @@
-// erc8004.js — ERC-8004 Trustless Agent Identity (Base mainnet)
-// Read-only helpers for verifying and fetching on-chain agent identities.
+// erc8004.js — ERC-8004 Trustless Agent Identity & Reputation
+// Read helpers + ABIs for on-chain agent registration and reputation.
 
 const { createPublicClient, http } = require('viem');
 const { base } = require('viem/chains');
 const { safeUrl } = require('./lib/safe-url');
 
-// --- Contract addresses (Base mainnet) ---
+// --- Contract addresses (same deterministic addresses on all chains) ---
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
 const REPUTATION_REGISTRY = '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63';
 
-// --- Minimal ABI (only functions we need) ---
+// --- Identity Registry ABI ---
 const IDENTITY_ABI = [
     {
         name: 'ownerOf',
@@ -48,6 +48,68 @@ const IDENTITY_ABI = [
         stateMutability: 'nonpayable',
         inputs: [{ name: 'agentURI', type: 'string' }],
         outputs: [{ name: 'agentId', type: 'uint256' }],
+    },
+    {
+        name: 'setAgentURI',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'agentId', type: 'uint256' },
+            { name: 'newURI', type: 'string' },
+        ],
+        outputs: [],
+    },
+    {
+        name: 'Registered',
+        type: 'event',
+        inputs: [
+            { name: 'agentId', type: 'uint256', indexed: true },
+            { name: 'agentURI', type: 'string', indexed: false },
+            { name: 'owner', type: 'address', indexed: true },
+        ],
+    },
+];
+
+// --- Reputation Registry ABI ---
+const REPUTATION_ABI = [
+    {
+        name: 'giveFeedback',
+        type: 'function',
+        stateMutability: 'nonpayable',
+        inputs: [
+            { name: 'agentId', type: 'uint256' },
+            { name: 'value', type: 'int128' },
+            { name: 'valueDecimals', type: 'uint8' },
+            { name: 'tag1', type: 'string' },
+            { name: 'tag2', type: 'string' },
+            { name: 'endpoint', type: 'string' },
+            { name: 'feedbackURI', type: 'string' },
+            { name: 'feedbackHash', type: 'bytes32' },
+        ],
+        outputs: [],
+    },
+    {
+        name: 'getSummary',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [
+            { name: 'agentId', type: 'uint256' },
+            { name: 'clientAddresses', type: 'address[]' },
+            { name: 'tag1', type: 'string' },
+            { name: 'tag2', type: 'string' },
+        ],
+        outputs: [
+            { name: 'count', type: 'uint64' },
+            { name: 'summaryValue', type: 'int128' },
+            { name: 'summaryValueDecimals', type: 'uint8' },
+        ],
+    },
+    {
+        name: 'getClients',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [{ name: 'agentId', type: 'uint256' }],
+        outputs: [{ name: '', type: 'address[]' }],
     },
 ];
 
@@ -136,6 +198,7 @@ module.exports = {
     IDENTITY_REGISTRY,
     REPUTATION_REGISTRY,
     IDENTITY_ABI,
+    REPUTATION_ABI,
     client,
     verifyAgent,
     getAgentInfo,
