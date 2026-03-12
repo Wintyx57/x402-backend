@@ -184,7 +184,7 @@ function getPrivateKey() {
     console.error(`[Wallet]   Ultra-low gas (~$0.0007/tx). Best for AI agents.`);
     console.error(`[Wallet]   Pass chain: "skale" to any paid tool.`);
     console.error(`[Wallet]   CREDITS auto-funded on first setup_wallet call.`);
-    console.error(`[Wallet]   Bridge USDC: https://bridge.skale.space`);
+    console.error(`[Wallet]   Fund USDC: https://x402bazaar.org/fund`);
     console.error(`[Wallet]   Explorer: https://skale-base-explorer.skalenodes.com`);
     console.error(`[Wallet] ── Base ──────────────────────`);
     console.error(`[Wallet]   Alternative: higher gas but same USDC payments.`);
@@ -869,7 +869,7 @@ server.tool(
                     credits_balance: `${(Number(creditsRaw) / 1e18).toFixed(8)} CREDITS`,
                     explorer: `${skaleCfg.explorer}/address/${account.address}`,
                     gas_token: 'CREDITS (~$0.0007/tx — 40 CREDITS ≈ 10,000 transactions)',
-                    how_to_fund: 'CREDITS auto-funded on first setup. Bridge USDC from Base via https://bridge.skale.space | Explorer: https://skale-base-explorer.skalenodes.com',
+                    how_to_fund: 'CREDITS auto-funded on first setup. Fund USDC via https://x402bazaar.org/fund | Explorer: https://skale-base-explorer.skalenodes.com',
                 };
             } catch (err) {
                 chains.skale = { network: skaleCfg.label, error: err.message };
@@ -924,7 +924,7 @@ server.tool(
                                     'RECOMMENDED: Use chain: "skale" for ultra-low gas (~$0.0007/tx) — best for AI agents',
                                     `Send USDC to ${account.address} on Base or SKALE on Base`,
                                     '🔗 GET USDC ON SKALE: Bridge from any chain → SKALE in 1 click: https://x402bazaar.org/fund',
-                                    '🔗 SKALE Bridge (native): https://bridge.skale.space',
+                                    '🔗 Alternative: SKALE native bridge: https://bridge.skale.space',
                                     'Minimum recommended: 1 USDC (covers ~20 API calls at 0.05 USDC each)',
                                     `Session budget: ${MAX_BUDGET.toFixed(2)} USDC (set MAX_BUDGET_USDC to change)`,
                                 ]
