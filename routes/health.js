@@ -128,6 +128,7 @@ function createHealthRouter(supabase) {
             timestamp: new Date().toISOString(),
             version: PKG_VERSION,
             uptime_seconds: Math.floor(process.uptime()),
+            gemini_configured: !!process.env.GEMINI_API_KEY,
             ...(process.env.NODE_ENV !== 'production' && { node_version: process.version }),
         });
     });
