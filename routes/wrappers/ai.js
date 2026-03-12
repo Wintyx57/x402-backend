@@ -99,8 +99,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
             }
 
             // Call Gemini REST API directly with responseModalities: IMAGE
-            // gemini-2.0-flash-exp supports native image generation via responseModalities
-            const imageModel = 'gemini-2.0-flash-exp';
+            const imageModel = 'gemini-2.0-flash-preview-image-generation';
             const geminiRes = await fetchWithTimeout(
                 `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:generateContent?key=${apiKey}`,
                 {
