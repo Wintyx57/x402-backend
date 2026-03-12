@@ -310,7 +310,14 @@ function createHealthRouter(supabase) {
             });
         } catch (err) {
             logger.error('Faucet', `Failed to fund ${address}: ${err.message}`);
-            res.status(500).json({ funded: false, reason: 'send_failed' });
+            res.status(500).json({
+                funded: false,
+                reason: 'send_failed',
+                error: err.message?.includes('insufficient') ? 'Faucet wallet has insufficient CREDITS for gas'
+                     : err.message?.includes('nonce') ? 'Transaction nonce conflict — retry in a few seconds'
+                     : 'CREDITS transfer failed — try again later',
+                hint: 'If this persists, you can manually send 0.01 CREDITS to your wallet on SKALE on Base (chain ID 1187947933)',
+            });
         }
     });
 
