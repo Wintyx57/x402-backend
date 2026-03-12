@@ -1,6 +1,9 @@
 // tests/trust-score.test.js — Unit tests for Proof of Quality TrustScore engine
 
-const { describe, it, expect } = require('@jest/globals');
+'use strict';
+
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
 
 const {
     _test: {
@@ -82,21 +85,21 @@ function mockSupabase(tables = {}) {
 // ---------------------------------------------------------------------------
 describe('extractPath', () => {
     it('extracts path from full URL', () => {
-        expect(extractPath('https://x402-api.onrender.com/api/joke')).toBe('/api/joke');
+        assert.strictEqual(extractPath('https://x402-api.onrender.com/api/joke'), '/api/joke');
     });
 
     it('returns path as-is if already a path', () => {
-        expect(extractPath('/api/joke')).toBe('/api/joke');
+        assert.strictEqual(extractPath('/api/joke'), '/api/joke');
     });
 
     it('returns null for empty input', () => {
-        expect(extractPath('')).toBeNull();
-        expect(extractPath(null)).toBeNull();
-        expect(extractPath(undefined)).toBeNull();
+        assert.strictEqual(extractPath(''), null);
+        assert.strictEqual(extractPath(null), null);
+        assert.strictEqual(extractPath(undefined), null);
     });
 
     it('returns null for non-path strings', () => {
-        expect(extractPath('not-a-url')).toBeNull();
+        assert.strictEqual(extractPath('not-a-url'), null);
     });
 });
 
@@ -106,20 +109,20 @@ describe('extractPath', () => {
 describe('Weights', () => {
     it('sum to 1.0', () => {
         const sum = W.SUCCESS_RATE + W.LATENCY + W.REVIEWS + W.VOLUME;
-        expect(sum).toBeCloseTo(1.0, 10);
+        assert.ok(Math.abs(sum - 1.0) < 1e-9, `Expected sum to be close to 1.0, got ${sum}`);
     });
 
     it('are all positive', () => {
-        expect(W.SUCCESS_RATE).toBeGreaterThan(0);
-        expect(W.LATENCY).toBeGreaterThan(0);
-        expect(W.REVIEWS).toBeGreaterThan(0);
-        expect(W.VOLUME).toBeGreaterThan(0);
+        assert.ok(W.SUCCESS_RATE > 0);
+        assert.ok(W.LATENCY > 0);
+        assert.ok(W.REVIEWS > 0);
+        assert.ok(W.VOLUME > 0);
     });
 
     it('success rate has highest weight', () => {
-        expect(W.SUCCESS_RATE).toBeGreaterThanOrEqual(W.LATENCY);
-        expect(W.SUCCESS_RATE).toBeGreaterThanOrEqual(W.REVIEWS);
-        expect(W.SUCCESS_RATE).toBeGreaterThanOrEqual(W.VOLUME);
+        assert.ok(W.SUCCESS_RATE >= W.LATENCY);
+        assert.ok(W.SUCCESS_RATE >= W.REVIEWS);
+        assert.ok(W.SUCCESS_RATE >= W.VOLUME);
     });
 });
 
@@ -130,25 +133,25 @@ describe('computeReviewScore', () => {
     it('returns null when no reviews', async () => {
         const sb = mockSupabase({ reviews: [] });
         const score = await computeReviewScore(sb, 'uuid-1');
-        expect(score).toBeNull();
+        assert.strictEqual(score, null);
     });
 
     it('normalizes 5-star average to 1.0', async () => {
         const sb = mockSupabase({ reviews: [{ rating: 5 }, { rating: 5 }] });
         const score = await computeReviewScore(sb, 'uuid-1');
-        expect(score).toBeCloseTo(1.0);
+        assert.ok(Math.abs(score - 1.0) < 0.01, `Expected ~1.0, got ${score}`);
     });
 
     it('normalizes 1-star average to 0.0', async () => {
         const sb = mockSupabase({ reviews: [{ rating: 1 }, { rating: 1 }] });
         const score = await computeReviewScore(sb, 'uuid-1');
-        expect(score).toBeCloseTo(0.0);
+        assert.ok(Math.abs(score - 0.0) < 0.01, `Expected ~0.0, got ${score}`);
     });
 
     it('normalizes 3-star average to 0.5', async () => {
         const sb = mockSupabase({ reviews: [{ rating: 3 }, { rating: 3 }] });
         const score = await computeReviewScore(sb, 'uuid-1');
-        expect(score).toBeCloseTo(0.5);
+        assert.ok(Math.abs(score - 0.5) < 0.01, `Expected ~0.5, got ${score}`);
     });
 
     it('handles mixed ratings correctly', async () => {
@@ -157,7 +160,7 @@ describe('computeReviewScore', () => {
             { rating: 5 }, { rating: 4 }, { rating: 3 }, { rating: 2 }, { rating: 1 }
         ]});
         const score = await computeReviewScore(sb, 'uuid-1');
-        expect(score).toBeCloseTo(0.5);
+        assert.ok(Math.abs(score - 0.5) < 0.01, `Expected ~0.5, got ${score}`);
     });
 });
 
@@ -172,7 +175,7 @@ describe('computeSuccessRate', () => {
         });
         const score = await computeSuccessRate(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
         // Only 1 datapoint < MIN_DATAPOINTS (3)
-        expect(score).toBeNull();
+        assert.strictEqual(score, null);
     });
 
     it('returns 1.0 when all checks pass', async () => {
@@ -183,7 +186,7 @@ describe('computeSuccessRate', () => {
             daily_checks: [],
         });
         const score = await computeSuccessRate(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeCloseTo(1.0);
+        assert.ok(Math.abs(score - 1.0) < 0.01, `Expected ~1.0, got ${score}`);
     });
 
     it('returns 0.0 when all checks fail', async () => {
@@ -194,7 +197,7 @@ describe('computeSuccessRate', () => {
             daily_checks: [],
         });
         const score = await computeSuccessRate(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeCloseTo(0.0);
+        assert.ok(Math.abs(score - 0.0) < 0.01, `Expected ~0.0, got ${score}`);
     });
 
     it('counts partial daily checks as 0.5', async () => {
@@ -209,7 +212,7 @@ describe('computeSuccessRate', () => {
         });
         // pass=2, partial=1(0.5), fail=1(0) → success = 2.5/4 = 0.625
         const score = await computeSuccessRate(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeCloseTo(0.625);
+        assert.ok(Math.abs(score - 0.625) < 0.01, `Expected ~0.625, got ${score}`);
     });
 });
 
@@ -223,7 +226,7 @@ describe('computeLatencyScore', () => {
             daily_checks: [],
         });
         const score = await computeLatencyScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeNull();
+        assert.strictEqual(score, null);
     });
 
     it('returns 1.0 for very fast responses', async () => {
@@ -234,7 +237,7 @@ describe('computeLatencyScore', () => {
             daily_checks: [],
         });
         const score = await computeLatencyScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBe(1.0);
+        assert.strictEqual(score, 1.0);
     });
 
     it('returns 0.0 for very slow responses', async () => {
@@ -245,7 +248,7 @@ describe('computeLatencyScore', () => {
             daily_checks: [],
         });
         const score = await computeLatencyScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBe(0.0);
+        assert.strictEqual(score, 0.0);
     });
 
     it('returns intermediate score for moderate latency', async () => {
@@ -258,8 +261,8 @@ describe('computeLatencyScore', () => {
             daily_checks: [],
         });
         const score = await computeLatencyScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeGreaterThan(0);
-        expect(score).toBeLessThan(1);
+        assert.ok(score > 0);
+        assert.ok(score < 1);
     });
 
     it('ignores null/zero latency values', async () => {
@@ -271,7 +274,7 @@ describe('computeLatencyScore', () => {
             daily_checks: [],
         });
         const score = await computeLatencyScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBe(1.0);
+        assert.strictEqual(score, 1.0);
     });
 });
 
@@ -285,7 +288,7 @@ describe('computeVolumeScore', () => {
             daily_checks: [],
         });
         const score = await computeVolumeScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBe(0);
+        assert.strictEqual(score, 0);
     });
 
     it('returns value between 0 and 1 for moderate volume', async () => {
@@ -296,7 +299,7 @@ describe('computeVolumeScore', () => {
             daily_checks: [],
         });
         const score = await computeVolumeScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBeCloseTo(0.5);
+        assert.ok(Math.abs(score - 0.5) < 0.01, `Expected ~0.5, got ${score}`);
     });
 
     it('caps at 1.0 for very high volume', async () => {
@@ -306,7 +309,7 @@ describe('computeVolumeScore', () => {
             daily_checks: [],
         });
         const score = await computeVolumeScore(sb, 'https://x402-api.onrender.com/api/joke', 'uuid-1', new Date().toISOString());
-        expect(score).toBe(1.0);
+        assert.strictEqual(score, 1.0);
     });
 });
 
@@ -321,8 +324,8 @@ describe('computeTrustScore', () => {
             reviews: [],
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(result.hasData).toBe(false);
-        expect(result.score).toBeNull();
+        assert.strictEqual(result.hasData, false);
+        assert.strictEqual(result.score, null);
     });
 
     it('returns a score between 0 and 100 with data', async () => {
@@ -337,9 +340,9 @@ describe('computeTrustScore', () => {
             reviews: [{ rating: 4 }, { rating: 5 }],
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(result.hasData).toBe(true);
-        expect(result.score).toBeGreaterThanOrEqual(0);
-        expect(result.score).toBeLessThanOrEqual(100);
+        assert.strictEqual(result.hasData, true);
+        assert.ok(result.score >= 0);
+        assert.ok(result.score <= 100);
     });
 
     it('returns higher score for perfect service', async () => {
@@ -358,9 +361,9 @@ describe('computeTrustScore', () => {
         const perfectResult = await computeTrustScore(perfect, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
         const poorResult = await computeTrustScore(poor, { id: 'uuid-2', url: 'https://x402-api.onrender.com/api/joke' });
 
-        expect(perfectResult.score).toBeGreaterThan(poorResult.score);
-        expect(perfectResult.score).toBeGreaterThanOrEqual(80);
-        expect(poorResult.score).toBeLessThanOrEqual(30);
+        assert.ok(perfectResult.score > poorResult.score);
+        assert.ok(perfectResult.score >= 80);
+        assert.ok(poorResult.score <= 30);
     });
 
     it('uses neutral defaults (0.5) for missing components', async () => {
@@ -371,11 +374,11 @@ describe('computeTrustScore', () => {
             reviews: [],
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(result.hasData).toBe(true);
+        assert.strictEqual(result.hasData, true);
         // S=1.0, L=1.0, R=0.5(default), V=log10(10)/log10(10000)=0.25
         // = 0.40*1.0 + 0.25*1.0 + 0.20*0.5 + 0.15*0.25 = 0.40 + 0.25 + 0.10 + 0.0375 = 0.7875 → 79
-        expect(result.score).toBeGreaterThanOrEqual(70);
-        expect(result.score).toBeLessThanOrEqual(85);
+        assert.ok(result.score >= 70);
+        assert.ok(result.score <= 85);
     });
 
     it('factors object contains all 4 components', async () => {
@@ -385,11 +388,11 @@ describe('computeTrustScore', () => {
             reviews: [{ rating: 4 }],
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(result.factors).toBeDefined();
-        expect(result.factors).toHaveProperty('S');
-        expect(result.factors).toHaveProperty('L');
-        expect(result.factors).toHaveProperty('R');
-        expect(result.factors).toHaveProperty('V');
+        assert.ok(result.factors !== undefined);
+        assert.ok('S' in result.factors);
+        assert.ok('L' in result.factors);
+        assert.ok('R' in result.factors);
+        assert.ok('V' in result.factors);
     });
 
     it('score is an integer', async () => {
@@ -399,7 +402,7 @@ describe('computeTrustScore', () => {
             reviews: [{ rating: 3 }],
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(Number.isInteger(result.score)).toBe(true);
+        assert.ok(Number.isInteger(result.score));
     });
 });
 
@@ -415,7 +418,7 @@ describe('Edge cases', () => {
         });
         const result = await computeTrustScore(sb, { id: 'uuid-ext', url: 'https://api.interzoid.com/getcompanymatch' });
         // Should still work — extractPath gets /getcompanymatch
-        expect(result).toBeDefined();
+        assert.ok(result !== undefined);
     });
 
     it('score is clamped to 0-100', async () => {
@@ -425,7 +428,7 @@ describe('Edge cases', () => {
             reviews: Array(100).fill({ rating: 5 }),
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
-        expect(result.score).toBeLessThanOrEqual(100);
-        expect(result.score).toBeGreaterThanOrEqual(0);
+        assert.ok(result.score <= 100);
+        assert.ok(result.score >= 0);
     });
 });

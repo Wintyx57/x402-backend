@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 10/03/2026 — PHASE 1-3 COMPLETE + Gatekeeper + MCP v2.4.0)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 12/03/2026 — PHASE 1-3 COMPLETE + ERC-8004 + Service Status Pipeline + MCP v2.4.1)
 
 ### Vue d'ensemble
 
@@ -85,7 +85,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 
 **Localisation:** `HACKATHON/x402-bazaar-cli/`
 **npm package size:** 13.4 KB (11 fichiers)
-**Version actuelle:** x402-bazaar@3.1.0
+**Version actuelle:** x402-bazaar@3.2.5
 
 ```
 x402-bazaar-cli/
@@ -128,12 +128,12 @@ x402-bazaar-cli/
 - `npx x402-bazaar call <endpoint> [--param key=value] [--key wallet.json]` — Appeler un service directement avec auto-payment USDC
 - `npx x402-bazaar wallet [--address 0x...]` — Afficher/gerer la wallet agent
 
-**Publie sur npm:** x402-bazaar@3.0.0 (12/02/2026) — https://www.npmjs.com/package/x402-bazaar
+**Publie sur npm:** x402-bazaar@3.2.5 (12/03/2026) — https://www.npmjs.com/package/x402-bazaar
 **Compte npm:** wintyx
 
 ---
 
-## Etat actuel du projet (12/02/2026 — Phase 1 COMPLETE)
+## Etat actuel du projet (12/03/2026 — Phase 1-3 COMPLETE + ERC-8004)
 
 ### Architecture
 
@@ -141,7 +141,7 @@ x402-bazaar-cli/
 HACKATHON/
 ├── x402-bazaar/          # Backend (Express API)
 │   ├── server.js         # Serveur principal - helmet, CORS strict, anti-replay, rate limiting
-│   │                      # 69 endpoints natifs (x402-native)
+│   │                      # 74 endpoints natifs (x402-native)
 │   │                      # routes/, lib/ modules (health, services, register, dashboard, wrappers, logger, chains, activity, payment)
 │   ├── routes/           # Modularisation routes
 │   │   ├── health.js     # GET /health
@@ -161,7 +161,7 @@ HACKATHON/
 │   │   ├── monitor.js    # Monitoring engine (69 endpoints, 5min checks, Telegram alerts)
 │   │   ├── service-verifier.js # Deep verification (chain, USDC, headers, auto-detect inputSchema from 402 body)
 │   │   └── telegram-bot.js # Interactive Telegram bot (12 commands incl /verif, polling, secured by chat_id)
-│   ├── mcp-server.mjs    # Serveur MCP v2.4.0 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, split 95/5, 10 tools incl export_private_key, auto-faucet CREDITS)
+│   ├── mcp-server.mjs    # Serveur MCP v2.4.1 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, split 95/5, 10 tools incl export_private_key, auto-faucet CREDITS)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
@@ -172,7 +172,7 @@ HACKATHON/
 │   ├── .env              # Variables prod (NE PAS LIRE)
 │   ├── .env.example      # Template des env vars
 │   ├── tests/
-│   │   ├── e2e.test.js   # 79 tests e2e (node:test, zero deps)
+│   │   ├── e2e.test.js   # ~1037 tests (1022 pass, node:test + unit)
 │   │   └── telegram-bot.test.js # 13 tests (bot, register, dashboard, balance parsing)
 │   └── package.json      # deps: express, cors, helmet, dotenv, express-rate-limit,
 │                          #       @coinbase/coinbase-sdk, @supabase/supabase-js, openai,
@@ -280,7 +280,7 @@ HACKATHON/
 | GitHub LangChain | https://github.com/Wintyx57/x402-langchain | A jour |
 | GitHub Auto-GPT Plugin | https://github.com/Wintyx57/x402-autogpt-plugin | A jour |
 | Dashboard | https://x402-api.onrender.com/dashboard | LIVE (protected ADMIN_TOKEN) |
-| npm CLI | https://www.npmjs.com/package/x402-bazaar | v3.1.0 |
+| npm CLI | https://www.npmjs.com/package/x402-bazaar | v3.2.5 |
 
 ### Domaine x402bazaar.org
 
@@ -301,7 +301,7 @@ HACKATHON/
    - Dashboard admin `/dashboard` avec wallet balance hero, 5 stat cards, activity feed, glassmorphism
    - CORS whitelist strict (x402bazaar.org, Vercel, localhost)
    - Verification on-chain des paiements USDC sur Base mainnet
-   - 70+ services en base Supabase
+   - 74 services en base Supabase (all registered on-chain ERC-8004)
    - Backend refactoring en modules (routes/, lib/)
    - Monitoring: 61 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
    - Status API: GET /api/status, /api/status/uptime, /api/status/history (public, free)
@@ -310,7 +310,7 @@ HACKATHON/
    - Auto-test on registration: ping URL + Telegram notification + verified_status update
    - Public stats: GET /api/public-stats (no auth, safe for frontend homepage)
    - Dashboard enriched: System Info panel (monitoring live, tests count, integrations with versions)
-   - ~951 tests total (918 backend [905 pass, 13 skipped E2E] incl 133 daily-tester tests + frontend)
+   - ~1037 tests total (1022 pass, 13 skipped E2E, 2 pre-existing failures)
    - Service status columns: `services.status` (online|offline|degraded|unknown) + `services.last_checked_at` (migration 009)
    - Budget Guardian: spending controls for AI agents (5 API endpoints, alerts at 50/75/90%, auto-reset periods)
    - All 41 APIs verified functional via MCP (43 on-chain payments, session 21)
@@ -339,6 +339,7 @@ HACKATHON/
    - Caching : public-stats 60s, RPC balance 5min, Cache-Control headers
    - Daily E2E Agent : `lib/daily-tester.js` — 10 audit fixes (session 61): MAX_PRICE_PER_SERVICE 0.10 cap, SSRF /api/ filter, 30min safety timer, sanitizeErrorBody(), validatePayment(), safeParseJson() OOM guard, MIN_BALANCE 1.50, TX_TIMEOUT 15s, escapeMarkdown() fix, end-of-run balance tracking
    - **Service Status Pipeline** (session 62): daily-tester + monitor propagate `status` (online/offline/degraded/unknown) + `last_checked_at` to `services` table. Monitor updates every 5min (internes), daily-tester every 24h (tous). MCP `call_service` bloque les services offline AVANT paiement. Frontend simplifie (plus de healthMap/health-check live).
+   - **ERC-8004 On-Chain Identity + Reputation** (session 65): 74 services registered as agent NFTs on SKALE Identity Registry (agentIds 16-89). Reputation Registry pushes TrustScores on-chain every 6h via feedback wallet. Contracts: Identity `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`, Reputation `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`. 2 wallets: Registry `0xB4C2...a5` (AGENT_PRIVATE_KEY, owns NFTs) + Feedback `0x45B2...bAb` (ERC8004_FEEDBACK_KEY, submits scores). Files: erc8004.js (ABIs), lib/erc8004-registry.js (2-wallet write ops), routes/health.js (metadata endpoint), scripts/batch-register-erc8004.js (one-shot).
 
 3. **Frontend React — 20 pages deployees** :
    - Glassmorphism design (glass cards, glow effects, gradient buttons, animated hero)
@@ -382,7 +383,7 @@ HACKATHON/
 
 6. **Supabase** :
    - URL : https://kucrowtjsgusdxnjglug.supabase.co
-   - Tables : `services` (+ `required_parameters` JSONB + `status` + `last_checked_at`), `activity`, `used_transactions`, `monitoring_checks`, `reviews`, `budgets`, `pending_payouts`, `daily_checks`, `migrations_applied`
+   - Tables : `services` (+ `required_parameters` JSONB + `status` + `last_checked_at` + `erc8004_agent_id` + `erc8004_registered_at`), `activity`, `used_transactions`, `monitoring_checks`, `reviews`, `budgets`, `pending_payouts`, `daily_checks`, `migrations_applied`
 
 ### Credentials (NE PAS AFFICHER)
 
@@ -661,4 +662,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 11/03/2026 — Phase 1-3 COMPLETE + 69 APIs + 10 integrations + SKALE on Base WORKING + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Service Status Pipeline (daily-tester+monitor→DB→frontend+MCP) + Session 62*
+*Derniere mise a jour: 12/03/2026 — Phase 1-3 COMPLETE + 74 APIs + 10 integrations + SKALE on Base WORKING + ERC-8004 On-Chain Identity + Reputation (74 agents, session 65) + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Service Status Pipeline + Session 65*
