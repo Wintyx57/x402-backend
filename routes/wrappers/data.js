@@ -23,37 +23,64 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         }
 
         try {
-            const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
-            const geocodeRes = await fetchWithTimeout(geocodeUrl, {}, 10000);
-            const geocodeData = await geocodeRes.json();
+            // Primary: Open-Meteo (geocode + forecast)
+            let weatherResult = null;
+            try {
+                const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=en&format=json`;
+                const geocodeRes = await fetchWithTimeout(geocodeUrl, {}, 8000);
+                const geocodeData = await geocodeRes.json();
 
-            if (!geocodeData.results || geocodeData.results.length === 0) {
-                return res.status(404).json({ error: 'City not found', city });
+                if (!geocodeData.results || geocodeData.results.length === 0) {
+                    return res.status(404).json({ error: 'City not found', city });
+                }
+
+                const location = geocodeData.results[0];
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${location.latitude}&longitude=${location.longitude}&current_weather=true&timezone=auto`;
+                const weatherRes = await fetchWithTimeout(weatherUrl, {}, 8000);
+                const weatherData = await weatherRes.json();
+
+                if (weatherData.current_weather) {
+                    const c = weatherData.current_weather;
+                    weatherResult = {
+                        city: location.name, country: location.country || 'Unknown',
+                        temperature: c.temperature, wind_speed: c.windspeed,
+                        weather_code: c.weathercode, time: c.time, source: 'open-meteo',
+                    };
+                }
+            } catch (primaryErr) {
+                logger.warn('Weather API', `Open-Meteo failed: ${primaryErr.message}, trying fallback`);
             }
 
-            const location = geocodeData.results[0];
-            const { latitude, longitude, name, country } = location;
-
-            const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&timezone=auto`;
-            const weatherRes = await fetchWithTimeout(weatherUrl, {}, 10000);
-            const weatherData = await weatherRes.json();
-
-            if (!weatherData.current_weather) {
-                return res.status(500).json({ error: 'Failed to fetch weather data' });
+            // Fallback: wttr.in (no geocoding needed)
+            if (!weatherResult) {
+                try {
+                    const wttrUrl = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
+                    const wttrRes = await fetchWithTimeout(wttrUrl, { headers: { 'User-Agent': 'x402-bazaar/1.0' } }, 8000);
+                    const wttrData = await wttrRes.json();
+                    const cur = wttrData.current_condition?.[0];
+                    const area = wttrData.nearest_area?.[0];
+                    if (cur) {
+                        weatherResult = {
+                            city: area?.areaName?.[0]?.value || city,
+                            country: area?.country?.[0]?.value || 'Unknown',
+                            temperature: parseFloat(cur.temp_C),
+                            wind_speed: parseFloat(cur.windspeedKmph),
+                            weather_code: parseInt(cur.weatherCode, 10) || 0,
+                            time: cur.localObsDateTime || new Date().toISOString(),
+                            source: 'wttr.in',
+                        };
+                    }
+                } catch (fallbackErr) {
+                    logger.warn('Weather API', `wttr.in fallback also failed: ${fallbackErr.message}`);
+                }
             }
 
-            const current = weatherData.current_weather;
-            logActivity('api_call', `Weather API: ${city} -> ${name}, ${country}`);
+            if (!weatherResult) {
+                return res.status(502).json({ error: 'Weather data temporarily unavailable. Both upstreams failed.' });
+            }
 
-            res.json({
-                success: true,
-                city: name,
-                country: country || 'Unknown',
-                temperature: current.temperature,
-                wind_speed: current.windspeed,
-                weather_code: current.weathercode,
-                time: current.time
-            });
+            logActivity('api_call', `Weather API: ${city} -> ${weatherResult.city}, ${weatherResult.country}`);
+            res.json({ success: true, ...weatherResult });
         } catch (err) {
             logger.error('Weather API', err.message);
             return res.status(500).json({ error: 'Weather API request failed' });
@@ -75,28 +102,45 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         const apiHeaders = { 'User-Agent': 'x402-bazaar/1.0', 'Accept': 'application/json' };
 
         try {
-            const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd,eur&include_24hr_change=true`;
-            const apiRes = await fetchWithTimeout(apiUrl, { headers: apiHeaders }, 5000);
+            // Primary: CoinGecko (with retry on empty response / rate limit)
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    const apiUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(coin)}&vs_currencies=usd,eur&include_24hr_change=true`;
+                    const apiRes = await fetchWithTimeout(apiUrl, { headers: apiHeaders }, 8000);
 
-            if (apiRes.ok) {
-                const data = await apiRes.json();
-                if (data[coin]) {
-                    const prices = data[coin];
-                    logActivity('api_call', `Crypto Price API: ${coin}`);
-                    return res.json({
-                        success: true, coin,
-                        usd: prices.usd, eur: prices.eur,
-                        usd_24h_change: prices.usd_24h_change || 0,
-                        source: 'coingecko'
-                    });
+                    if (apiRes.status === 429) {
+                        logger.warn('Crypto API', `CoinGecko 429 rate limit (attempt ${attempt + 1}/2)`);
+                        if (attempt === 0) { await new Promise(r => setTimeout(r, 2000)); continue; }
+                        break;
+                    }
+
+                    if (apiRes.ok) {
+                        const data = await apiRes.json();
+                        if (data[coin] && data[coin].usd !== undefined) {
+                            const prices = data[coin];
+                            logActivity('api_call', `Crypto Price API: ${coin}`);
+                            return res.json({
+                                success: true, coin,
+                                usd: prices.usd, eur: prices.eur,
+                                usd_24h_change: prices.usd_24h_change || 0,
+                                source: 'coingecko'
+                            });
+                        }
+                        // Empty response (CoinGecko returned {} or coin not in result) — try fallback
+                        break;
+                    }
+                } catch (cgErr) {
+                    logger.warn('Crypto API', `CoinGecko error (attempt ${attempt + 1}/2): ${cgErr.message}`);
+                    if (attempt === 0) continue;
                 }
+                break;
             }
 
             // Fallback: CryptoCompare API
             const symbolMap = { bitcoin:'BTC', ethereum:'ETH', solana:'SOL', dogecoin:'DOGE', cardano:'ADA', polkadot:'DOT', avalanche:'AVAX', chainlink:'LINK', polygon:'MATIC', litecoin:'LTC', uniswap:'UNI', stellar:'XLM', cosmos:'ATOM', near:'NEAR', arbitrum:'ARB', optimism:'OP', aptos:'APT', sui:'SUI', toncoin:'TON', tron:'TRX', ripple:'XRP' };
             const sym = symbolMap[coin] || coin.toUpperCase();
             const ccUrl = `https://min-api.cryptocompare.com/data/pricemultifull?fsyms=${encodeURIComponent(sym)}&tsyms=USD,EUR`;
-            const ccRes = await fetchWithTimeout(ccUrl, { headers: apiHeaders }, 5000);
+            const ccRes = await fetchWithTimeout(ccUrl, { headers: apiHeaders }, 8000);
 
             if (ccRes.ok) {
                 const ccData = await ccRes.json();

@@ -292,30 +292,50 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         }
 
         try {
-            const apiUrl = `https://ip-api.com/json/${encodeURIComponent(address)}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as`;
-            const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
-            const data = await apiRes.json();
+            let geoResult = null;
 
-            if (data.status === 'fail') {
-                return res.status(404).json({ error: data.message || 'IP lookup failed', address });
+            // Primary: ip-api.com (45 req/min free tier)
+            try {
+                const apiUrl = `https://ip-api.com/json/${encodeURIComponent(address)}?fields=status,message,country,countryCode,region,regionName,city,zip,lat,lon,timezone,isp,org,as`;
+                const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+                const data = await apiRes.json();
+                if (data.status !== 'fail') {
+                    geoResult = {
+                        country: data.country || '', country_code: data.countryCode || '',
+                        region: data.regionName || '', city: data.city || '', zip: data.zip || '',
+                        latitude: data.lat || 0, longitude: data.lon || 0, timezone: data.timezone || '',
+                        isp: data.isp || '', org: data.org || '',
+                    };
+                }
+            } catch (primaryErr) {
+                logger.warn('IP Geolocation API', `ip-api.com failed: ${primaryErr.message}, trying fallback`);
+            }
+
+            // Fallback: ipwho.is (free, no key, unlimited)
+            if (!geoResult) {
+                try {
+                    const fbUrl = `https://ipwho.is/${encodeURIComponent(address)}`;
+                    const fbRes = await fetchWithTimeout(fbUrl, {}, 5000);
+                    const fb = await fbRes.json();
+                    if (fb.success !== false) {
+                        geoResult = {
+                            country: fb.country || '', country_code: fb.country_code || '',
+                            region: fb.region || '', city: fb.city || '', zip: fb.postal || '',
+                            latitude: fb.latitude || 0, longitude: fb.longitude || 0,
+                            timezone: fb.timezone?.id || '', isp: fb.connection?.isp || '', org: fb.connection?.org || '',
+                        };
+                    }
+                } catch (fbErr) {
+                    logger.warn('IP Geolocation API', `ipwho.is fallback also failed: ${fbErr.message}`);
+                }
+            }
+
+            if (!geoResult) {
+                return res.status(404).json({ error: 'IP lookup failed', address });
             }
 
             logActivity('api_call', `IP Geolocation API: ${address}`);
-
-            res.json({
-                success: true,
-                ip: address,
-                country: data.country || '',
-                country_code: data.countryCode || '',
-                region: data.regionName || '',
-                city: data.city || '',
-                zip: data.zip || '',
-                latitude: data.lat || 0,
-                longitude: data.lon || 0,
-                timezone: data.timezone || '',
-                isp: data.isp || '',
-                org: data.org || ''
-            });
+            res.json({ success: true, ip: address, ...geoResult });
         } catch (err) {
             logger.error('IP Geolocation API', err.message);
             return res.status(500).json({ error: 'IP Geolocation API request failed' });
