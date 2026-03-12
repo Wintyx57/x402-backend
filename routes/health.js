@@ -277,7 +277,7 @@ function createHealthRouter(supabase) {
             // 4. Create faucet wallet + check faucet balance
             const normalizedKey = faucetKey.startsWith('0x') ? faucetKey : `0x${faucetKey}`;
             const faucetAccount = privateKeyToAccount(normalizedKey);
-            const DRIP_AMOUNT = 10_000_000_000_000_000n; // 0.01 CREDITS
+            const DRIP_AMOUNT = 100_000_000_000_000_000n; // 0.1 CREDITS
 
             const faucetBalance = await pubClient.getBalance({ address: faucetAccount.address });
             if (faucetBalance < DRIP_AMOUNT * 2n) {
@@ -291,7 +291,7 @@ function createHealthRouter(supabase) {
                 transport: http(),
             });
 
-            // 5. Send 0.01 CREDITS (~10 transactions worth)
+            // 5. Send 0.1 CREDITS (~100 transactions worth)
             const txHash = await faucetWallet.sendTransaction({
                 to: address,
                 value: DRIP_AMOUNT,
@@ -301,11 +301,11 @@ function createHealthRouter(supabase) {
             // 6. Wait confirmation (SKALE instant finality)
             await pubClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1, timeout: 30_000 });
 
-            logger.info('Faucet', `Sent 0.01 CREDITS to ${address} — tx: ${txHash}`);
+            logger.info('Faucet', `Sent 0.1 CREDITS to ${address} — tx: ${txHash}`);
             res.json({
                 funded: true,
-                amount_credits: '0.01',
-                estimated_transactions: '~10',
+                amount_credits: '0.1',
+                estimated_transactions: '~100',
                 tx_hash: txHash,
             });
         } catch (err) {
