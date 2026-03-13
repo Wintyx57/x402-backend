@@ -1,6 +1,6 @@
 # x402 Bazaar - Contexte pour Claude
 
-## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 12/03/2026 — PHASE 1-3 COMPLETE + ERC-8004 + Service Status Pipeline + MCP v2.4.1)
+## PLAN DE ROUTE — Phase 1 "Developer Obsession" (Mis a jour: 13/03/2026 — PHASE 1-3 COMPLETE + Polygon Integration + ERC-8004 + Service Status Pipeline + MCP v2.4.1)
 
 ### Vue d'ensemble
 
@@ -59,7 +59,7 @@ Phase 1: Developer Obsession (Mois 1-2) — COMPLETE
 ├── [x] Milestone 4b: UX/UI & Trust Layer — COMPLET 12/02/2026
 │     ├── [x] 4b.1 Badges enrichis: "x402 Native", "Last active: Xh ago" sur ServiceCard
 │     ├── [x] 4b.2 Health check services: ping URLs, badge Online/Offline
-│     ├── [x] 4b.3 Filtres avances: filtre chain (Base/SKALE), slider prix max
+│     ├── [x] 4b.3 Filtres avances: filtre chain (Base/SKALE/Polygon), slider prix max
 │     ├── [x] 4b.4 Dashboard admin: page /dashboard avec stats, balance, activity feed (backend only)
 │     ├── [x] 4b.5 Galerie demos agents: page /demos (code + video embed)
 │     └── [x] 4b.6 Page FAQ: section FAQ couvrant tx fail, listing, testnet, gas
@@ -106,7 +106,7 @@ x402-bazaar-cli/
 │   │   ├── mcp-config.js   # Generateur JSON MCP (merge avec config existante)
 │   │   └── env-file.js     # Generateur .env
 │   ├── lib/
-│   │   └── payment.js      # Auto-payment avec USDC sur Base (viem)
+│   │   └── payment.js      # Auto-payment avec USDC sur Base, SKALE + Polygon (viem)
 │   └── utils/
 │       └── logger.js       # Output colore (chalk) + banner + box
 ├── README.md               # Documentation npm avec Quick Start
@@ -123,7 +123,7 @@ x402-bazaar-cli/
 - `npx x402-bazaar config` — Generer la config MCP interactivement
 - `npx x402-bazaar config --output mcp.json` — Sauvegarder dans un fichier
 - `npx x402-bazaar status` — Verifier la connexion au serveur live
-- `npx x402-bazaar list [--chain base|skale] [--category ai] [--free]` — Lister les services
+- `npx x402-bazaar list [--chain base|skale|polygon] [--category ai] [--free]` — Lister les services
 - `npx x402-bazaar search <query>` — Chercher un service par nom/description
 - `npx x402-bazaar call <endpoint> [--param key=value] [--key wallet.json]` — Appeler un service directement avec auto-payment USDC
 - `npx x402-bazaar wallet [--address 0x...]` — Afficher/gerer la wallet agent
@@ -133,7 +133,7 @@ x402-bazaar-cli/
 
 ---
 
-## Etat actuel du projet (12/03/2026 — Phase 1-3 COMPLETE + ERC-8004)
+## Etat actuel du projet (13/03/2026 — Phase 1-3 COMPLETE + Polygon Integration)
 
 ### Architecture
 
@@ -153,7 +153,7 @@ HACKATHON/
 │   │   └── budget.js    # Budget Guardian: POST/GET/DELETE /api/budget, GET /api/budgets, POST /api/budget/check
 │   ├── lib/              # Logique metier
 │   │   ├── logger.js     # Winston logger
-│   │   ├── chains.js     # Config networks (Base, SKALE)
+│   │   ├── chains.js     # Config networks (Base, SKALE, Polygon)
 │   │   ├── activity.js   # Activity tracking
 │   │   ├── payment.js    # Payment verification (with budget integration + Bazaar Discovery extensions)
 │   │   ├── bazaar-discovery.js # 69 declareDiscoveryExtension() + generateDiscoveryForService() + getInputSchemaForUrl() (@x402/extensions v2.5.0)
@@ -161,7 +161,7 @@ HACKATHON/
 │   │   ├── monitor.js    # Monitoring engine (69 endpoints, 5min checks, Telegram alerts)
 │   │   ├── service-verifier.js # Deep verification (chain, USDC, headers, auto-detect inputSchema from 402 body)
 │   │   └── telegram-bot.js # Interactive Telegram bot (12 commands incl /verif, polling, secured by chat_id)
-│   ├── mcp-server.mjs    # Serveur MCP v2.4.1 pour Claude/Cursor (multi-chain Base+SKALE, x402 auto-payment, split 95/5, 10 tools incl export_private_key, auto-faucet CREDITS)
+│   ├── mcp-server.mjs    # Serveur MCP v2.4.1 pour Claude/Cursor (multi-chain Base+SKALE+Polygon, x402 auto-payment, split 95/5, 10 tools incl export_private_key, auto-faucet CREDITS)
 │   ├── dashboard.html    # Dashboard admin redesigne (wallet balance hero, 5 stats, activity feed, glassmorphism)
 │   ├── demo-agent.js     # Agent IA autonome (OpenAI GPT-4o-mini + Coinbase SDK)
 │   ├── seed-services.js  # Script pour injecter 15 services proxy dans Supabase
@@ -183,7 +183,7 @@ HACKATHON/
 │   ├── src/commands/      # init, config, status, list, search, call, wallet
 │   ├── src/detectors/     # Detection environnement (Claude, Cursor, VS Code)
 │   ├── src/generators/    # Generateur config MCP + .env
-│   ├── src/lib/           # payment.js — auto-payment USDC sur Base (viem)
+│   ├── src/lib/           # payment.js — auto-payment USDC sur Base, SKALE + Polygon (viem)
 │   └── package.json       # deps: chalk, commander, inquirer, ora, viem
 │
 ├── x402-langchain/       # Package Python LangChain (GitHub: Wintyx57/x402-langchain)
@@ -232,7 +232,7 @@ HACKATHON/
     │   ├── App.jsx       # Router (20 routes)
     │   ├── index.css     # Tailwind v4 + custom utilities (glass, glow, gradient, animations)
     │   ├── config.js     # API_URL + USDC ABI
-    │   ├── wagmi.js      # Config wagmi (Base + Base Sepolia + SKALE Europa, RainbowKit wallets)
+    │   ├── wagmi.js      # Config wagmi (Base + SKALE on Base + Polygon + Base Sepolia, RainbowKit wallets)
     │   ├── i18n/
     │   │   ├── translations.js    # EN + FR (137 clés i18n pour blog complet)
     │   │   └── LanguageContext.jsx # React Context + useTranslation() hook + localStorage persistence
@@ -245,7 +245,7 @@ HACKATHON/
     │   │   ├── ServiceCard.jsx    # Glass card avec glow hover + badges enrichis + i18n
     │   │   ├── DocsSidebar.jsx    # Sidebar sticky /docs avec scroll-spy
     │   │   ├── CategoryIcon.jsx   # Icones par categorie de service
-    │   │   ├── ChainSelector.jsx  # Toggle Base / SKALE Europa (useSwitchChain wagmi)
+    │   │   ├── ChainSelector.jsx  # Toggle Base / SKALE on Base / Polygon (useSwitchChain wagmi)
     │   │   ├── ScrollToTop.jsx    # Reset scroll on route change
     │   │   └── LanguageToggle.jsx # Toggle pill FR/EN
     │   └── pages/
@@ -292,15 +292,15 @@ HACKATHON/
 
 ### Ce qui est FAIT et FONCTIONNE
 
-1. **Backend production** (Render, mainnet Base) :
-   - `/health` → 200 OK, `"network": "Base"`
+1. **Backend production** (Render, mainnet Base / SKALE on Base / Polygon) :
+   - `/health` → 200 OK, `"network": "Base / SKALE on Base / Polygon"`
    - 69 endpoints natifs x402 : search, scrape, twitter, weather, crypto, joke, image, twitter-search, translate, summarize, code, dns, qrcode-gen, readability, sentiment, validate-email, hash, uuid, base64, password, currency, timestamp, lorem, headers, markdown, color, json-validate, useragent, news, stocks, reddit, hn, youtube, whois, ssl-check, regex, diff, math, unit-convert, csv-to-json, jwt-decode, cron-parse, password-strength, phone-validate, url-parse, url-shorten, html-to-text, http-status, dogs, geocoding, airquality, quote, facts, +8 intelligence APIs
    - Bazaar Discovery: 69 endpoints avec @x402/extensions v2.5.0 (declareDiscoveryExtension, inputSchema, exemples I/O)
    - Health-check endpoint pour monitoring des services
    - Analytics endpoint enrichi (walletBalance, recentActivity, avgPrice, activeServicesCount)
    - Dashboard admin `/dashboard` avec wallet balance hero, 5 stat cards, activity feed, glassmorphism
    - CORS whitelist strict (x402bazaar.org, Vercel, localhost)
-   - Verification on-chain des paiements USDC sur Base mainnet
+   - Verification on-chain des paiements USDC sur Base / SKALE on Base / Polygon
    - 74 services en base Supabase (all registered on-chain ERC-8004)
    - Backend refactoring en modules (routes/, lib/)
    - Monitoring: 61 endpoints checked every 5min, Telegram alerts on transitions, Supabase persistence
@@ -368,7 +368,7 @@ HACKATHON/
    - `npx x402-bazaar status` — verification connexion
    - `npx x402-bazaar list` — lister les services (filtres chain, category, free)
    - `npx x402-bazaar search` — chercher un service
-   - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base (--key wallet.json)
+   - `npx x402-bazaar call` — appeler un service directement avec auto-payment USDC sur Base, SKALE + Polygon (--key wallet.json)
    - `npx x402-bazaar wallet` — gestion wallet agent
 
 5. **Ecosysteme (10 integrations)** :
@@ -378,7 +378,7 @@ HACKATHON/
    - n8n-nodes-x402-bazaar : n8n community node v1.4.0 sur GitHub (Wintyx57/n8n-nodes-x402-bazaar) — 5 ops + split
    - Bazaar Discovery : @x402/extensions v2.5.0, 69 APIs avec inputSchema + exemples I/O dans reponses 402
    - SDK : @wintyx/x402-sdk v1.0.3 sur npm (auto-wallet AES-256-GCM, dual ESM+CJS, 55 tests)
-   - MCP : v2.4.1 (10 tools incl export_private_key, setup_wallet enrichi SKALE, enrichPaymentError bridge hints)
+   - MCP : v2.4.1 (10 tools incl export_private_key, setup_wallet enrichi SKALE, enrichPaymentError bridge hints, multi-chain)
    - Marketing : 5 contenus prets (twitter, HN, Reddit, DoraHacks, video script)
 
 6. **Supabase** :
@@ -588,13 +588,25 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [x] Migrated from SKALE Europa (2046399126) to SKALE on Base (1187947933)
 - [x] ChainSelector component (Base / SKALE on Base toggle) — frontend LIVE
 - [x] Backend verifies SKALE payments on-chain (payment.js + X-Payment-Chain: skale)
-- [x] MCP v2.4.0: multi-chain (Base + SKALE), confirmations:2, legacy tx type for SKALE, native split 95/5, 10 tools (incl export_private_key, enriched setup_wallet)
+- [x] MCP v2.4.0: multi-chain (Base + SKALE + Polygon), confirmations:2, legacy tx type for SKALE, native split 95/5, 10 tools (incl export_private_key, enriched setup_wallet)
 - [x] Marketing fix: "zero gas"/"FREE" → "ultra-low gas"/"~$0.0007" across all files
 - [x] Payment verification fix: server-side retry (4 attempts × 3s) for receipt + confirmations
 - [x] **SKALE payment tested & confirmed on-chain** (joke API paid via SKALE)
 - Gas: ~$0.0007/tx via CREDITS token (10 USDC = 40 CREDITS = ~10K transfers)
 - Agent wallet needs CREDITS for gas (send from MetaMask on SKALE on Base network)
 - [x] **Auto-Faucet CREDITS SERVER-SIDE**: `POST /api/faucet/claim` dans routes/health.js. MCP appelle le backend via HTTP. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a` (15 CREDITS). `FAUCET_PRIVATE_KEY` sur Render uniquement. SKALE recommande dans tous les outils MCP.
+
+### P0.6 — Polygon Integration: PHASE 1 (13/03/2026)
+- [x] Chain configuration: Chain ID 137, USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (6 decimals)
+- [x] Direct on-chain verification (Phase 1 only): same payment flow as Base/SKALE
+- [x] MCP v2.4.1: multi-chain support Base+SKALE+Polygon with unified payment handler
+- [x] Frontend wagmi config: +polygon mainnet to supported chains
+- [x] ChainSelector toggle: Base / SKALE on Base / Polygon
+- [x] Gas cost: ~$0.001/tx (POL token, ultra-low)
+- [x] CLI support: --chain polygon flag in list/call commands
+- [x] Backend payment.js: handles Polygon RPC verification
+- [ ] **Phase 2 (future)**: Polygon facilitator wallet (for batch transactions, like SKALE faucet)
+- [ ] **Phase 2 (future)**: Bridge links (any chain → USDC on Polygon via bridges)
 
 ### Session 56 — Auto-Faucet CREDITS + InputSchemaMap Fixes (10/03/2026)
 - [x] **InputSchemaMap audit**: fixed 3 mismatches — airquality (`city`→`lat,lon`), geocoding (`address`→`city`), headers (missing→added `url`)
@@ -662,4 +674,4 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 ### P2 — Growth
 - Multi-chain Arbitrum/Optimism, Batch payments, Provider outreach, Creator recruitment
 
-*Derniere mise a jour: 12/03/2026 — Phase 1-3 COMPLETE + 74 APIs + 10 integrations + SKALE on Base WORKING + ERC-8004 On-Chain Identity + Reputation (74 agents, session 65) + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints) + SDK v1.0.3 + n8n v1.4.0 + Service Status Pipeline + Session 65*
+*Derniere mise a jour: 13/03/2026 — Phase 1-3 COMPLETE + 74 APIs + 10 integrations + SKALE on Base WORKING + Polygon Integration (Phase 1, Direct On-Chain) + ERC-8004 On-Chain Identity + Reputation (74 agents, session 65) + Trails Bridge /fund LIVE + Auto-Faucet SERVER-SIDE + Parameter Gatekeeper + MCP v2.4.1 (10 tools + bridge hints, multi-chain) + SDK v1.0.3 + n8n v1.4.0 + Service Status Pipeline*
