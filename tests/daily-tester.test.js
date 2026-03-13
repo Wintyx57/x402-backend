@@ -22,6 +22,9 @@
 //   Suite 11 — testInternalEndpoint (mock fetch, mock sendUsdcPayment)
 //   Suite 12 — testExternalService (gatekeeper retry logic)
 //   Suite 13 — Budget guard MIN_BALANCE
+//   Suite 14 — checkPolygonRpc (eth_blockNumber health check)
+//   Suite 15 — checkPolygonFacilitator (facilitator reachability)
+//   Suite 16 — polygonMetrics dans sendTelegramReport
 'use strict';
 
 const { describe, it, before, beforeEach, afterEach } = require('node:test');
@@ -1574,6 +1577,344 @@ describe('testExternalService — 400 gatekeeper retry logic', () => {
 
         const parsed = JSON.parse(capturedBody);
         assert.strictEqual(parsed.city, 'Paris'); // from PARAM_DEFAULTS
+    });
+});
+
+// ─── Suite 14 : checkPolygonRpc ──────────────────────────────────────────────
+
+describe('checkPolygonRpc — Polygon RPC health check logic', () => {
+    // Re-implémentation locale de checkPolygonRpc pour tester sans dépendance réseau.
+    function makeCheckPolygonRpc(fetchStub) {
+        return async function checkPolygonRpc() {
+            const rpcUrl = 'https://polygon-bor-rpc.publicnode.com';
+            const start = Date.now();
+            try {
+                const res = await fetchStub(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
+                }, 10_000);
+                const latencyMs = Date.now() - start;
+                if (!res.ok) {
+                    return { up: false, blockNumber: null, latencyMs, error: `HTTP ${res.status}` };
+                }
+                const body = await res.json().catch(() => null);
+                const blockHex = body && body.result;
+                const blockNumber = blockHex ? parseInt(blockHex, 16) : null;
+                if (!blockNumber) {
+                    return { up: false, blockNumber: null, latencyMs, error: 'No block number in response' };
+                }
+                return { up: true, blockNumber, latencyMs, error: null };
+            } catch (err) {
+                const latencyMs = Date.now() - start;
+                return { up: false, blockNumber: null, latencyMs, error: err.message };
+            }
+        };
+    }
+
+    it('should return up=true with blockNumber when RPC responds correctly', async () => {
+        const blockHex = '0x' + (50_000_000).toString(16); // 50000000 en hex
+        const fetchStub = async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ jsonrpc: '2.0', result: blockHex, id: 1 }),
+        });
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, true);
+        assert.strictEqual(result.blockNumber, 50_000_000);
+        assert.strictEqual(result.error, null);
+        assert.ok(typeof result.latencyMs === 'number');
+    });
+
+    it('should return up=false when RPC returns HTTP 500', async () => {
+        const fetchStub = async () => ({ ok: false, status: 500, json: async () => ({}) });
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.blockNumber, null);
+        assert.ok(result.error.includes('500'));
+    });
+
+    it('should return up=false when RPC response has no block number', async () => {
+        const fetchStub = async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ jsonrpc: '2.0', result: null, id: 1 }),
+        });
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.blockNumber, null);
+        assert.ok(result.error.includes('No block number'));
+    });
+
+    it('should return up=false when RPC response is not valid JSON', async () => {
+        const fetchStub = async () => ({
+            ok: true,
+            status: 200,
+            json: async () => { throw new SyntaxError('Unexpected token'); },
+        });
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.blockNumber, null);
+        assert.ok(result.error !== null);
+    });
+
+    it('should return up=false with error message on network timeout', async () => {
+        const fetchStub = async () => { throw new Error('fetch timeout after 10000ms'); };
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, false);
+        assert.ok(result.error.includes('timeout'));
+        assert.ok(typeof result.latencyMs === 'number');
+    });
+
+    it('should return up=false on network error (ECONNREFUSED)', async () => {
+        const fetchStub = async () => { throw new Error('connect ECONNREFUSED'); };
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, false);
+        assert.ok(result.error.includes('ECONNREFUSED'));
+    });
+
+    it('should parse 0x-prefixed hex block number correctly', async () => {
+        // Block 68000000 = 0x40AEBF40
+        const fetchStub = async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ jsonrpc: '2.0', result: '0x40aebf40', id: 1 }),
+        });
+        const checkPolygonRpc = makeCheckPolygonRpc(fetchStub);
+        const result = await checkPolygonRpc();
+        assert.strictEqual(result.up, true);
+        assert.strictEqual(result.blockNumber, 0x40aebf40);
+    });
+});
+
+// ─── Suite 15 : checkPolygonFacilitator ──────────────────────────────────────
+
+describe('checkPolygonFacilitator — Polygon facilitator health check logic', () => {
+    // Re-implémentation locale de checkPolygonFacilitator avec injection de dépendances.
+    function makeCheckPolygonFacilitator(fetchStub, facilitatorUrl) {
+        return async function checkPolygonFacilitator() {
+            if (!facilitatorUrl) {
+                return { configured: false, up: null, latencyMs: null, error: null };
+            }
+            const start = Date.now();
+            try {
+                const res = await fetchStub(`${facilitatorUrl}/health`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' },
+                }, 10_000);
+                const latencyMs = Date.now() - start;
+                const up = res.status < 500;
+                return { configured: true, up, httpStatus: res.status, latencyMs, error: null };
+            } catch (err) {
+                const latencyMs = Date.now() - start;
+                return { configured: true, up: false, httpStatus: null, latencyMs, error: err.message };
+            }
+        };
+    }
+
+    it('should return configured=false when POLYGON_FACILITATOR_URL is not set', async () => {
+        const fetchStub = async () => { throw new Error('should not be called'); };
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, null);
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, false);
+        assert.strictEqual(result.up, null);
+        assert.strictEqual(result.error, null);
+    });
+
+    it('should return configured=true and up=true on HTTP 200', async () => {
+        const fetchStub = async () => ({ ok: true, status: 200 });
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, true);
+        assert.strictEqual(result.httpStatus, 200);
+        assert.strictEqual(result.error, null);
+    });
+
+    it('should return configured=true and up=true on HTTP 404 (server responds but no /health route)', async () => {
+        const fetchStub = async () => ({ ok: false, status: 404 });
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, true);  // < 500 = reachable
+        assert.strictEqual(result.httpStatus, 404);
+    });
+
+    it('should return configured=true and up=false on HTTP 503', async () => {
+        const fetchStub = async () => ({ ok: false, status: 503 });
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.httpStatus, 503);
+    });
+
+    it('should return configured=true and up=false on HTTP 500', async () => {
+        const fetchStub = async () => ({ ok: false, status: 500 });
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.error, null);
+    });
+
+    it('should return configured=true and up=false on network error', async () => {
+        const fetchStub = async () => { throw new Error('getaddrinfo ENOTFOUND x402.polygon.technology'); };
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, false);
+        assert.strictEqual(result.httpStatus, null);
+        assert.ok(result.error.includes('ENOTFOUND'));
+    });
+
+    it('should return configured=true and up=false on timeout', async () => {
+        const fetchStub = async () => { throw new Error('fetch timeout after 10000ms'); };
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.strictEqual(result.configured, true);
+        assert.strictEqual(result.up, false);
+        assert.ok(result.error.includes('timeout'));
+        assert.ok(typeof result.latencyMs === 'number');
+    });
+
+    it('should call /health path on the facilitator URL', async () => {
+        let calledUrl = null;
+        const fetchStub = async (url) => { calledUrl = url; return { ok: true, status: 200 }; };
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        await checkPolygonFacilitator();
+        assert.strictEqual(calledUrl, 'https://x402.polygon.technology/health');
+    });
+
+    it('should measure latencyMs (positive number) on success', async () => {
+        const fetchStub = async () => new Promise(resolve => {
+            setTimeout(() => resolve({ ok: true, status: 200 }), 5);
+        });
+        const checkPolygonFacilitator = makeCheckPolygonFacilitator(fetchStub, 'https://x402.polygon.technology');
+        const result = await checkPolygonFacilitator();
+        assert.ok(result.latencyMs >= 0);
+        assert.ok(typeof result.latencyMs === 'number');
+    });
+});
+
+// ─── Suite 16 : polygonMetrics dans sendTelegramReport ────────────────────────
+
+describe('sendTelegramReport — Polygon metrics section', () => {
+    // Re-implémentation de la section Polygon du rapport Telegram pour tests isolés.
+    function buildPolygonSection(polygonMetrics) {
+        const lines = [];
+        if (!polygonMetrics) return lines;
+
+        lines.push('*\uD83D\uDD37 Polygon Infrastructure:*');
+
+        const rpc = polygonMetrics.rpc;
+        if (rpc.up) {
+            lines.push(`  \u2022 RPC: \u2705 block #${rpc.blockNumber} (${rpc.latencyMs}ms)`);
+        } else {
+            lines.push(`  \u2022 RPC: \uD83D\uDD34 down \u2014 ${(rpc.error || 'unknown').slice(0, 60)}`);
+        }
+
+        const fac = polygonMetrics.facilitator;
+        if (fac.configured) {
+            if (fac.up) {
+                lines.push(`  \u2022 Facilitator: \u2705 HTTP ${fac.httpStatus} (${fac.latencyMs}ms)`);
+            } else {
+                const facErr = fac.error || `HTTP ${fac.httpStatus}` || 'unreachable';
+                lines.push(`  \u2022 Facilitator: \u26A0\uFE0F down \u2014 ${facErr.slice(0, 60)}`);
+            }
+        } else {
+            lines.push('  \u2022 Facilitator: not configured (Phase 1 RPC only)');
+        }
+
+        if (typeof polygonMetrics.serviceCount === 'number') {
+            lines.push(`  \u2022 Services in DB: ${polygonMetrics.serviceCount}`);
+        }
+
+        return lines;
+    }
+
+    it('should omit Polygon section when polygonMetrics is null', () => {
+        const lines = buildPolygonSection(null);
+        assert.strictEqual(lines.length, 0);
+    });
+
+    it('should include RPC up status with blockNumber and latency', () => {
+        const metrics = {
+            rpc: { up: true, blockNumber: 68_000_000, latencyMs: 120, error: null },
+            facilitator: { configured: false, up: null, latencyMs: null, error: null },
+            serviceCount: 74,
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('68000000')));
+        assert.ok(lines.some(l => l.includes('120ms')));
+        assert.ok(lines.some(l => l.includes('\u2705')));
+    });
+
+    it('should include RPC down status with error message', () => {
+        const metrics = {
+            rpc: { up: false, blockNumber: null, latencyMs: 200, error: 'connect ECONNREFUSED' },
+            facilitator: { configured: false, up: null, latencyMs: null, error: null },
+            serviceCount: 74,
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('\uD83D\uDD34') && l.includes('ECONNREFUSED')));
+    });
+
+    it('should show facilitator as not configured when configured=false', () => {
+        const metrics = {
+            rpc: { up: true, blockNumber: 1, latencyMs: 50, error: null },
+            facilitator: { configured: false, up: null, latencyMs: null, error: null },
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('not configured')));
+    });
+
+    it('should show facilitator as up when configured=true and up=true', () => {
+        const metrics = {
+            rpc: { up: true, blockNumber: 1, latencyMs: 50, error: null },
+            facilitator: { configured: true, up: true, httpStatus: 200, latencyMs: 80, error: null },
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('Facilitator') && l.includes('\u2705') && l.includes('200')));
+    });
+
+    it('should show facilitator as down when configured=true and up=false', () => {
+        const metrics = {
+            rpc: { up: true, blockNumber: 1, latencyMs: 50, error: null },
+            facilitator: { configured: true, up: false, httpStatus: 503, latencyMs: 5000, error: null },
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('Facilitator') && l.includes('\u26A0')));
+    });
+
+    it('should include serviceCount in the report', () => {
+        const metrics = {
+            rpc: { up: true, blockNumber: 1, latencyMs: 50, error: null },
+            facilitator: { configured: false, up: null, latencyMs: null, error: null },
+            serviceCount: 74,
+        };
+        const lines = buildPolygonSection(metrics);
+        assert.ok(lines.some(l => l.includes('74')));
+    });
+
+    it('should truncate long RPC error messages to 60 chars', () => {
+        const longError = 'A'.repeat(100);
+        const metrics = {
+            rpc: { up: false, blockNumber: null, latencyMs: 50, error: longError },
+            facilitator: { configured: false, up: null, latencyMs: null, error: null },
+        };
+        const lines = buildPolygonSection(metrics);
+        const rpcLine = lines.find(l => l.includes('RPC') && l.includes('\uD83D\uDD34'));
+        assert.ok(rpcLine);
+        // The error should be truncated to 60 chars at most (+ prefix text)
+        const errPart = rpcLine.split('\u2014')[1] ? rpcLine.split('\u2014')[1].trim() : '';
+        assert.ok(errPart.length <= 60);
     });
 });
 

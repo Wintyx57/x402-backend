@@ -68,3 +68,7 @@ services:
         value: https://x402.polygon.technology
       - key: POLYGON_FEE_SPLITTER_CONTRACT
         value: "0x820d4b07D09e5E07598464E6E36cB12561e0Ba56"
+      # --- FeeSplitter operator key — calls distribute() after facilitator payment ---
+      # Must be the operator/owner of the FeeSplitter contract on Polygon mainnet
+      - key: FEE_SPLITTER_OPERATOR_KEY
+        sync: false

@@ -512,7 +512,39 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     let retryHeaders;
 
     if (isSplitMode) {
-        // ── Split mode: 95% to provider, 5% to platform ──
+        // ── Split mode: if facilitator is available (Polygon), delegate to it ──
+        // The FeeSplitter contract handles the 95/5 split on-chain — no double transfer needed.
+        const splitFacilitatorUrl = cfg.facilitator || details.facilitator || null;
+        if (splitFacilitatorUrl && chainKey === 'polygon') {
+            const { wallet: walClient } = getClients(chainKey);
+            const effectiveChainConfig = { ...cfg, facilitator: splitFacilitatorUrl };
+            const { data: result, txHash: facilitatorTxHash } = await sendViaFacilitator(walClient, url, fetchOptions, details, effectiveChainConfig);
+
+            sessionSpending += cost;
+            sessionPayments.push({
+                amount: cost,
+                txHash: facilitatorTxHash,
+                chain: chainKey,
+                paymentMode: 'facilitator_split',
+                timestamp: new Date().toISOString(),
+                endpoint: url.replace(SERVER_URL, ''),
+            });
+
+            result._payment = {
+                amount:            details.amount,
+                currency:          'USDC',
+                paymentMode:       'facilitator',
+                facilitator:       splitFacilitatorUrl,
+                txHash:            facilitatorTxHash,
+                chain:             cfg.label,
+                split:             '95/5 handled by FeeSplitter contract',
+                session_spent:     sessionSpending.toFixed(2),
+                session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+            };
+            return result;
+        }
+
+        // ── Standard split: two sendUsdcTransfer calls (Base / SKALE) ──
         const totalRaw = BigInt(Math.round(cost * 1e6));
         const providerRaw = details.split
             ? BigInt(Math.round(parseFloat(details.split.provider_amount) * 1e6))
@@ -554,10 +586,15 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // ── Legacy mode: single transfer to platform (or facilitator for Polygon) ──
         const amountInUnits = BigInt(Math.round(cost * 1e6));
 
-        if (cfg.facilitator) {
+        // Resolve facilitator URL: prefer local MCP config, fall back to 402 response field.
+        // This lets agents use gas-free payments even if POLYGON_FACILITATOR_URL is not set locally.
+        const facilitatorUrl = cfg.facilitator || details.facilitator || null;
+
+        if (facilitatorUrl) {
             // Polygon Phase 2 — EIP-3009 gas-free via facilitator /settle
             const { wallet: walClient } = getClients(chainKey);
-            const { data: result, txHash: facilitatorTxHash } = await sendViaFacilitator(walClient, url, fetchOptions, details, cfg);
+            const effectiveChainConfig = { ...cfg, facilitator: facilitatorUrl };
+            const { data: result, txHash: facilitatorTxHash } = await sendViaFacilitator(walClient, url, fetchOptions, details, effectiveChainConfig);
 
             // Track spending
             sessionSpending += cost;
@@ -575,7 +612,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 amount:            details.amount,
                 currency:          'USDC',
                 paymentMode:       'facilitator',
-                facilitator:       cfg.facilitator,
+                facilitator:       facilitatorUrl,
                 txHash:            facilitatorTxHash,
                 chain:             cfg.label,
                 session_spent:     sessionSpending.toFixed(2),

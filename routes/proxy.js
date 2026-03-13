@@ -7,6 +7,7 @@ const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discovery');
 const { DEFAULT_CHAIN_KEY, getChainConfig } = require('../lib/chains');
+const feeSplitter = require('../lib/fee-splitter');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -144,6 +145,9 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
                         // to prevent the client from attempting a manual double transfer.
                         body.payment_details.payment_mode = 'fee_splitter';
                         body.payment_details.fee_splitter_contract = _chainCfg.feeSplitterContract;
+                        // Expose facilitator URL so MCP agents can use gas-free flow
+                        // even if POLYGON_FACILITATOR_URL is not set locally in the MCP.
+                        body.payment_details.facilitator = _chainCfg.facilitator;
                         body.payment_details.split = {
                             provider_percent: 95,
                             platform_percent: 5,
@@ -503,6 +507,18 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                     splitMeta.platform_split_status =
                         claimResult.splitMode === 'split_complete' ? 'on_chain' : 'fallback_pending';
                 }
+            }
+
+            // Fire-and-forget: trigger FeeSplitter distribute for Polygon facilitator payments.
+            // When USDC was sent to the FeeSplitter contract (fee_splitter mode), we need to
+            // call distribute(provider, amount) so the contract splits 95/5 and sends funds.
+            const _feeSplitterChain = getChainConfig(chain);
+            const _isFeeSplitter = splitMode === 'legacy'
+                && !!(_feeSplitterChain && _feeSplitterChain.facilitator && _feeSplitterChain.feeSplitterContract)
+                && !!service.owner_address;
+            if (_isFeeSplitter) {
+                const distributeAmount = Math.round(price * 1e6);
+                feeSplitter.callDistribute(service.owner_address, distributeAmount).catch(() => {});
             }
 
             // Record legacy payout if applicable (after successful claim)
