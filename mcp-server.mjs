@@ -512,38 +512,6 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     let retryHeaders;
 
     if (isSplitMode) {
-        // ── Split mode: if facilitator is available (Polygon), delegate to it ──
-        // The FeeSplitter contract handles the 95/5 split on-chain — no double transfer needed.
-        const splitFacilitatorUrl = cfg.facilitator || details.facilitator || null;
-        if (splitFacilitatorUrl && chainKey === 'polygon') {
-            const { wallet: walClient } = getClients(chainKey);
-            const effectiveChainConfig = { ...cfg, facilitator: splitFacilitatorUrl };
-            const { data: result, txHash: facilitatorTxHash } = await sendViaFacilitator(walClient, url, fetchOptions, details, effectiveChainConfig);
-
-            sessionSpending += cost;
-            sessionPayments.push({
-                amount: cost,
-                txHash: facilitatorTxHash,
-                chain: chainKey,
-                paymentMode: 'facilitator_split',
-                timestamp: new Date().toISOString(),
-                endpoint: url.replace(SERVER_URL, ''),
-            });
-
-            result._payment = {
-                amount:            details.amount,
-                currency:          'USDC',
-                paymentMode:       'facilitator',
-                facilitator:       splitFacilitatorUrl,
-                txHash:            facilitatorTxHash,
-                chain:             cfg.label,
-                split:             '95/5 handled by FeeSplitter contract',
-                session_spent:     sessionSpending.toFixed(2),
-                session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
-            };
-            return result;
-        }
-
         // ── Standard split: two sendUsdcTransfer calls (Base / SKALE) ──
         const totalRaw = BigInt(Math.round(cost * 1e6));
         const providerRaw = details.split
@@ -677,7 +645,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '2.4.0',
+    version: '2.4.1',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
