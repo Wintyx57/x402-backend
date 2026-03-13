@@ -6,6 +6,7 @@ const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL, CHAINS } = require(
 const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
 const { getDailyTesterStatus } = require('../lib/daily-tester');
 const { getTrustBreakdown, recalculateAllScores } = require('../lib/trust-score');
+const feeSplitter = require('../lib/fee-splitter');
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
 let _balanceCache = { value: null, ts: 0 };
@@ -349,6 +350,102 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             logger.error('TrustScore', `Leaderboard error: ${err.message}`);
             res.status(500).json({ error: 'Failed to fetch trust scores' });
         }
+    });
+
+    // ─── FeeSplitter admin endpoints ─────────────────────────────────────
+
+    // GET /api/admin/fee-splitter — FeeSplitter contract status (pending balance, stats)
+    router.get('/api/admin/fee-splitter', adminRateLimit, adminAuth, async (req, res) => {
+        if (!feeSplitter.isConfigured()) {
+            return res.json({
+                configured: false,
+                message: 'FeeSplitter not configured — set FEE_SPLITTER_OPERATOR_KEY + POLYGON_FEE_SPLITTER_CONTRACT',
+            });
+        }
+
+        const [pending, preview] = await Promise.all([
+            feeSplitter.getPendingBalance(),
+            feeSplitter.previewSplit(1_000_000), // preview for 1 USDC
+        ]);
+
+        res.json({
+            configured: true,
+            contract: process.env.POLYGON_FEE_SPLITTER_CONTRACT,
+            pending_usdc: pending !== null ? (Number(pending) / 1e6).toFixed(6) : null,
+            preview_1usdc: preview ? {
+                provider: (Number(preview.providerShare) / 1e6).toFixed(6),
+                platform: (Number(preview.platformShare) / 1e6).toFixed(6),
+            } : null,
+        });
+    });
+
+    // POST /api/admin/fee-splitter/distribute — Trigger distribute(provider, amount)
+    router.post('/api/admin/fee-splitter/distribute', adminRateLimit, adminAuth, async (req, res) => {
+        if (!feeSplitter.isConfigured()) {
+            return res.status(503).json({ error: 'FeeSplitter not configured' });
+        }
+
+        const { provider, amount_usdc } = req.body || {};
+        if (!provider || !/^0x[a-fA-F0-9]{40}$/.test(provider)) {
+            return res.status(400).json({ error: 'Invalid provider address', field: 'provider' });
+        }
+        const amountUsdc = parseFloat(amount_usdc);
+        if (!amountUsdc || amountUsdc <= 0 || amountUsdc > 10000) {
+            return res.status(400).json({ error: 'Invalid amount (0 < amount <= 10000)', field: 'amount_usdc' });
+        }
+
+        const amountRaw = Math.round(amountUsdc * 1e6);
+        const txHash = await feeSplitter.callDistribute(provider, amountRaw);
+
+        if (!txHash) {
+            return res.status(500).json({ error: 'distribute() failed — check logs' });
+        }
+
+        logActivity('fee_splitter', `distribute(${provider.slice(0, 10)}..., ${amountUsdc} USDC) — tx: ${txHash}`, amountUsdc, txHash);
+
+        res.json({
+            success: true,
+            txHash,
+            provider,
+            amount_usdc: amountUsdc,
+            explorer: `https://polygonscan.com/tx/${txHash}`,
+        });
+    });
+
+    // POST /api/admin/fee-splitter/withdraw — Emergency withdraw to platform wallet
+    router.post('/api/admin/fee-splitter/withdraw', adminRateLimit, adminAuth, async (req, res) => {
+        if (!feeSplitter.isConfigured()) {
+            return res.status(503).json({ error: 'FeeSplitter not configured' });
+        }
+
+        // Check pending balance first
+        const pending = await feeSplitter.getPendingBalance();
+        if (pending === null) {
+            return res.status(500).json({ error: 'Failed to read pending balance' });
+        }
+        if (pending === 0n) {
+            return res.json({ success: true, message: 'No pending balance to withdraw', amount_usdc: '0' });
+        }
+
+        // emergencyWithdraw is owner-only on the contract, but distribute() to WALLET_ADDRESS
+        // achieves the same effect: sends 95% to WALLET_ADDRESS + 5% to platformWallet (same wallet)
+        const platformWallet = process.env.WALLET_ADDRESS;
+        const txHash = await feeSplitter.callDistribute(platformWallet, pending);
+
+        if (!txHash) {
+            return res.status(500).json({ error: 'withdraw failed — check logs. Try emergencyWithdraw() directly on contract.' });
+        }
+
+        const amountUsdc = (Number(pending) / 1e6).toFixed(6);
+        logActivity('fee_splitter_withdraw', `withdraw ${amountUsdc} USDC to platform — tx: ${txHash}`, parseFloat(amountUsdc), txHash);
+
+        res.json({
+            success: true,
+            txHash,
+            amount_usdc: amountUsdc,
+            recipient: platformWallet,
+            explorer: `https://polygonscan.com/tx/${txHash}`,
+        });
     });
 
     return router;
