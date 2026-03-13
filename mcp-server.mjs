@@ -55,7 +55,7 @@ const CHAINS = {
         explorer: 'https://polygonscan.com',
         label: 'Polygon (low gas)',
         paymentHeader: 'polygon',
-        rpc: 'https://rpc.ankr.com/polygon',
+        rpc: 'https://polygon-bor-rpc.publicnode.com',
     },
 };
 
