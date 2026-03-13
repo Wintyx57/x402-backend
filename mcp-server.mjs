@@ -69,6 +69,7 @@ const DEFAULT_CHAIN_KEY = process.env.NETWORK === 'testnet' ? 'base-sepolia'
 const USDC_ABI = parseAbi([
     'function transfer(address to, uint256 amount) returns (bool)',
     'function balanceOf(address) view returns (uint256)',
+    'function nonces(address owner) view returns (uint256)',
 ]);
 
 // ─── Budget Tracking ─────────────────────────────────────────────────
@@ -345,8 +346,15 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
     const cost = parseFloat(details.amount);
     const amountRaw = BigInt(Math.round(cost * 1e6));
 
-    // Generate unique nonce and deadline (5 minutes from now)
-    const nonce = `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    // Read on-chain nonce from USDC contract (ERC-2612 permit nonce)
+    const polygonPublic = chainClients.polygon?.public
+        || createPublicClient({ chain: polygon, transport: http(chainConfig.rpc || 'https://polygon-bor-rpc.publicnode.com') });
+    const nonce = await polygonPublic.readContract({
+        address: chainConfig.usdc,
+        abi: USDC_ABI,
+        functionName: 'nonces',
+        args: [account.address],
+    });
     const deadline = Math.floor(Date.now() / 1000) + 300;
 
     // Recipient: feeSplitterContract if available, otherwise the recipient from 402 body
@@ -370,7 +378,7 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
         from:          account.address,
         to:            spender,
         asset:         chainConfig.usdc,
-        nonce,
+        nonce:         nonce.toString(),
         deadline:      deadline.toString(),
         signature,
         permitDetails: permit,
