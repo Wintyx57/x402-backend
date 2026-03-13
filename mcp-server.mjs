@@ -554,12 +554,10 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // ── Legacy mode: single transfer to platform (or facilitator for Polygon) ──
         const amountInUnits = BigInt(Math.round(cost * 1e6));
 
-        // Only use facilitator when the backend explicitly requests fee_splitter mode
-        // (services with owner_address on Polygon). For native wrappers (no owner_address),
-        // the backend returns recipient=WALLET_ADDRESS without fee_splitter mode.
-        const facilitatorUrl = details.facilitator
-            || (details.payment_mode === 'fee_splitter' ? cfg.facilitator : null)
-            || null;
+        // Use facilitator for ALL Polygon payments when available (gas-free flow).
+        // The backend handles distribute() after verification — even for native wrappers,
+        // distribute(WALLET_ADDRESS, amount) sends 100% to platform (95%+5% same wallet).
+        const facilitatorUrl = cfg.facilitator || details.facilitator || null;
 
         if (facilitatorUrl) {
             // Polygon Phase 2 — EIP-3009 gas-free via facilitator /settle

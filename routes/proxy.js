@@ -145,8 +145,6 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
                         // to prevent the client from attempting a manual double transfer.
                         body.payment_details.payment_mode = 'fee_splitter';
                         body.payment_details.fee_splitter_contract = _chainCfg.feeSplitterContract;
-                        // Override recipient to FeeSplitter contract (payment.js defaults to WALLET_ADDRESS)
-                        body.payment_details.recipient = _chainCfg.feeSplitterContract;
                         // Expose facilitator URL so MCP agents can use gas-free flow
                         // even if POLYGON_FACILITATOR_URL is not set locally in the MCP.
                         body.payment_details.facilitator = _chainCfg.facilitator;
