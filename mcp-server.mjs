@@ -56,6 +56,8 @@ const CHAINS = {
         label: 'Polygon (low gas)',
         paymentHeader: 'polygon',
         rpc: 'https://polygon-bor-rpc.publicnode.com',
+        facilitator: process.env.POLYGON_FACILITATOR_URL || null,
+        feeSplitterContract: process.env.POLYGON_FEE_SPLITTER_CONTRACT || null,
     },
 };
 
@@ -288,6 +290,115 @@ async function sendUsdcTransfer(chainKey, toAddress, amountRaw) {
     return txHash;
 }
 
+// ─── EIP-712 Permit Signing (Polygon facilitator — off-chain, no gas) ──
+async function signEIP712Permit(walletClient, amount, spender, deadline, nonce) {
+    const domain = {
+        name: 'USD Coin',
+        version: '2',
+        chainId: 137,
+        verifyingContract: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    };
+
+    const types = {
+        Permit: [
+            { name: 'owner',    type: 'address' },
+            { name: 'spender',  type: 'address' },
+            { name: 'value',    type: 'uint256' },
+            { name: 'nonce',    type: 'uint256' },
+            { name: 'deadline', type: 'uint256' },
+        ],
+    };
+
+    const message = {
+        owner:    account.address,
+        spender,
+        value:    BigInt(amount),
+        nonce:    BigInt(nonce),
+        deadline: BigInt(deadline),
+    };
+
+    const signature = await walletClient.signTypedData({ domain, types, primaryType: 'Permit', message });
+
+    return {
+        signature,
+        permit: {
+            token:    domain.verifyingContract,
+            amount:   amount.toString(),
+            nonce:    nonce.toString(),
+            deadline: deadline.toString(),
+        },
+    };
+}
+
+// ─── Facilitator Payment Flow (Polygon Phase 2 — gas-free EIP-712) ───
+//
+// Flow:
+//   1. Make initial request → get 402 response (already consumed by payAndRequest)
+//   2. Sign EIP-712 permit off-chain (no gas)
+//   3. Build PaymentPayload (Base64 JSON)
+//   4. Retry with PAYMENT-SIGNATURE header
+//
+// Called from payAndRequest() when chainKey === 'polygon' AND facilitator is set.
+// Returns the API response data directly.
+//
+async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, chainConfig) {
+    const cost = parseFloat(details.amount);
+    const amountRaw = BigInt(Math.round(cost * 1e6));
+
+    // Generate unique nonce and deadline (5 minutes from now)
+    const nonce = `${Date.now()}${Math.random().toString(36).slice(2)}`;
+    const deadline = Math.floor(Date.now() / 1000) + 300;
+
+    // Recipient: feeSplitterContract if available, otherwise the recipient from 402 body
+    const spender = chainConfig.feeSplitterContract || details.recipient;
+
+    // Sign EIP-712 permit off-chain (zero gas)
+    const { signature, permit } = await signEIP712Permit(
+        walletClient,
+        amountRaw.toString(),
+        spender,
+        deadline,
+        nonce,
+    );
+
+    // Build PaymentPayload (Base64 JSON per x402 facilitator spec)
+    const paymentPayload = {
+        scheme:        'exact',
+        network:       'polygon',
+        chainId:       137,
+        amount:        amountRaw.toString(),
+        from:          account.address,
+        to:            spender,
+        asset:         chainConfig.usdc,
+        nonce,
+        deadline:      deadline.toString(),
+        signature,
+        permitDetails: permit,
+    };
+
+    const encodedPayload = Buffer.from(JSON.stringify(paymentPayload)).toString('base64');
+
+    // Retry with PAYMENT-SIGNATURE header
+    const retryHeaders = {
+        ...fetchOptions.headers,
+        'PAYMENT-SIGNATURE': encodedPayload,
+        'X-Payment-Chain':   chainConfig.paymentHeader,
+    };
+
+    const retryRes = await fetch(apiUrl, { ...fetchOptions, headers: retryHeaders });
+
+    // Parse response
+    if (fetchOptions.textFallback) {
+        const text = await retryRes.text();
+        try {
+            return JSON.parse(text);
+        } catch {
+            return { response: text.slice(0, 5000) };
+        }
+    }
+    return retryRes.json();
+}
+
 // ─── Services cache (anti-bypass) ────────────────────────────────────
 let servicesCache = null;
 let servicesCacheTime = 0;
@@ -400,8 +511,39 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             retryHeaders['X-Payment-TxHash-Platform'] = txHashPlatform;
         }
     } else {
-        // ── Legacy mode: single transfer to platform ──
+        // ── Legacy mode: single transfer to platform (or facilitator for Polygon) ──
         const amountInUnits = BigInt(Math.round(cost * 1e6));
+
+        if (cfg.facilitator) {
+            // Polygon Phase 2 — EIP-712 gas-free permit via facilitator
+            const { wallet: walClient } = getClients(chainKey);
+            const result = await sendViaFacilitator(walClient, url, fetchOptions, details, cfg);
+
+            // Track spending
+            sessionSpending += cost;
+            sessionPayments.push({
+                amount: cost,
+                txHash: null,
+                chain: chainKey,
+                paymentMode: 'facilitator',
+                timestamp: new Date().toISOString(),
+                endpoint: url.replace(SERVER_URL, ''),
+            });
+
+            // Enrich result with payment info and return early
+            result._payment = {
+                amount:            details.amount,
+                currency:          'USDC',
+                paymentMode:       'facilitator',
+                facilitator:       cfg.facilitator,
+                chain:             cfg.label,
+                session_spent:     sessionSpending.toFixed(2),
+                session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+            };
+            return result;
+        }
+
+        // Standard on-chain transfer (Base / SKALE)
         const txHash = await sendUsdcTransfer(chainKey, details.recipient, amountInUnits);
 
         // Track spending
@@ -565,6 +707,9 @@ server.tool(
                 : best.status === 'degraded'
                     ? ' This service is DEGRADED (partial responses).'
                     : '';
+            const polygonFacilitatorHint = CHAINS.polygon.facilitator
+                ? ' Polygon gas-free payments available via x402 facilitator (set chain: "polygon").'
+                : '';
             return {
                 content: [{ type: 'text', text: JSON.stringify({
                     found: true,
@@ -582,8 +727,8 @@ server.tool(
                         last_checked_at: best.last_checked_at || null,
                     },
                     action: best.id
-                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.${statusWarning}`
-                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}${statusWarning}`,
+                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.${statusWarning}${polygonFacilitatorHint}`
+                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}${statusWarning}${polygonFacilitatorHint}`,
                     alternatives_count: services.length - 1,
                     _payment: result._payment,
                 }, null, 2) }],
@@ -760,7 +905,7 @@ server.tool(
 // --- Tool: get_wallet_balance (FREE — queries all chains) ---
 server.tool(
     'get_wallet_balance',
-    'Check the USDC balance of the agent wallet on all supported chains (Base + SKALE + Polygon). Free.',
+    `Check the USDC balance of the agent wallet on all supported chains (Base + SKALE + Polygon). Free. Note: Polygon supports gas-free payments via x402 facilitator when POLYGON_FACILITATOR_URL is configured — no POL needed for gas in that mode.`,
     {},
     async () => {
         try {

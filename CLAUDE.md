@@ -608,6 +608,38 @@ Agent IA autonome qui gere la communication x402 Bazaar sur 8+ reseaux (dogfoodi
 - [ ] **Phase 2 (future)**: Polygon facilitator wallet (for batch transactions, like SKALE faucet)
 - [ ] **Phase 2 (future)**: Bridge links (any chain → USDC on Polygon via bridges)
 
+## Polygon x402 Facilitator (Phase 2)
+
+### Variables d'environnement (optionnelles — active les paiements Polygon sans gas)
+- `POLYGON_FACILITATOR_URL`: URL du facilitateur Polygon (ex: `https://x402.polygon.technology`)
+- `POLYGON_FEE_SPLITTER_CONTRACT`: Adresse du contrat FeeSplitter deployé sur Polygon
+
+### Fonctionnement
+Quand ces variables sont configurées, les paiements Polygon utilisent le facilitateur x402
+au lieu de la vérification RPC directe:
+1. La réponse 402 inclut l'URL du facilitateur + le recipient = FeeSplitter contract
+2. L'agent signe un permit EIP-712 (off-chain, $0 gas pour l'utilisateur)
+3. Le backend appelle le facilitateur `/verify` puis `/settle`
+4. Le contrat FeeSplitter répartit 95% au provider / 5% à la plateforme
+
+### Feature flag
+- Si les env vars sont absentes → Polygon utilise la Phase 1 (RPC direct, identique à Base/SKALE)
+- Base et SKALE utilisent toujours la Phase 1 indépendamment du facilitateur
+- La logique de sélection dans `payment.js`: `chain.facilitator && chain.feeSplitterContract ? 'facilitator' : 'rpc'`
+
+### Sécurité
+- `verifyViaFacilitator()` valide: `result.valid === true`, `result.to === feeSplitterContract`, `result.amount >= minAmount`
+- Fail closed: tout échec HTTP ou réponse invalide retourne `false` (paiement rejeté)
+- Recipient mismatch: si le facilitateur retourne un recipient différent du FeeSplitter → rejet
+
+### Tests (tests/facilitator.test.js — 28 cas, 6 suites)
+- Base64 encode/decode round-trip (3 tests)
+- Payment Requirements 402 response shape (7 tests)
+- verifyViaFacilitator() HTTP mock: succès, invalid_signature, timeout, HTTP 500, mauvais recipient, montant insuffisant (6 tests)
+- Feature flag / fallback Phase 1 (4 tests)
+- Backward compatibility headers Phase 1 pour Base, SKALE, Polygon (4 tests)
+- CHAINS.polygon config cohérence (4 tests)
+
 ### Session 56 — Auto-Faucet CREDITS + InputSchemaMap Fixes (10/03/2026)
 - [x] **InputSchemaMap audit**: fixed 3 mismatches — airquality (`city`→`lat,lon`), geocoding (`address`→`city`), headers (missing→added `url`)
 - [x] **Auto-Faucet CREDITS**: `autoFundCredits()` in mcp-server.mjs — 0.01 CREDITS to new wallets with 0 balance. Faucet wallet `0x73FE...0a30` (15 CREDITS ~1499 drips). `FAUCET_PRIVATE_KEY` env var on Render.

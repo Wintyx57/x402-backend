@@ -6,7 +6,7 @@ const logger = require('../lib/logger');
 const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discovery');
-const { DEFAULT_CHAIN_KEY } = require('../lib/chains');
+const { DEFAULT_CHAIN_KEY, getChainConfig } = require('../lib/chains');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -135,17 +135,34 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
             const originalJson = res.json.bind(res);
             res.json = function(body) {
                 if (res.statusCode === 402 && body && body.payment_details) {
-                    body.payment_details.provider_wallet = service.owner_address;
-                    const grossRaw = Math.round(price * 1e6);
-                    const platformRaw = Math.floor(grossRaw * 5 / 100);
-                    const providerRaw = grossRaw - platformRaw;
-                    body.payment_details.split = {
-                        provider_amount: providerRaw / 1e6,
-                        platform_amount: platformRaw / 1e6,
-                        provider_percent: 95,
-                        platform_percent: 5,
-                    };
-                    body.payment_details.payment_mode = 'split_native';
+                    const _chainCfg = getChainConfig(chainKey);
+                    const _isFacilitator = !!((_chainCfg && _chainCfg.facilitator) && (_chainCfg && _chainCfg.feeSplitterContract));
+
+                    if (_isFacilitator) {
+                        // Phase 2 Polygon facilitator: the FeeSplitter contract handles the 95/5 split
+                        // on-chain automatically. We expose fee_splitter info but NOT provider_wallet
+                        // to prevent the client from attempting a manual double transfer.
+                        body.payment_details.payment_mode = 'fee_splitter';
+                        body.payment_details.fee_splitter_contract = _chainCfg.feeSplitterContract;
+                        body.payment_details.split = {
+                            provider_percent: 95,
+                            platform_percent: 5,
+                            note: 'Split handled automatically by FeeSplitter contract on-chain',
+                        };
+                    } else {
+                        // Phase 1 / Base / SKALE: standard split_native mode
+                        body.payment_details.provider_wallet = service.owner_address;
+                        const grossRaw = Math.round(price * 1e6);
+                        const platformRaw = Math.floor(grossRaw * 5 / 100);
+                        const providerRaw = grossRaw - platformRaw;
+                        body.payment_details.split = {
+                            provider_amount: providerRaw / 1e6,
+                            platform_amount: platformRaw / 1e6,
+                            provider_percent: 95,
+                            platform_percent: 5,
+                        };
+                        body.payment_details.payment_mode = 'split_native';
+                    }
                 }
                 return originalJson(body);
             };
@@ -189,6 +206,19 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
 // ---------------------------------------------------------------------------
 
 async function handleSplitMode(req, res, { supabase, service, price, minAmountRaw, chainKey, txHashProvider, txHashPlatform, paymentSystem, payoutManager, logActivity }) {
+    // 0. Guard: Polygon facilitator mode uses a FeeSplitter contract — single-hash flow only.
+    //    The FeeSplitter handles the 95/5 revenue split automatically on-chain.
+    //    Clients must send a single X-Payment-TxHash (not X-Payment-TxHash-Provider/Platform).
+    const _splitChainCfg = getChainConfig(chainKey);
+    if (_splitChainCfg && _splitChainCfg.facilitator && _splitChainCfg.feeSplitterContract) {
+        return res.status(400).json({
+            error: 'SPLIT_MODE_NOT_SUPPORTED',
+            message: 'Polygon facilitator mode uses a FeeSplitter contract — send a single X-Payment-TxHash.',
+            hint: 'The FeeSplitter handles the 95/5 revenue split automatically on-chain. Use X-Payment-TxHash instead of X-Payment-TxHash-Provider.',
+            fee_splitter_contract: _splitChainCfg.feeSplitterContract,
+        });
+    }
+
     // 1. Guard: minimum price to ensure non-zero split amounts
     if (minAmountRaw < MIN_SPLIT_AMOUNT_RAW) {
         return res.status(400).json({
@@ -494,6 +524,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             }
 
             // Build _x402 metadata
+            const _x402Chain = getChainConfig(chain);
+            const _isFeeSplitterMode = splitMode === 'legacy'
+                && !!(_x402Chain && _x402Chain.facilitator && _x402Chain.feeSplitterContract);
+
             const x402Meta = splitMeta
                 ? {
                     payment:               price + ' USDC',
@@ -503,6 +537,14 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                     tx_hash_provider:      splitMeta.tx_hash_provider,
                     tx_hash_platform:      splitMeta.tx_hash_platform,
                     platform_split_status: splitMeta.platform_split_status,
+                  }
+                : _isFeeSplitterMode
+                ? {
+                    payment:          price + ' USDC',
+                    split_mode:       'fee_splitter',
+                    fee_splitter:     _x402Chain.feeSplitterContract,
+                    facilitator:      _x402Chain.facilitator,
+                    tx_hash:          txHash,
                   }
                 : (() => {
                     const grossRaw = Math.round(price * 1e6);
