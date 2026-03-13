@@ -8,3 +8,5 @@ agent-seed.json
 nul
 dist/
 setup-monitoring.js
+test-intelligence-paid.mjs
+test-intelligence-paid.js

@@ -1161,37 +1161,84 @@ server.tool(
     }
 );
 
-// --- Tool: export_private_key (FREE — backup only) ---
+// --- Tool: export_private_key (FREE — backup info only, private key NEVER returned) ---
 server.tool(
     'export_private_key',
-    'Export your wallet private key for backup or to import into any external wallet. WARNING: This reveals your private key — handle with extreme care. Never share it with anyone. Free — no payment needed.',
+    'Show where your wallet private key is stored so you can retrieve it manually for backup or import. The private key is NEVER returned in the chat — only its storage location is provided. Free — no payment needed.',
     {
         confirm: z.enum(['yes_i_understand_the_risks']).describe(
-            'You MUST pass "yes_i_understand_the_risks" to confirm you want to export your private key. This is a safety measure.'
+            'You MUST pass "yes_i_understand_the_risks" to confirm you want to know where your private key is stored. This is a safety measure.'
         ),
     },
     async ({ confirm: _confirm }) => {
         try {
-            const pk = getPrivateKey();
             tryInitWallet();
+
+            // Determine the key source WITHOUT reading or returning the key itself
+            const isEnvKey = Boolean(process.env.AGENT_PRIVATE_KEY);
+            const seedPath = process.env.AGENT_SEED_PATH || join(__dirname, 'agent-seed.json');
+            const isLegacySeed = !isEnvKey && fs.existsSync(seedPath);
+            const isAutoWallet = !isEnvKey && !isLegacySeed && fs.existsSync(AUTO_WALLET_PATH);
+
+            let keySource;
+            let instructions;
+
+            if (isEnvKey) {
+                keySource = 'environment_variable';
+                instructions = [
+                    'Your private key is stored in the AGENT_PRIVATE_KEY environment variable of your MCP configuration.',
+                    'To retrieve it: open your MCP config file (claude_desktop_config.json or equivalent) and look for the AGENT_PRIVATE_KEY value under the x402-bazaar server env section.',
+                    'NEVER paste or share this key in any chat, log, or unsecured document.',
+                    'Store it in a secure password manager (e.g., 1Password, Bitwarden) if you have not already done so.',
+                ];
+            } else if (isLegacySeed) {
+                keySource = 'legacy_seed_file';
+                instructions = [
+                    `Your wallet seed is stored (encrypted) at: ${seedPath}`,
+                    'This is a legacy format. The private key is derived from the encrypted seed at runtime.',
+                    'To extract the raw private key: read that file manually with a trusted offline tool on this machine only.',
+                    'NEVER paste or share the seed or derived key in any chat, log, or unsecured document.',
+                    'Consider migrating to the auto-wallet format by removing agent-seed.json (a new encrypted wallet will be auto-generated on next startup).',
+                ];
+            } else if (isAutoWallet) {
+                keySource = 'auto_generated_encrypted_file';
+                // Commande de déchiffrement locale — utilise des guillemets doubles pour éviter
+                // les conflits avec les apostrophes JavaScript à l'intérieur de la chaîne
+                const decryptCmd = "node -e \"const fs=require('fs'),os=require('os'),c=require('crypto');" +
+                    "const d=JSON.parse(fs.readFileSync(os.homedir()+'/.x402-bazaar/wallet.json','utf-8'));" +
+                    "const k=c.createHash('sha256').update(os.hostname()+':'+os.userInfo().username+':'+os.homedir()).digest();" +
+                    "const dc=c.createDecipheriv('aes-256-gcm',k,Buffer.from(d.iv,'hex'));" +
+                    "dc.setAuthTag(Buffer.from(d.tag,'hex'));" +
+                    "console.log(dc.update(Buffer.from(d.encrypted,'hex'))+dc.final('utf8'))\"";
+                instructions = [
+                    `Your private key is stored encrypted (AES-256-GCM, machine-bound key) at: ${AUTO_WALLET_PATH}`,
+                    'The file is readable only on this machine (the decryption key is derived from your hostname, username and home directory).',
+                    'To retrieve the raw private key, run the following command in a LOCAL terminal on this machine (never share the output):',
+                    decryptCmd,
+                    'Copy the output directly into your password manager (1Password, Bitwarden, etc.), then close the terminal.',
+                    'NEVER paste or share the output in any chat, log, screenshot, or unsecured document.',
+                ];
+            } else {
+                keySource = 'unknown_or_not_initialized';
+                instructions = [
+                    'Could not determine the key storage location. The wallet may not be initialized yet.',
+                    'Call the setup_wallet tool first to initialize or generate a wallet, then call this tool again.',
+                ];
+            }
+
             return {
                 content: [{ type: 'text', text: JSON.stringify({
-                    warning: 'SENSITIVE DATA — DO NOT SHARE WITH ANYONE',
-                    address: account.address,
-                    private_key: pk,
-                    wallet_file: AUTO_WALLET_PATH,
-                    instructions: [
-                        'Store this private key in a secure password manager (e.g., 1Password, Bitwarden).',
-                        'You can import it into any wallet (e.g. MetaMask, Coinbase Wallet, Rainbow): Settings → Import Account → Paste private key.',
-                        'If you lose this key and your wallet file is deleted, your funds will be PERMANENTLY LOST.',
-                        'This key controls all USDC on Base and SKALE on Base in this wallet.',
-                    ],
+                    security_notice: 'The private key is NOT returned here. Only its storage location is shown. Retrieve it manually on your local machine — never in a chat window.',
+                    address: account ? account.address : 'wallet not initialized',
+                    key_source: keySource,
+                    wallet_file: isAutoWallet ? AUTO_WALLET_PATH : null,
+                    instructions,
                 }, null, 2) }],
             };
         } catch (err) {
             return {
                 content: [{ type: 'text', text: JSON.stringify({
-                    error: 'Failed to export private key',
+                    error: 'Failed to locate private key storage',
                     message: sanitizeError(err.message),
                 }, null, 2) }],
                 isError: true,

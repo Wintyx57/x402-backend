@@ -5,6 +5,7 @@ const { verifyMessage } = require('viem');
 const logger = require('../lib/logger');
 
 const WALLET_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const MAX_MESSAGE_AGE_S = 300; // 5 minutes — signed consent must be fresh
 
 // Verify a signed message to prove wallet ownership
 // Message format: "x402 RGPD request: <action> <wallet> <timestamp>"
@@ -18,6 +19,22 @@ async function verifyWalletOwnership(wallet, message, signature) {
     } catch {
         return false;
     }
+}
+
+/**
+ * Extract and validate the timestamp embedded in the signed RGPD message.
+ * Returns null if the timestamp is missing or the message is older than MAX_MESSAGE_AGE_S.
+ * Expected message tail: "... <wallet> <unix_timestamp_ms>"
+ */
+function validateMessageTimestamp(message) {
+    if (!message || typeof message !== 'string') return false;
+    // Last token in the message is the timestamp (ms since epoch)
+    const parts = message.trim().split(/\s+/);
+    const rawTs = parts[parts.length - 1];
+    const ts = Number(rawTs);
+    if (!Number.isFinite(ts) || ts <= 0) return false;
+    const ageSeconds = (Date.now() - ts) / 1000;
+    return ageSeconds >= 0 && ageSeconds <= MAX_MESSAGE_AGE_S;
 }
 
 function createRgpdRouter(supabase) {
@@ -38,6 +55,13 @@ function createRgpdRouter(supabase) {
             return res.status(401).json({
                 error: 'Authentication required',
                 message: 'Provide ?message=<signed_msg>&signature=<sig> to prove wallet ownership',
+                example_message: `x402 RGPD request: data-access ${wallet} ${Date.now()}`
+            });
+        }
+
+        if (!validateMessageTimestamp(message)) {
+            return res.status(400).json({
+                error: 'Signed message is expired or has an invalid timestamp. Please sign a new message with the current timestamp.',
                 example_message: `x402 RGPD request: data-access ${wallet} ${Date.now()}`
             });
         }
@@ -98,6 +122,13 @@ function createRgpdRouter(supabase) {
             return res.status(401).json({
                 error: 'Authentication required',
                 message: 'Provide body { message, signature } to prove wallet ownership',
+                example_message: `x402 RGPD request: data-deletion ${wallet} ${Date.now()}`
+            });
+        }
+
+        if (!validateMessageTimestamp(message)) {
+            return res.status(400).json({
+                error: 'Signed message is expired or has an invalid timestamp. Please sign a new message with the current timestamp.',
                 example_message: `x402 RGPD request: data-deletion ${wallet} ${Date.now()}`
             });
         }

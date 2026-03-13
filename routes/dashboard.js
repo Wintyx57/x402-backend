@@ -2,7 +2,7 @@
 
 const express = require('express');
 const logger = require('../lib/logger');
-const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL } = require('../lib/chains');
+const { RPC_URL, USDC_CONTRACT, EXPLORER_URL, NETWORK_LABEL, CHAINS } = require('../lib/chains');
 const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
 const { getDailyTesterStatus } = require('../lib/daily-tester');
 const { getTrustBreakdown, recalculateAllScores } = require('../lib/trust-score');
@@ -17,13 +17,20 @@ async function getCachedBalance() {
     }
     const walletAddr = process.env.WALLET_ADDRESS;
     if (!walletAddr) return null;
+
+    // The main wallet (WALLET_ADDRESS) receives payments on Base mainnet.
+    // Force Base chain regardless of DEFAULT_CHAIN_KEY (which may be 'skale').
+    const baseChain = CHAINS.base;
+    const baseRpcUrl = baseChain.rpcUrl;
+    const baseUsdcContract = baseChain.usdcContract;
+
     const balanceCall = '0x70a08231' + '000000000000000000000000' + walletAddr.slice(2).toLowerCase();
-    const balRes = await fetchWithTimeout(RPC_URL, {
+    const balRes = await fetchWithTimeout(baseRpcUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             jsonrpc: '2.0', method: 'eth_call',
-            params: [{ to: USDC_CONTRACT, data: balanceCall }, 'latest'], id: 3
+            params: [{ to: baseUsdcContract, data: balanceCall }, 'latest'], id: 3
         })
     });
     const rpcResponse = await balRes.json();
@@ -31,6 +38,7 @@ async function getCachedBalance() {
     if (rpcResponse.error) {
         throw new Error(rpcResponse.error.message || 'RPC error');
     } else if (rpcResponse.result && rpcResponse.result !== '0x') {
+        // Base USDC has 6 decimals
         balance = Number(BigInt(rpcResponse.result)) / 1e6;
     }
     _balanceCache = { value: balance, ts: Date.now() };
