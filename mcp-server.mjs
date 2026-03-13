@@ -459,7 +459,14 @@ async function getCachedServices() {
 async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     const { textFallback = false, ...fetchOptions } = options;
 
-    const res = await fetch(url, fetchOptions);
+    // Always send X-Payment-Chain on the initial request so the backend
+    // returns the correct payment_mode (e.g. 'fee_splitter' for Polygon).
+    const cfg = CHAINS[chainKey];
+    const initialHeaders = {
+        ...fetchOptions.headers,
+        'X-Payment-Chain': cfg ? cfg.paymentHeader : chainKey,
+    };
+    const res = await fetch(url, { ...fetchOptions, headers: initialHeaders });
 
     // ── Non-402 response ──────────────────────────────────────────────
     if (res.status !== 402) {
@@ -500,7 +507,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         );
     }
 
-    const cfg = CHAINS[chainKey];
+    // cfg already resolved above (before initial fetch)
     const isSplitMode = !!details.provider_wallet && details.payment_mode === 'split_native';
     let retryHeaders;
 
