@@ -55,6 +55,7 @@ const CHAINS = {
         explorer: 'https://polygonscan.com',
         label: 'Polygon (low gas)',
         paymentHeader: 'polygon',
+        rpc: 'https://rpc.ankr.com/polygon',
     },
 };
 
@@ -219,9 +220,10 @@ function getClients(chainKey) {
     if (!chainClients[chainKey]) {
         const cfg = CHAINS[chainKey];
         if (!cfg) throw new Error(`Unknown chain: ${chainKey}. Use: ${Object.keys(CHAINS).join(', ')}`);
+        const transport = cfg.rpc ? http(cfg.rpc) : http();
         chainClients[chainKey] = {
-            public: createPublicClient({ chain: cfg.chain, transport: http() }),
-            wallet: createWalletClient({ account, chain: cfg.chain, transport: http() }),
+            public: createPublicClient({ chain: cfg.chain, transport }),
+            wallet: createWalletClient({ account, chain: cfg.chain, transport }),
         };
         console.error(`[Wallet] Connected to ${cfg.label}`);
     }
