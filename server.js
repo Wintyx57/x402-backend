@@ -335,8 +335,12 @@ const serverInstance = app.listen(PORT, async () => {
 
     // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
     try {
-        const { initClients: initERC8004 } = require('./lib/erc8004-registry');
+        const { initClients: initERC8004, repairAgentMapping } = require('./lib/erc8004-registry');
         initERC8004();
+        // Auto-repair: restore agent mapping from on-chain if lost (fire-and-forget)
+        repairAgentMapping(supabase).catch(err => {
+            logger.warn('ERC8004', `Agent mapping repair failed (non-blocking): ${err.message}`);
+        });
     } catch (err) {
         logger.warn('ERC8004', `On-chain registry init failed (non-blocking): ${err.message}`);
     }
