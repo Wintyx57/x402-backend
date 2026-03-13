@@ -63,9 +63,8 @@ services:
         sync: false
       - key: ERC8004_AGENT_ID
         sync: false
-      # --- Polygon Facilitator (Phase 2) — optional, enables gas-free payments ---
-      # Set both vars to activate; leave commented to use Phase 1 (direct RPC) for Polygon
-      # - key: POLYGON_FACILITATOR_URL
-      #   value: https://x402.polygon.technology
-      # - key: POLYGON_FEE_SPLITTER_CONTRACT
-      #   sync: false
+      # --- Polygon Facilitator (Phase 2) — gas-free payments via PIP-82 ---
+      - key: POLYGON_FACILITATOR_URL
+        value: https://x402.polygon.technology
+      - key: POLYGON_FEE_SPLITTER_CONTRACT
+        value: "0x820d4b07D09e5E07598464E6E36cB12561e0Ba56"
