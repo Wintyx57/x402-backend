@@ -15,7 +15,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { createPublicClient, createWalletClient, http, parseAbi, defineChain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { base, baseSepolia } from 'viem/chains';
+import { base, baseSepolia, polygon } from 'viem/chains';
 
 // ─── SKALE on Base chain definition ─────────────────────────────────
 const skaleOnBase = defineChain({
@@ -48,6 +48,13 @@ const CHAINS = {
         explorer: 'https://sepolia.basescan.org',
         label: 'Base Sepolia',
         paymentHeader: 'base-sepolia',
+    },
+    polygon: {
+        chain: polygon,
+        usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+        explorer: 'https://polygonscan.com',
+        label: 'Polygon (low gas)',
+        paymentHeader: 'polygon',
     },
 };
 
@@ -243,7 +250,7 @@ function sanitizeError(msg) {
 }
 
 // ─── Error enrichment: suggest bridge when payment fails ─────────────
-const FUND_HINT = '\n💰 Need USDC? Bridge from any chain → SKALE in 1 click: https://x402bazaar.org/fund';
+const FUND_HINT = '\n💰 Need USDC? Bridge from any chain → SKALE in 1 click: https://x402bazaar.org/fund | Polygon: https://portal.polygon.technology/bridge';
 function enrichPaymentError(msg) {
     const sanitized = sanitizeError(msg);
     const lower = sanitized.toLowerCase();
@@ -478,7 +485,7 @@ server.tool(
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
     },
     async ({ query, chain: chainKey }) => {
         try {
@@ -504,7 +511,7 @@ server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
     },
     async ({ chain: chainKey }) => {
         try {
@@ -527,7 +534,7 @@ server.tool(
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
     },
     async ({ task, chain: chainKey }) => {
         try {
@@ -595,7 +602,7 @@ server.tool(
     {
         service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
         body: z.string().optional().describe('Optional JSON body string to send with the request (e.g. \'{"query":"hello"}\')'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
     },
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
@@ -689,7 +696,7 @@ server.tool(
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         url: z.string().url().describe('The full API URL to call'),
-        chain: z.enum(['base', 'skale']).optional().describe('Payment chain: "base" or "skale" (default, ultra-low gas)'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
     },
     async ({ url, chain: chainKey }) => {
         const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
@@ -751,7 +758,7 @@ server.tool(
 // --- Tool: get_wallet_balance (FREE — queries all chains) ---
 server.tool(
     'get_wallet_balance',
-    'Check the USDC balance of the agent wallet on all supported chains (Base + SKALE on Base). Free.',
+    'Check the USDC balance of the agent wallet on all supported chains (Base + SKALE + Polygon). Free.',
     {},
     async () => {
         try {
