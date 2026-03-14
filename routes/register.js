@@ -52,6 +52,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         if (validatedData.required_parameters) {
             insertData.required_parameters = validatedData.required_parameters;
         }
+        if (typeof validatedData.free_calls_per_month === 'number' && validatedData.free_calls_per_month > 0) {
+            insertData.free_calls_per_month = validatedData.free_calls_per_month;
+        }
 
         const { data, error } = await supabase
             .from('services')

@@ -50,6 +50,14 @@ const ServiceRegistrationSchema = z.object({
     })
     .optional()
     .nullable(),
+
+  free_calls_per_month: z
+    .number()
+    .int('free_calls_per_month must be an integer')
+    .min(0, 'free_calls_per_month must be at least 0')
+    .max(1000, 'free_calls_per_month must be at most 1000')
+    .optional()
+    .default(0),
 });
 
 
