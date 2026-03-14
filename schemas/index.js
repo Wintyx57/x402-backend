@@ -182,9 +182,37 @@ const CodeExecutionSchema = z.object({
     .default('5000'),
 });
 
+// ─── Quick Register Schema ────────────────────────────────────────────
+/**
+ * Schema for POST /quick-register
+ * Minimal registration: url + price + ownerAddress, name optional (auto-derived)
+ */
+const QuickRegisterSchema = z.object({
+  url: z
+    .string()
+    .url('Must be a valid HTTP(S) URL')
+    .max(500, 'Service URL must be at most 500 characters'),
+  price: z
+    .number()
+    .min(0.001, 'Price must be at least 0.001 USDC')
+    .max(1000, 'Price must be at most 1000 USDC'),
+  ownerAddress: z
+    .string()
+    .regex(
+      /^0x[a-fA-F0-9]{40}$/,
+      'Owner address must be a valid Ethereum address (0x followed by 40 hex characters)'
+    ),
+  name: z
+    .string()
+    .trim()
+    .max(200, 'Service name must be at most 200 characters')
+    .optional(),
+});
+
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
+  QuickRegisterSchema,
   ServiceSearchSchema,
   ScraperUrlSchema,
   WebSearchQuerySchema,

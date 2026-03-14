@@ -71,6 +71,72 @@ const USDC_ABI = parseAbi([
     'function balanceOf(address) view returns (uint256)',
 ]);
 
+// ─── Smart Chain: Balance Cache + Auto-Selection ─────────────────────
+let balanceCache = { base: 0, skale: 0, polygon: 0, updatedAt: 0 };
+const BALANCE_CACHE_TTL = 5 * 60 * 1000; // 5 min
+
+async function refreshBalanceCache() {
+    if (!account) return;
+    const now = Date.now();
+    if (now - balanceCache.updatedAt < BALANCE_CACHE_TTL) return;
+
+    const results = await Promise.allSettled(
+        ['base', 'skale', 'polygon'].map(async (key) => {
+            const cfg = CHAINS[key];
+            const { public: pubClient } = getClients(key);
+            const raw = await pubClient.readContract({
+                address: cfg.usdc,
+                abi: USDC_ABI,
+                functionName: 'balanceOf',
+                args: [account.address],
+            });
+            // SKALE USDC has 18 decimals, others have 6
+            const decimals = key === 'skale' ? 18 : 6;
+            return { key, balance: Number(raw) / (10 ** decimals) };
+        })
+    );
+
+    for (const r of results) {
+        if (r.status === 'fulfilled') {
+            balanceCache[r.value.key] = r.value.balance;
+        }
+    }
+    balanceCache.updatedAt = now;
+}
+
+async function selectBestChain(requiredAmount) {
+    await refreshBalanceCache();
+
+    // Priority order: skale (cheapest gas) > polygon > base
+    const priority = ['skale', 'polygon', 'base'];
+
+    // Filter chains with sufficient balance
+    const viable = priority.filter(key => balanceCache[key] >= requiredAmount);
+
+    if (viable.length === 0) {
+        // No chain has enough — return skale as default with warning
+        return { chain: 'skale', warning: `No chain has sufficient balance for ${requiredAmount} USDC. Balances: Base=${balanceCache.base.toFixed(4)}, SKALE=${balanceCache.skale.toFixed(4)}, Polygon=${balanceCache.polygon.toFixed(4)}` };
+    }
+
+    // For SKALE, also check CREDITS balance for gas
+    if (viable[0] === 'skale') {
+        try {
+            const { public: pubClient } = getClients('skale');
+            const nativeBal = await pubClient.getBalance({ address: account.address });
+            const credits = Number(nativeBal) / 1e18;
+            if (credits < 0.001) {
+                // Not enough CREDITS for gas — skip SKALE
+                const fallback = viable.length > 1 ? viable[1] : 'skale';
+                return { chain: fallback, warning: credits < 0.001 ? 'SKALE skipped: insufficient CREDITS for gas. Using ' + fallback + ' instead.' : undefined };
+            }
+        } catch {
+            // If check fails, proceed with SKALE anyway
+        }
+    }
+
+    return { chain: viable[0] };
+}
+
 // ─── Budget Tracking ─────────────────────────────────────────────────
 let sessionSpending = 0;
 const sessionPayments = [];
@@ -459,12 +525,37 @@ async function getCachedServices() {
 async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     const { textFallback = false, ...fetchOptions } = options;
 
+    // ── Smart Chain: resolve 'auto' before proceeding ─────────────────
+    let resolvedChainKey = chainKey;
+    let autoChainWarning = null;
+    if (chainKey === 'auto') {
+        // We need to probe for the price first
+        const probeRes = await fetch(url, { ...fetchOptions, headers: { ...fetchOptions.headers } });
+        if (probeRes.status === 402) {
+            let probeBody;
+            try { probeBody = await probeRes.json(); } catch { probeBody = {}; }
+            const cost = parseFloat(probeBody?.payment_details?.amount || '0.01');
+            const selection = await selectBestChain(cost);
+            resolvedChainKey = selection.chain;
+            autoChainWarning = selection.warning;
+        } else {
+            // Not a paid endpoint — any chain works, use default
+            resolvedChainKey = DEFAULT_CHAIN_KEY;
+            // Return the non-402 response directly
+            if (textFallback) {
+                const text = await probeRes.text();
+                try { return JSON.parse(text); } catch { return { response: text.slice(0, 5000) }; }
+            }
+            return probeRes.json();
+        }
+    }
+
     // Always send X-Payment-Chain on the initial request so the backend
     // returns the correct payment_mode (e.g. 'fee_splitter' for Polygon).
-    const cfg = CHAINS[chainKey];
+    const cfg = CHAINS[resolvedChainKey];
     const initialHeaders = {
         ...fetchOptions.headers,
-        'X-Payment-Chain': cfg ? cfg.paymentHeader : chainKey,
+        'X-Payment-Chain': cfg ? cfg.paymentHeader : resolvedChainKey,
     };
     const res = await fetch(url, { ...fetchOptions, headers: initialHeaders });
 
@@ -520,23 +611,25 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         const platformRaw = totalRaw - providerRaw;
 
         // Send 95% to provider
-        const txHashProvider = await sendUsdcTransfer(chainKey, details.provider_wallet, providerRaw);
+        const txHashProvider = await sendUsdcTransfer(resolvedChainKey, details.provider_wallet, providerRaw);
 
         // Send 5% to platform (best-effort)
         let txHashPlatform = null;
         try {
-            txHashPlatform = await sendUsdcTransfer(chainKey, details.recipient, platformRaw);
+            txHashPlatform = await sendUsdcTransfer(resolvedChainKey, details.recipient, platformRaw);
         } catch (err) {
             console.error(`[Split] Platform payment failed (fallback to pending payout): ${err.message}`);
         }
 
         // Track spending
         sessionSpending += cost;
+        // Update balance cache after payment
+        if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
         sessionPayments.push({
             amount: cost,
             txHash: txHashProvider,
             txHashPlatform,
-            chain: chainKey,
+            chain: resolvedChainKey,
             splitMode: txHashPlatform ? 'split_complete' : 'provider_only',
             timestamp: new Date().toISOString(),
             endpoint: url.replace(SERVER_URL, ''),
@@ -561,16 +654,18 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
         if (facilitatorUrl) {
             // Polygon Phase 2 — EIP-3009 gas-free via facilitator /settle
-            const { wallet: walClient } = getClients(chainKey);
+            const { wallet: walClient } = getClients(resolvedChainKey);
             const effectiveChainConfig = { ...cfg, facilitator: facilitatorUrl };
             const { data: result, txHash: facilitatorTxHash } = await sendViaFacilitator(walClient, url, fetchOptions, details, effectiveChainConfig);
 
             // Track spending
             sessionSpending += cost;
+            // Update balance cache after payment
+            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
             sessionPayments.push({
                 amount: cost,
                 txHash: facilitatorTxHash,
-                chain: chainKey,
+                chain: resolvedChainKey,
                 paymentMode: 'facilitator',
                 timestamp: new Date().toISOString(),
                 endpoint: url.replace(SERVER_URL, ''),
@@ -587,18 +682,22 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 session_spent:     sessionSpending.toFixed(2),
                 session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
             };
+            if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+            if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
             return result;
         }
 
         // Standard on-chain transfer (Base / SKALE)
-        const txHash = await sendUsdcTransfer(chainKey, details.recipient, amountInUnits);
+        const txHash = await sendUsdcTransfer(resolvedChainKey, details.recipient, amountInUnits);
 
         // Track spending
         sessionSpending += cost;
+        // Update balance cache after payment
+        if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
         sessionPayments.push({
             amount: cost,
             txHash,
-            chain: chainKey,
+            chain: resolvedChainKey,
             timestamp: new Date().toISOString(),
             endpoint: url.replace(SERVER_URL, ''),
         });
@@ -639,6 +738,8 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         session_spent: sessionSpending.toFixed(2),
         session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
     };
+    if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+    if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
 
     return result;
 }
@@ -676,14 +777,14 @@ server.tool(
     `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ query, chain: chainKey }) => {
         try {
             const result = await payAndRequest(
                 `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
                 {},
-                chainKey || DEFAULT_CHAIN_KEY,
+                chainKey || 'auto',
             );
             return {
                 content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
@@ -702,11 +803,11 @@ server.tool(
     'list_services',
     `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
-        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ chain: chainKey }) => {
         try {
-            const result = await payAndRequest(`${SERVER_URL}/services`, {}, chainKey || DEFAULT_CHAIN_KEY);
+            const result = await payAndRequest(`${SERVER_URL}/services`, {}, chainKey || 'auto');
             return {
                 content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
@@ -725,14 +826,14 @@ server.tool(
     `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ task, chain: chainKey }) => {
         try {
             const result = await payAndRequest(
                 `${SERVER_URL}/search?q=${encodeURIComponent(task)}`,
                 {},
-                chainKey || DEFAULT_CHAIN_KEY,
+                chainKey || 'auto',
             );
 
             const services = result.data || result.services || [];
@@ -796,10 +897,10 @@ server.tool(
     {
         service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
         body: z.string().optional().describe('Optional JSON body string to send with the request (e.g. \'{"query":"hello"}\')'),
-        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ service_id, body: requestBody, chain: chainKey }) => {
-        const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
+        const selectedChain = chainKey || 'auto';
         try {
             // --- GATEKEEPER: validate required params + status BEFORE payment ---
             try {
@@ -890,10 +991,10 @@ server.tool(
     `Call an external API URL and return the response. If the API requires payment (HTTP 402), it is handled automatically: USDC is sent on-chain and the request is retried with the transaction hash. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
     {
         url: z.string().url().describe('The full API URL to call'),
-        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Payment chain: "base", "skale" (default, ultra-low gas), or "polygon"'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ url, chain: chainKey }) => {
-        const selectedChain = chainKey || DEFAULT_CHAIN_KEY;
+        const selectedChain = chainKey || 'auto';
         try {
             await validateUrlForSSRF(url);
 
@@ -1155,6 +1256,7 @@ server.tool(
                                 encryption: 'AES-256-GCM (machine-bound key)',
                                 export_tool: 'Use export_private_key to reveal your key for backup',
                             },
+                            recommended_chain: 'auto (smart selection based on balances)',
                         }, null, 2),
                     },
                     {
@@ -1279,6 +1381,12 @@ server.tool(
                     supported_chains: Object.entries(CHAINS)
                         .filter(([k]) => k !== 'base-sepolia')
                         .map(([k, v]) => ({ key: k, label: v.label })),
+                    balances: {
+                        base: balanceCache.base.toFixed(4) + ' USDC',
+                        skale: balanceCache.skale.toFixed(4) + ' USDC',
+                        polygon: balanceCache.polygon.toFixed(4) + ' USDC',
+                        cache_age_seconds: balanceCache.updatedAt > 0 ? Math.round((Date.now() - balanceCache.updatedAt) / 1000) : 'not cached',
+                    },
                 }, null, 2),
             }],
         };

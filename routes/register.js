@@ -3,13 +3,91 @@
 const express = require('express');
 const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
-const { ServiceRegistrationSchema } = require('../schemas');
+const { ServiceRegistrationSchema, QuickRegisterSchema } = require('../schemas');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
+
+    router.post('/quick-register', registerLimiter, async (req, res) => {
+        let validatedData;
+        try {
+            validatedData = QuickRegisterSchema.parse(req.body);
+        } catch (zodError) {
+            const errors = (zodError.issues || zodError.errors || []).map(err => ({
+                field: err.path.join('.') || 'root',
+                message: err.message,
+            }));
+            return res.status(400).json({ error: 'Validation failed', details: errors });
+        }
+
+        // SSRF protection
+        try {
+            await safeUrl(validatedData.url);
+        } catch (urlErr) {
+            return res.status(400).json({
+                error: 'Invalid service URL',
+                message: 'URL must point to a publicly reachable address'
+            });
+        }
+
+        // Auto-derive name from URL hostname if not provided
+        const derivedName = validatedData.name ||
+            (() => {
+                try {
+                    const h = new URL(validatedData.url).hostname.replace(/^(www|api)\./, '');
+                    return h.split('.')[0].charAt(0).toUpperCase() + h.split('.')[0].slice(1);
+                } catch { return 'API Service'; }
+            })();
+
+        const insertData = {
+            name: derivedName,
+            url: validatedData.url,
+            price_usdc: validatedData.price,
+            owner_address: validatedData.ownerAddress,
+            tags: ['utility'],
+            quick_registered: true,
+        };
+
+        const { data, error } = await supabase
+            .from('services')
+            .insert([insertData])
+            .select();
+
+        if (error) {
+            logger.error('Supabase', '/quick-register error:', error.message);
+            return res.status(500).json({ error: 'Registration failed' });
+        }
+
+        const service = data[0];
+        const proxyUrl = `https://x402-api.onrender.com/api/call/${service.id}`;
+
+        logger.info('Bazaar', `Quick registered: "${derivedName}" (${service.id})`);
+        logActivity('register', `Quick: "${derivedName}" (${service.id.slice(0, 8)})`);
+
+        // Auto-test (fire-and-forget)
+        autoTestService(service, supabase).catch(err => {
+            logger.error('AutoTest', `Auto-test failed for "${derivedName}": ${err.message}`);
+        });
+
+        // Notify admin
+        notifyAdmin(`⚡ *Quick Register*\n*Name:* ${derivedName}\n*URL:* \`${validatedData.url}\`\n*Price:* ${validatedData.price} USDC\n*Owner:* \`${validatedData.ownerAddress.slice(0, 10)}...\`\n*ID:* \`${service.id.slice(0, 8)}...\``).catch(() => {});
+
+        res.status(201).json({
+            success: true,
+            message: `Service "${derivedName}" registered! No payment required.`,
+            data: service,
+            proxy_url: proxyUrl,
+            service_page: `https://x402bazaar.org/services/${service.id}`,
+            embed: {
+                curl: `curl -X POST "${proxyUrl}" \\\n  -H "Content-Type: application/json" \\\n  -H "X-Payment-TxHash: YOUR_TX_HASH" \\\n  -H "X-Payment-Chain: skale"`,
+                javascript: `const res = await fetch("${proxyUrl}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "X-Payment-TxHash": txHash,\n    "X-Payment-Chain": "skale"\n  }\n});\nconst data = await res.json();`,
+                python: `import requests\n\nres = requests.post(\n    "${proxyUrl}",\n    headers={\n        "X-Payment-TxHash": tx_hash,\n        "X-Payment-Chain": "skale"\n    }\n)\nprint(res.json())`,
+            },
+        });
+    });
 
     router.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Register Service"), async (req, res) => {
         const txHash = req.headers['x-payment-txhash'] || null;
@@ -20,7 +98,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             validatedData = ServiceRegistrationSchema.parse(req.body);
         } catch (zodError) {
             // Return formatted validation errors
-            const errors = zodError.errors.map(err => ({
+            const errors = (zodError.issues || zodError.errors || []).map(err => ({
                 field: err.path.join('.') || 'root',
                 message: err.message,
             }));
