@@ -225,6 +225,31 @@ function createHealthRouter(supabase) {
             allOk = false;
         }
 
+        // 4. FeeSplitter status (Polygon distribute)
+        try {
+            const feeSplitter = require('../lib/fee-splitter');
+            const fsConfigured = feeSplitter.isConfigured();
+            const fsInit = fsConfigured ? feeSplitter.init() : false;
+            checks.fee_splitter = {
+                status: fsInit ? 'ok' : (fsConfigured ? 'init_failed' : 'not_configured'),
+                configured: fsConfigured,
+                initialized: fsInit,
+                contract: process.env.POLYGON_FEE_SPLITTER_CONTRACT || null,
+                operator_key_set: !!process.env.FEE_SPLITTER_OPERATOR_KEY,
+                operator_key_format: process.env.FEE_SPLITTER_OPERATOR_KEY
+                    ? /^0x[a-fA-F0-9]{64}$/.test(process.env.FEE_SPLITTER_OPERATOR_KEY)
+                    : false,
+            };
+            if (fsInit) {
+                const pending = await feeSplitter.getPendingBalance();
+                if (pending !== null) {
+                    checks.fee_splitter.pending_usdc = (Number(pending) / 1e6).toFixed(6);
+                }
+            }
+        } catch (e) {
+            checks.fee_splitter = { status: 'error', error: e.message };
+        }
+
         const status = allOk ? 'ok' : 'degraded';
         res.status(allOk ? 200 : 503).json({
             status,
