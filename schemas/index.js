@@ -209,6 +209,23 @@ const QuickRegisterSchema = z.object({
     .optional(),
 });
 
+// ─── Service Update Schema ────────────────────────────────────────────
+/**
+ * Schema for PATCH /api/services/:id
+ * Only editable fields — url and owner_address are immutable.
+ * At least one field must be provided.
+ */
+const ServiceUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(1000).optional(),
+  price_usdc: z.number().min(0).max(1000).optional(),
+  tags: z.array(z.string().max(50)).max(10).optional(),
+  required_parameters: z.object({
+    properties: z.record(z.any()).optional(),
+    required: z.array(z.string().max(100)).max(50).optional(),
+  }).optional().nullable(),
+}).refine(data => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
+
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
@@ -219,4 +236,5 @@ module.exports = {
   ImageGenerationSchema,
   SentimentAnalysisSchema,
   CodeExecutionSchema,
+  ServiceUpdateSchema,
 };

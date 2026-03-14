@@ -36,6 +36,7 @@ const { createCommunityAgentRouter } = require('./routes/community-agent');
 const createStreamRouter = require('./routes/stream');
 const createReviewsRouter = require('./routes/reviews');
 const createProxyRouter = require('./routes/proxy');
+const createProviderRouter = require('./routes/provider');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -127,8 +128,8 @@ app.use(cors({
         if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
         callback(new Error('CORS not allowed'));
     },
-    methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token'],
+    methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token', 'X-Wallet-Signature', 'X-Wallet-Message', 'X-Wallet-Address'],
     exposedHeaders: [
         'X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert',
         'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After',
@@ -272,6 +273,7 @@ app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter
 app.use(createMonitoringRouter(supabase, dashboardApiLimiter));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use(createRgpdRouter(supabase));
+app.use(createProviderRouter(supabase, logActivity, dashboardApiLimiter));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
