@@ -75,7 +75,9 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             const { data: payments } = await supabase
                 .from('activity')
                 .select('amount')
-                .eq('type', 'payment');
+                .eq('type', 'payment')
+                .gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+                .limit(10000);
             if (payments) {
                 totalPayments = payments.length;
                 totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);

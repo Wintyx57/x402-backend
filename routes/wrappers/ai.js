@@ -344,18 +344,27 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
             return res.status(400).json({ error: "Parameter 'expr' required. Ex: /api/math?expr=2*pi*5+sqrt(16)" });
         }
 
+        if (expr.length > 500) {
+            return res.status(400).json({ error: 'Expression too long (max 500 characters)' });
+        }
+
+        let result;
         try {
-            // Safe math evaluation using mathjs (no eval/new Function)
-            const result = evaluate(expr);
+            // Safe math evaluation using mathjs with empty scope to block global variable access
+            result = evaluate(expr, {});
+        } catch (mathErr) {
+            return res.status(400).json({ error: 'Invalid math expression', details: mathErr.message });
+        }
 
-            if (typeof result !== 'number' || !isFinite(result)) {
-                return res.status(400).json({ error: 'Expression resulted in invalid number (Infinity or NaN)' });
-            }
+        if (typeof result !== 'number' || !isFinite(result)) {
+            return res.status(400).json({ error: 'Expression resulted in invalid number (Infinity or NaN)' });
+        }
 
+        try {
             logActivity('api_call', `Math Expression API: ${expr} = ${result}`);
             res.json({ success: true, expression: expr, result, result_formatted: result.toLocaleString('en-US', { maximumFractionDigits: 10 }) });
         } catch (err) {
-            return res.status(400).json({ error: 'Invalid math expression', details: err.message });
+            return res.status(500).json({ error: 'Internal server error' });
         }
     });
 

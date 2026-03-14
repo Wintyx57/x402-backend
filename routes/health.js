@@ -30,6 +30,10 @@ const faucetLimiter = rateLimit({
     legacyHeaders: false,
 });
 
+// Cache du count de services — TTL 60 secondes pour éviter des queries Supabase excessives
+let _countCache = { value: 0, ts: 0 };
+const COUNT_CACHE_TTL = 60 * 1000;
+
 function createHealthRouter(supabase) {
     const router = express.Router();
 
@@ -262,12 +266,17 @@ function createHealthRouter(supabase) {
 
     // --- ROUTE PUBLIQUE (Gratuite) ---
     router.get('/', async (req, res) => {
-        let count = 0;
-        try {
-            const result = await supabase.from('services').select('id', { count: 'exact', head: true });
-            count = result.count || 0;
-        } catch (err) {
-            logger.error('Root', 'Supabase error:', err.message);
+        let count = _countCache.value;
+        // Refresh cache only when TTL has expired
+        if (Date.now() - _countCache.ts > COUNT_CACHE_TTL) {
+            try {
+                const result = await supabase.from('services').select('id', { count: 'exact', head: true });
+                _countCache = { value: result.count || 0, ts: Date.now() };
+                count = _countCache.value;
+            } catch (err) {
+                logger.error('Root', 'Supabase error:', err.message);
+                // Keep serving stale value on error
+            }
         }
         const agentId = process.env.ERC8004_AGENT_ID || null;
         res.json({

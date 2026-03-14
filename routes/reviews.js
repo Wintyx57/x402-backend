@@ -254,6 +254,70 @@ function createReviewsRouter(supabase) {
         });
     });
 
+    // GET /api/reviews/stats/batch — Aggregate stats for multiple services in one query
+    // Usage: GET /api/reviews/stats/batch?ids=uuid1,uuid2,...  (max 100 IDs)
+    router.get('/api/reviews/stats/batch', readLimiter, async (req, res) => {
+        const raw = (req.query.ids || '').trim();
+        if (!raw) {
+            return res.status(400).json({ error: 'Missing ids query parameter' });
+        }
+
+        const ids = raw.split(',').map(s => s.trim()).filter(Boolean);
+
+        if (ids.length === 0) {
+            return res.status(400).json({ error: 'ids must contain at least one UUID' });
+        }
+        if (ids.length > 100) {
+            return res.status(400).json({ error: 'ids must contain at most 100 UUIDs' });
+        }
+
+        // Validate each ID
+        const invalid = ids.filter(id => !UUID_REGEX.test(id));
+        if (invalid.length > 0) {
+            return res.status(400).json({
+                error: 'Invalid UUID(s)',
+                invalid: invalid.slice(0, 5),
+            });
+        }
+
+        // Single Supabase query for all services
+        const { data, error } = await supabase
+            .from('reviews')
+            .select('service_id, rating')
+            .in('service_id', ids);
+
+        if (error) {
+            logger.error('Reviews', `GET /api/reviews/stats/batch error: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to fetch batch review stats' });
+        }
+
+        // Aggregate in-memory
+        const statsMap = {};
+        for (const row of (data || [])) {
+            if (!statsMap[row.service_id]) {
+                statsMap[row.service_id] = { sum: 0, count: 0 };
+            }
+            statsMap[row.service_id].sum += row.rating;
+            statsMap[row.service_id].count += 1;
+        }
+
+        // Build response — include requested IDs even if they have no reviews
+        const result = {};
+        for (const id of ids) {
+            const entry = statsMap[id];
+            if (entry && entry.count > 0) {
+                result[id] = {
+                    average: Math.round((entry.sum / entry.count) * 10) / 10,
+                    count: entry.count,
+                };
+            } else {
+                result[id] = { average: 0, count: 0 };
+            }
+        }
+
+        return res.json(result);
+    });
+
     // GET /api/reviews/:serviceId/stats — Aggregate stats
     router.get('/api/reviews/:serviceId/stats', readLimiter, async (req, res) => {
         const { serviceId } = req.params;
