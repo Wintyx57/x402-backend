@@ -36,8 +36,6 @@ const { createCommunityAgentRouter } = require('./routes/community-agent');
 const createStreamRouter = require('./routes/stream');
 const createReviewsRouter = require('./routes/reviews');
 const createProxyRouter = require('./routes/proxy');
-const createLeaderboardRouter = require('./routes/leaderboard');
-const createApiKeysRouter = require('./routes/api-keys');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -130,7 +128,7 @@ app.use(cors({
         callback(new Error('CORS not allowed'));
     },
     methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token', 'X-API-Key'],
+    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token'],
     exposedHeaders: [
         'X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert',
         'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After',
@@ -277,8 +275,6 @@ app.use(createRgpdRouter(supabase));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
-app.use(createLeaderboardRouter(supabase, dashboardApiLimiter));
-app.use(createApiKeysRouter(supabase));
 
 // --- SWAGGER UI ---
 const openApiSpec = require('./openapi.json');

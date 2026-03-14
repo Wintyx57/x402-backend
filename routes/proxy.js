@@ -8,8 +8,6 @@ const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLim
 const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discovery');
 const { DEFAULT_CHAIN_KEY, getChainConfig } = require('../lib/chains');
 const feeSplitter = require('../lib/fee-splitter');
-const { checkFreeUsage, incrementFreeUsage } = require('../lib/free-usage');
-const { hashApiKey, validateApiKey, deductBalance } = require('../lib/api-key-manager');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -46,63 +44,12 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters, free_calls_per_month')
+            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters')
             .eq('id', serviceId)
             .single();
 
         if (fetchErr || !service) {
             return res.status(404).json({ error: 'Service not found' });
-        }
-
-        // --- API KEY MODE: no-wallet payment flow ---
-        // If X-API-Key header is present, validate the key and deduct balance.
-        // This bypasses the on-chain 402 flow entirely — balance is deducted server-side.
-        const rawApiKey = req.headers['x-api-key'];
-        if (rawApiKey) {
-            if (!rawApiKey.startsWith('sk_live_') || rawApiKey.length < 16) {
-                return res.status(401).json({ error: 'Unauthorized', message: 'Invalid API key format.' });
-            }
-            const keyHash = hashApiKey(rawApiKey);
-            const keyInfo = await validateApiKey(supabase, keyHash);
-            if (!keyInfo.valid) {
-                return res.status(401).json({ error: 'Unauthorized', message: 'Invalid or inactive API key.' });
-            }
-
-            const callPrice = Number(service.price_usdc) || 0.01;
-            if (callPrice > 0) {
-                const deduction = await deductBalance(supabase, keyHash, callPrice);
-                if (!deduction.success) {
-                    return res.status(402).json({
-                        error: 'Insufficient API key balance',
-                        balance: deduction.remaining_balance,
-                        required: callPrice,
-                        topup_url: 'https://x402bazaar.org/api-keys',
-                        message: `Your API key balance (${deduction.remaining_balance.toFixed(4)} USDC) is insufficient. Top up at x402bazaar.org/api-keys`,
-                    });
-                }
-            }
-
-            // Log activity (fire-and-forget)
-            logActivity('api_key_call', `API Key call to "${service.name}" (${callPrice} USDC, key: ${keyInfo.key_prefix})`, callPrice, null);
-
-            // Forward to upstream directly — no 402 check needed
-            return executeProxyCall(req, res, {
-                service,
-                price: callPrice,
-                txHash: null,
-                chain: req.headers['x-payment-chain'] || DEFAULT_CHAIN_KEY,
-                payoutManager,
-                logActivity,
-                splitMode: 'api_key',
-                splitMeta: null,
-                onSuccess: null,
-                apiKeyMeta: {
-                    key_prefix: keyInfo.key_prefix,
-                    remaining_balance: callPrice > 0
-                        ? (keyInfo.balance - callPrice)
-                        : keyInfo.balance,
-                },
-            });
         }
 
         // --- GATEKEEPER: validate required parameters BEFORE payment ---
@@ -126,49 +73,6 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
                     message: `This service requires: ${missing.join(', ')}. No payment was made.`,
                     _payment_status: 'not_charged',
                 });
-            }
-        }
-
-        // --- FREE TIER CHECK ---
-        // If the service has free_calls_per_month > 0, check whether the caller
-        // still has quota remaining for the current calendar month.
-        // userIdentifier priority: X-Wallet-Address header → req.ip fallback.
-        // If quota remains, bypass payment entirely and forward the request.
-        const freeTierLimit = Number(service.free_calls_per_month) || 0;
-        if (freeTierLimit > 0) {
-            const rawWallet = req.headers['x-wallet-address'];
-            const userIdentifier = /^0x[a-fA-F0-9]{40}$/.test(rawWallet)
-                ? rawWallet.toLowerCase()
-                : (req.ip || null);
-
-            if (userIdentifier) {
-                const freeCheck = await checkFreeUsage(supabase, service.id, userIdentifier, freeTierLimit);
-                if (freeCheck.allowed) {
-                    // Increment counter fire-and-forget (non-blocking)
-                    incrementFreeUsage(supabase, service.id, userIdentifier).catch(err => {
-                        logger.warn('FreeTier', `increment error for service ${service.id}: ${err.message}`);
-                    });
-
-                    // Log free call in activity (fire-and-forget)
-                    logActivity('free_call', `Free call to "${service.name}" (${freeCheck.remaining - 1} remaining this month)`, 0, null);
-
-                    // Forward request to upstream — reuse executeProxyCall with no onSuccess (no tx to claim)
-                    return executeProxyCall(req, res, {
-                        service,
-                        price: 0,
-                        txHash: null,
-                        chain: req.headers['x-payment-chain'] || DEFAULT_CHAIN_KEY,
-                        payoutManager: null,
-                        logActivity: () => {},
-                        splitMode: 'free',
-                        splitMeta: null,
-                        onSuccess: null,
-                        freeTierMeta: {
-                            remaining: freeCheck.remaining - 1,
-                            limit: freeTierLimit,
-                        },
-                    });
-                }
             }
         }
 
@@ -582,7 +486,7 @@ function recordCircuitFailure(serviceUrl) {
     }
 }
 
-async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess, freeTierMeta = null, apiKeyMeta = null }) {
+async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess }) {
     // SSRF check on service URL
     try {
         await safeUrl(service.url);
@@ -732,16 +636,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             const _isFeeSplitterMode = splitMode === 'legacy'
                 && !!(_x402Chain && _x402Chain.facilitator && _x402Chain.feeSplitterContract);
 
-            const x402Meta = splitMode === 'api_key'
-                ? {
-                    payment:           price + ' USDC',
-                    split_mode:        'api_key',
-                    remaining_balance: (apiKeyMeta?.remaining_balance ?? 0).toFixed(6) + ' USDC',
-                    key_prefix:        apiKeyMeta?.key_prefix,
-                  }
-                : splitMode === 'free'
-                ? { payment: '0 USDC', split_mode: 'free_tier' }
-                : splitMeta
+            const x402Meta = splitMeta
                 ? {
                     payment:               price + ' USDC',
                     split_mode:            'native',
@@ -780,14 +675,6 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 data:    responseData,
                 _x402:   x402Meta,
             };
-            if (freeTierMeta) {
-                responseBody._free_tier = {
-                    free_call:     true,
-                    remaining:     freeTierMeta.remaining,
-                    limit:         freeTierMeta.limit,
-                    reset_monthly: true,
-                };
-            }
             return res.status(proxyRes.status).json(responseBody);
 
         } catch (err) {
