@@ -113,29 +113,32 @@ function createReviewsRouter(supabase) {
             }
 
             const recoverMessageAddress = getRecoverMessageAddress();
-            if (recoverMessageAddress) {
-                try {
-                    const commentHash = comment
-                        ? crypto.createHash('sha256').update(comment).digest('hex').slice(0, 8)
-                        : 'nocomment';
-                    const message = `x402-review:${service_id}:${rating}:${commentHash}:${timestamp}`;
-                    const recovered = await recoverMessageAddress({ message, signature });
-                    if (recovered.toLowerCase() === wallet.toLowerCase()) {
-                        signatureVerified = true;
-                    } else {
-                        return res.status(401).json({
-                            error: 'Signature mismatch',
-                            message: 'The signature does not match the declared wallet address.'
-                        });
-                    }
-                } catch (sigErr) {
-                    return res.status(400).json({
-                        error: 'Invalid signature',
-                        message: 'Could not recover address from signature.'
+            if (!recoverMessageAddress) {
+                logger.error('Reviews', 'viem recoverMessageAddress unavailable — rejecting review (fail closed)');
+                return res.status(503).json({
+                    error: 'Signature verification temporarily unavailable',
+                    message: 'Signature verification service is unavailable. Please try again later.'
+                });
+            }
+            try {
+                const commentHash = comment
+                    ? crypto.createHash('sha256').update(comment).digest('hex').slice(0, 8)
+                    : 'nocomment';
+                const message = `x402-review:${service_id}:${rating}:${commentHash}:${timestamp}`;
+                const recovered = await recoverMessageAddress({ message, signature });
+                if (recovered.toLowerCase() === wallet.toLowerCase()) {
+                    signatureVerified = true;
+                } else {
+                    return res.status(401).json({
+                        error: 'Signature mismatch',
+                        message: 'The signature does not match the declared wallet address.'
                     });
                 }
-            } else {
-                logger.warn('Reviews', 'viem recoverMessageAddress unavailable — skipping signature check');
+            } catch (sigErr) {
+                return res.status(400).json({
+                    error: 'Invalid signature',
+                    message: 'Could not recover address from signature.'
+                });
             }
         } else if (NETWORK !== 'testnet') {
             return res.status(400).json({ error: 'Signature required', message: 'Reviews require wallet signature in production.' });
