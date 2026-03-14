@@ -8,11 +8,11 @@
     <a href="https://www.npmjs.com/package/x402-bazaar"><img src="https://img.shields.io/npm/v/x402-bazaar?style=flat-square&color=green" alt="npm"></a>
     <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" alt="License"></a>
     <a href="https://github.com/Wintyx57/x402-backend"><img src="https://img.shields.io/github/stars/Wintyx57/x402-backend?style=flat-square" alt="Stars"></a>
-    <a href="https://basescan.org"><img src="https://img.shields.io/badge/chain-Base%20%2B%20SKALE-8b5cf6?style=flat-square" alt="Chain"></a>
+    <a href="https://basescan.org"><img src="https://img.shields.io/badge/chain-Base%20%2B%20SKALE%20%2B%20Polygon-8b5cf6?style=flat-square" alt="Chain"></a>
   </p>
 </p>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-505%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-1543%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-74%20native-blue)
 
 ---
 
@@ -20,7 +20,7 @@
 
 | Repository | Description |
 |------------|-------------|
-| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 69 native wrappers, MCP server |
+| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 74 native wrappers, MCP server |
 | **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 15 pages, glassmorphism UI, wallet connect, i18n FR/EN |
 | **[x402-langchain](https://github.com/Wintyx57/x402-langchain)** | Python package — LangChain tools for x402 Bazaar (pip install) |
 | **[x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)** | FastAPI template — Monetize any Python function with x402 in 5 minutes |
@@ -35,22 +35,22 @@
 
 ## What is x402 Bazaar?
 
-x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Required](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/402) standard. AI agents discover services, pay in USDC on Base or SKALE on Base (ultra-low gas), and get instant access -- no API keys, no subscriptions, no accounts. The server verifies payments on-chain and enforces anti-replay protection, making every transaction trustless and permissionless.
+x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Required](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/402) standard. AI agents discover services, pay in USDC on Base, SKALE on Base (ultra-low gas), or Polygon, and get instant access -- no API keys, no subscriptions, no accounts. The server verifies payments on-chain and enforces anti-replay protection, making every transaction trustless and permissionless.
 
 ## Key Features
 
 - **HTTP 402 Protocol** -- Standard-compliant payment flow. Call an endpoint, get a `402` with payment details, pay USDC, retry with tx hash, done.
-- **69 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 59+ more -- all behind micropayments.
+- **74 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 64+ more -- all behind micropayments.
 - **70+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
 - **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
-- **Multi-Chain** -- Base (mainnet) + SKALE on Base (ultra-low gas fees ~$0.0007/tx).
+- **Multi-Chain** -- Base (mainnet) + SKALE on Base (ultra-low gas fees ~$0.0007/tx) + Polygon (mainnet, ~$0.001/tx via MATIC).
 - **MCP Server** -- Plug into Claude Desktop, Cursor, VS Code, or Claude Code as native AI tools.
 - **One-Line Setup** -- `npx x402-bazaar init` detects your IDE and configures everything.
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.
 - **Budget Control** -- Per-session spending caps for AI agents (configurable `MAX_BUDGET_USDC`).
 - **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection.
-- **505 Tests** -- 14 test suites, all passing (node:test, zero deps).
-- **Real-Time Monitoring** -- 69 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
+- **1543 Tests** -- 14+ test suites, all passing (node:test, zero deps).
+- **Real-Time Monitoring** -- 74 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
 - **Telegram Bot** -- Interactive admin bot with 6 commands (/balance, /stats, /status, /recent, /services, /help).
 - **Auto-Test on Registration** -- New services are pinged automatically, with Telegram notification on result.
 - **Public Stats** -- `GET /api/public-stats` (no auth) for frontend homepage counters.
@@ -75,7 +75,7 @@ node server.js
 ## How the x402 Payment Flow Works
 
 ```
-Agent                          x402 Bazaar                     Base / SKALE
+Agent                          x402 Bazaar                     Base / SKALE / Polygon
   |                                |                                |
   |  GET /api/weather?city=Paris   |                                |
   |------------------------------->|                                |
@@ -107,7 +107,7 @@ Agent                          x402 Bazaar                     Base / SKALE
 | `/search?q=` | GET | 0.05 USDC | Search services by keyword |
 | `/register` | POST | 1.00 USDC | Register a new service |
 
-### Native API Wrappers (69 endpoints, x402-powered)
+### Native API Wrappers (74 endpoints, x402-powered)
 
 | Route | Cost | Source | Description |
 |-------|------|--------|-------------|
@@ -136,7 +136,7 @@ Agent                          x402 Bazaar                     Base / SKALE
 
 | Route | Description |
 |-------|-------------|
-| `/api/status` | Live monitoring status for all 69 endpoints |
+| `/api/status` | Live monitoring status for all 74 endpoints |
 | `/api/status/uptime` | Uptime percentages by endpoint |
 | `/api/status/history` | Check history (last 24h) |
 | `/api/public-stats` | Public stats (services, API calls, monitoring, integrations) |
@@ -154,7 +154,7 @@ Agent                          x402 Bazaar                     Base / SKALE
 | Header | Required | Description |
 |--------|----------|-------------|
 | `X-Payment-TxHash` | Yes (for paid endpoints) | USDC transfer transaction hash |
-| `X-Payment-Chain` | No (default: `base`) | Chain used: `base`, `base-sepolia`, or `skale` |
+| `X-Payment-Chain` | No (default: `base`) | Chain used: `base`, `base-sepolia`, `skale`, or `polygon` |
 
 ## MCP Server
 
@@ -183,6 +183,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 | Base | 8453 | ~$0.001 | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | Base Sepolia | 84532 | Free (testnet) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | SKALE on Base | 1187947933 | ~$0.0007 (CREDITS) | `0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20` |
+| Polygon | 137 | ~$0.001 (MATIC) | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` |
 
 ## Tech Stack
 
@@ -190,7 +191,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 |-------|-----------|
 | Runtime | Node.js |
 | Framework | Express 5 |
-| Blockchain | Base + SKALE on Base (USDC) |
+| Blockchain | Base + SKALE on Base + Polygon (USDC) |
 | Wallet SDK | Coinbase Developer Platform (CDP) |
 | Database | Supabase (PostgreSQL) |
 | MCP | Model Context Protocol SDK |
@@ -220,7 +221,7 @@ npx x402-bazaar init   # Auto-detects your IDE and installs
 npm start            # Start the server
 npm run mcp          # Start the MCP server
 npm run seed         # Seed 75+ services into Supabase
-npm run seed:wrappers # Register the 69 native wrappers
+npm run seed:wrappers # Register the 74 native wrappers
 npm run demo         # Run the autonomous agent demo
 npm run demo:live    # Live demo with terminal UI
 ```
