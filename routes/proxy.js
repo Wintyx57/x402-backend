@@ -512,14 +512,17 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             // Fire-and-forget: trigger FeeSplitter distribute for Polygon facilitator payments.
             // When USDC was sent to the FeeSplitter contract (fee_splitter mode), we need to
             // call distribute(provider, amount) so the contract splits 95/5 and sends funds.
+            // For native wrappers (no owner_address), the platform IS the provider → use WALLET_ADDRESS.
             const _feeSplitterChain = getChainConfig(chain);
             const _isFeeSplitter = splitMode === 'legacy'
                 && chain === 'polygon'
-                && !!(_feeSplitterChain && _feeSplitterChain.facilitator && _feeSplitterChain.feeSplitterContract)
-                && !!service.owner_address;
+                && !!(_feeSplitterChain && _feeSplitterChain.facilitator && _feeSplitterChain.feeSplitterContract);
             if (_isFeeSplitter) {
+                const distributeProvider = service.owner_address || process.env.WALLET_ADDRESS;
                 const distributeAmount = Math.round(price * 1e6);
-                feeSplitter.callDistribute(service.owner_address, distributeAmount).catch(() => {});
+                feeSplitter.callDistribute(distributeProvider, distributeAmount).catch((err) => {
+                    logger.error('FeeSplitter', `distribute fire-and-forget error: ${err.message}`);
+                });
             }
 
             // Record legacy payout if applicable (after successful claim)
