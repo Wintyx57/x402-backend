@@ -51,13 +51,12 @@ const ServiceRegistrationSchema = z.object({
     .optional()
     .nullable(),
 
-  free_calls_per_month: z
-    .number()
-    .int('free_calls_per_month must be an integer')
-    .min(0, 'free_calls_per_month must be at least 0')
-    .max(1000, 'free_calls_per_month must be at most 1000')
+  logo_url: z
+    .string()
+    .url()
+    .max(500)
     .optional()
-    .default(0),
+    .nullable(),
 });
 
 
@@ -207,6 +206,12 @@ const QuickRegisterSchema = z.object({
     .trim()
     .max(200, 'Service name must be at most 200 characters')
     .optional(),
+  logo_url: z
+    .string()
+    .url()
+    .max(500)
+    .optional()
+    .nullable(),
 });
 
 // ─── Service Update Schema ────────────────────────────────────────────
@@ -224,6 +229,7 @@ const ServiceUpdateSchema = z.object({
     properties: z.record(z.any()).optional(),
     required: z.array(z.string().max(100)).max(50).optional(),
   }).optional().nullable(),
+  logo_url: z.string().url().max(500).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
 // ─── Export all schemas ──────────────────────────────────────────────
