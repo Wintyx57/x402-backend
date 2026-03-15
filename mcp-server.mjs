@@ -31,6 +31,7 @@ const CHAINS = {
     base: {
         chain: base,
         usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        decimals: 6,
         explorer: 'https://basescan.org',
         label: 'Base Mainnet',
         paymentHeader: 'base',
@@ -38,6 +39,7 @@ const CHAINS = {
     skale: {
         chain: skaleOnBase,
         usdc: '0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20',
+        decimals: 18, // SKALE bridge-wrapped USDC has 18 decimals
         explorer: 'https://skale-base-explorer.skalenodes.com',
         label: 'SKALE on Base (ultra-low gas)',
         paymentHeader: 'skale',
@@ -45,6 +47,7 @@ const CHAINS = {
     'base-sepolia': {
         chain: baseSepolia,
         usdc: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        decimals: 6,
         explorer: 'https://sepolia.basescan.org',
         label: 'Base Sepolia',
         paymentHeader: 'base-sepolia',
@@ -52,6 +55,7 @@ const CHAINS = {
     polygon: {
         chain: polygon,
         usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+        decimals: 6, // Circle native USDC on Polygon has 6 decimals
         explorer: 'https://polygonscan.com',
         label: 'Polygon (low gas)',
         paymentHeader: 'polygon',
@@ -60,6 +64,13 @@ const CHAINS = {
         feeSplitterContract: process.env.POLYGON_FEE_SPLITTER_CONTRACT || null,
     },
 };
+
+// ─── Helper: convert a USDC float amount to on-chain raw units ───────
+// Uses the chain's USDC decimals (6 for Base/Polygon, 18 for SKALE).
+function usdcToRaw(amount, chainKey) {
+    const decimals = CHAINS[chainKey]?.decimals ?? 6;
+    return BigInt(Math.round(amount * (10 ** decimals)));
+}
 
 const SERVER_URL = process.env.X402_SERVER_URL || 'https://x402-api.onrender.com';
 const MAX_BUDGET = parseFloat(process.env.MAX_BUDGET_USDC || '1.00');
@@ -419,7 +430,8 @@ async function signEIP3009Auth(walletClient, amount, to, validAfter, validBefore
 //
 async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, chainConfig) {
     const cost = parseFloat(details.amount);
-    const amountRaw = BigInt(Math.round(cost * 1e6));
+    const decimals = chainConfig.decimals ?? 6;
+    const amountRaw = BigInt(Math.round(cost * (10 ** decimals)));
 
     const validAfter = 0;
     const validBefore = Math.floor(Date.now() / 1000) + 300; // 5 minutes
@@ -604,9 +616,9 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
     if (isSplitMode) {
         // ── Standard split: two sendUsdcTransfer calls (Base / SKALE) ──
-        const totalRaw = BigInt(Math.round(cost * 1e6));
+        const totalRaw = usdcToRaw(cost, resolvedChainKey);
         const providerRaw = details.split
-            ? BigInt(Math.round(parseFloat(details.split.provider_amount) * 1e6))
+            ? usdcToRaw(parseFloat(details.split.provider_amount), resolvedChainKey)
             : totalRaw * 95n / 100n;
         const platformRaw = totalRaw - providerRaw;
 
@@ -645,7 +657,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         }
     } else {
         // ── Legacy mode: single transfer to platform (or facilitator for Polygon) ──
-        const amountInUnits = BigInt(Math.round(cost * 1e6));
+        const amountInUnits = usdcToRaw(cost, resolvedChainKey);
 
         // Use facilitator for ALL Polygon payments when available (gas-free flow).
         // The backend handles distribute() after verification — even for native wrappers,
@@ -1083,7 +1095,7 @@ server.tool(
                     const nativeBal = await pubClient.getBalance({ address: account.address });
                     balances[key] = {
                         network: cfg.label,
-                        balance_usdc: (Number(usdcBal) / 1e6).toFixed(6),
+                        balance_usdc: (Number(usdcBal) / (10 ** cfg.decimals)).toFixed(6),
                         balance_native: (Number(nativeBal) / 1e18).toFixed(8),
                         explorer: `${cfg.explorer}/address/${account.address}`,
                     };
@@ -1163,7 +1175,7 @@ server.tool(
                 });
                 chains.base = {
                     network: baseCfg.label,
-                    usdc_balance: `${(Number(baseRaw) / 1e6).toFixed(6)} USDC`,
+                    usdc_balance: `${(Number(baseRaw) / (10 ** baseCfg.decimals)).toFixed(6)} USDC`,
                     explorer: `${baseCfg.explorer}/address/${account.address}`,
                     how_to_fund: `Send USDC on Base to ${account.address} from any external wallet`,
                 };
@@ -1183,7 +1195,7 @@ server.tool(
                 ]);
                 chains.skale = {
                     network: skaleCfg.label,
-                    usdc_balance: `${(Number(skaleRaw) / 1e6).toFixed(6)} USDC`,
+                    usdc_balance: `${(Number(skaleRaw) / (10 ** skaleCfg.decimals)).toFixed(6)} USDC`,
                     credits_balance: `${(Number(creditsRaw) / 1e18).toFixed(8)} CREDITS`,
                     explorer: `${skaleCfg.explorer}/address/${account.address}`,
                     gas_token: 'CREDITS (~$0.0007/tx — 40 CREDITS ≈ 10,000 transactions)',

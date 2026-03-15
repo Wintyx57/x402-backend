@@ -91,6 +91,8 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
     it('should accept SKALE integer status=1 (not "0x1")', async () => {
         const origFetch = global.fetch;
         const paddedRecipient = '0x000000000000000000000000' + RECIPIENT.slice(2);
+        // SKALE USDC has 18 decimals: 5000 micro-USDC (6 dec) = 5000 * 10^12 raw (18 dec)
+        const skaleAmount = BigInt(MIN_AMOUNT) * BigInt(10 ** 12);
 
         global.fetch = async (url, opts) => {
             const body = JSON.parse(opts.body);
@@ -103,7 +105,7 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
                             logs: [{
                                 address: USDC_SKALE,
                                 topics: [TRANSFER_TOPIC, PADDED_FROM, paddedRecipient],
-                                data: '0x' + BigInt(MIN_AMOUNT).toString(16).padStart(64, '0'),
+                                data: '0x' + skaleAmount.toString(16).padStart(64, '0'),
                             }],
                         },
                     }),
@@ -122,6 +124,8 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
     it('should accept SKALE boolean status=true', async () => {
         const origFetch = global.fetch;
         const paddedRecipient = '0x000000000000000000000000' + RECIPIENT.slice(2);
+        // SKALE USDC has 18 decimals: 5000 micro-USDC (6 dec) = 5000 * 10^12 raw (18 dec)
+        const skaleAmount = BigInt(MIN_AMOUNT) * BigInt(10 ** 12);
 
         global.fetch = async (url, opts) => {
             const body = JSON.parse(opts.body);
@@ -134,7 +138,7 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
                             logs: [{
                                 address: USDC_SKALE,
                                 topics: [TRANSFER_TOPIC, PADDED_FROM, paddedRecipient],
-                                data: '0x' + BigInt(MIN_AMOUNT).toString(16).padStart(64, '0'),
+                                data: '0x' + skaleAmount.toString(16).padStart(64, '0'),
                             }],
                         },
                     }),
@@ -155,6 +159,8 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
         const origFetch = global.fetch;
         let blockNumberCalled = false;
         const paddedRecipient = '0x000000000000000000000000' + RECIPIENT.slice(2);
+        // SKALE USDC has 18 decimals: 5000 micro-USDC (6 dec) = 5000 * 10^12 raw (18 dec)
+        const skaleAmount = BigInt(MIN_AMOUNT) * BigInt(10 ** 12);
 
         global.fetch = async (url, opts) => {
             const body = JSON.parse(opts.body);
@@ -170,7 +176,7 @@ describe('verifyPayment — SKALE chain (integer status, instant finality)', () 
                         logs: [{
                             address: USDC_SKALE,
                             topics: [TRANSFER_TOPIC, PADDED_FROM, paddedRecipient],
-                            data: '0x' + BigInt(MIN_AMOUNT).toString(16).padStart(64, '0'),
+                            data: '0x' + skaleAmount.toString(16).padStart(64, '0'),
                         }],
                     },
                 }),
