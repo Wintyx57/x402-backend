@@ -330,6 +330,26 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                 }
             }
 
+            // Fallback 2: ipinfo.io (free 50K/month, reliable)
+            if (!geoResult) {
+                try {
+                    const fb2Url = `https://ipinfo.io/${encodeURIComponent(address)}/json`;
+                    const fb2Res = await fetchWithTimeout(fb2Url, {}, 5000);
+                    const fb2 = await fb2Res.json();
+                    if (!fb2.bogon && fb2.ip) {
+                        const [lat, lon] = (fb2.loc || '0,0').split(',').map(Number);
+                        geoResult = {
+                            country: fb2.country || '', country_code: fb2.country || '',
+                            region: fb2.region || '', city: fb2.city || '', zip: fb2.postal || '',
+                            latitude: lat || 0, longitude: lon || 0,
+                            timezone: fb2.timezone || '', isp: fb2.org || '', org: fb2.org || '',
+                        };
+                    }
+                } catch (fb2Err) {
+                    logger.warn('IP Geolocation API', `ipinfo.io fallback also failed: ${fb2Err.message}`);
+                }
+            }
+
             if (!geoResult) {
                 return res.status(404).json({ error: 'IP lookup failed', address });
             }

@@ -345,16 +345,40 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) 
         }
 
         try {
-            const apiUrl = `https://is.gd/create.php?format=json&url=${encodeURIComponent(url)}`;
-            const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
-            const data = await apiRes.json();
+            let shortUrl = null;
 
-            if (data.errorcode) {
-                return res.status(400).json({ error: 'URL shortening failed', details: data.errormessage });
+            // Primary: is.gd
+            try {
+                const apiUrl = `https://is.gd/create.php?format=json&url=${encodeURIComponent(url)}`;
+                const apiRes = await fetchWithTimeout(apiUrl, {}, 5000);
+                const data = await apiRes.json();
+                if (!data.errorcode && data.shorturl) {
+                    shortUrl = data.shorturl;
+                }
+            } catch (primaryErr) {
+                logger.warn('URL Shortener API', `is.gd failed: ${primaryErr.message}, trying fallback`);
+            }
+
+            // Fallback: TinyURL
+            if (!shortUrl) {
+                try {
+                    const tinyUrl = `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`;
+                    const tinyRes = await fetchWithTimeout(tinyUrl, {}, 5000);
+                    const tinyText = await tinyRes.text();
+                    if (tinyText && tinyText.startsWith('http')) {
+                        shortUrl = tinyText.trim();
+                    }
+                } catch (fbErr) {
+                    logger.warn('URL Shortener API', `TinyURL fallback also failed: ${fbErr.message}`);
+                }
+            }
+
+            if (!shortUrl) {
+                return res.status(502).json({ error: 'URL shortening temporarily unavailable. Both upstreams failed.' });
             }
 
             logActivity('api_call', `URL Shortener API: ${url.slice(0, 50)}...`);
-            res.json({ success: true, original_url: url, short_url: data.shorturl });
+            res.json({ success: true, original_url: url, short_url: shortUrl });
         } catch (err) {
             logger.error('URL Shortener API', err.message);
             return res.status(500).json({ error: 'URL Shortener API request failed' });

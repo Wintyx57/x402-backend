@@ -7,6 +7,25 @@ const logger = require('../../lib/logger');
 const { fetchWithTimeout } = require('../../lib/payment');
 const { safeUrl } = require('../../lib/safe-url');
 
+// --- Crypto price cache (5min TTL) ---
+const cryptoCache = new Map();
+const CRYPTO_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCachedCrypto(coin) {
+    const entry = cryptoCache.get(coin);
+    if (entry && (Date.now() - entry.ts) < CRYPTO_CACHE_TTL) return entry.data;
+    return null;
+}
+
+function setCachedCrypto(coin, data) {
+    cryptoCache.set(coin, { data, ts: Date.now() });
+    // Prevent unbounded growth
+    if (cryptoCache.size > 200) {
+        const oldest = cryptoCache.keys().next().value;
+        cryptoCache.delete(oldest);
+    }
+}
+
 function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
@@ -102,6 +121,13 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         const apiHeaders = { 'User-Agent': 'x402-bazaar/1.0', 'Accept': 'application/json' };
 
         try {
+            // Check cache first (5min TTL)
+            const cached = getCachedCrypto(coin);
+            if (cached) {
+                logActivity('api_call', `Crypto Price API (cached): ${coin}`);
+                return res.json(cached);
+            }
+
             // Primary: CoinGecko (with retry on empty response / rate limit)
             for (let attempt = 0; attempt < 2; attempt++) {
                 try {
@@ -119,12 +145,14 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                         if (data[coin] && data[coin].usd !== undefined) {
                             const prices = data[coin];
                             logActivity('api_call', `Crypto Price API: ${coin}`);
-                            return res.json({
+                            const result = {
                                 success: true, coin,
                                 usd: prices.usd, eur: prices.eur,
                                 usd_24h_change: prices.usd_24h_change || 0,
                                 source: 'coingecko'
-                            });
+                            };
+                            setCachedCrypto(coin, result);
+                            return res.json(result);
                         }
                         // Empty response (CoinGecko returned {} or coin not in result) — try fallback
                         break;
@@ -147,14 +175,39 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                 if (ccData.RAW?.[sym]?.USD) {
                     const d = ccData.RAW[sym];
                     logActivity('api_call', `Crypto Price API (fallback): ${coin}`);
-                    return res.json({
+                    const result = {
                         success: true, coin,
                         usd: d.USD.PRICE,
                         eur: d.EUR?.PRICE || null,
                         usd_24h_change: d.USD.CHANGEPCT24HOUR || 0,
                         source: 'cryptocompare'
-                    });
+                    };
+                    setCachedCrypto(coin, result);
+                    return res.json(result);
                 }
+            }
+
+            // Fallback 2: Binance API (symbol-based, no coin ID)
+            try {
+                const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(sym)}USDT`;
+                const binRes = await fetchWithTimeout(binanceUrl, { headers: apiHeaders }, 8000);
+                if (binRes.ok) {
+                    const binData = await binRes.json();
+                    if (binData.price) {
+                        logActivity('api_call', `Crypto Price API (binance): ${coin}`);
+                        const result = {
+                            success: true, coin,
+                            usd: parseFloat(binData.price),
+                            eur: null,
+                            usd_24h_change: 0,
+                            source: 'binance'
+                        };
+                        setCachedCrypto(coin, result);
+                        return res.json(result);
+                    }
+                }
+            } catch (binErr) {
+                logger.warn('Crypto API', `Binance fallback also failed: ${binErr.message}`);
             }
 
             return res.status(404).json({ error: 'Cryptocurrency not found', coin });

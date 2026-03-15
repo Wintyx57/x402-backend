@@ -117,7 +117,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: requestBody
-                }, 30000);
+                }, 35000);
 
                 if (attempt.status === 404) {
                     logger.warn('Image Generation API', `Model ${model} not found (404), trying next`);
