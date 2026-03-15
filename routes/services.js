@@ -15,7 +15,16 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
-    const SERVICE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at, erc8004_agent_id, erc8004_registered_at, logo_url';
+    const BASE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at, erc8004_agent_id, erc8004_registered_at';
+    let SERVICE_COLUMNS = BASE_COLUMNS;
+
+    // Detect logo_url column availability (migration 016 may not have run yet)
+    supabase.from('services').select('logo_url').limit(1).then(({ error }) => {
+        if (!error) {
+            SERVICE_COLUMNS = BASE_COLUMNS + ', logo_url';
+            logger.info('Services', 'logo_url column detected — included in queries');
+        }
+    }).catch(() => {});
 
     // Enrich services with required_parameters from discoveryMap when not set in DB
     function enrichWithParams(services) {
