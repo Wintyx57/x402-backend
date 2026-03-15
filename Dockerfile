@@ -21,6 +21,7 @@ COPY --chown=x402:x402 lib/ ./lib/
 COPY --chown=x402:x402 schemas/ ./schemas/
 COPY --chown=x402:x402 openapi.json ./
 COPY --chown=x402:x402 erc8004.js ./
+COPY --chown=x402:x402 dashboard.html ./
 COPY --chown=x402:x402 package.json ./
 
 USER x402
