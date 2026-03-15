@@ -7,6 +7,7 @@ const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment'
 const { getDailyTesterStatus } = require('../lib/daily-tester');
 const { getTrustBreakdown, recalculateAllScores } = require('../lib/trust-score');
 const feeSplitter = require('../lib/fee-splitter');
+const { getPushStatus, getFeedbackWalletInfo, forcePushAllScores } = require('../lib/erc8004-registry');
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
 let _balanceCache = { value: null, ts: 0 };
@@ -412,6 +413,49 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             amount_usdc: amountUsdc,
             explorer: `https://polygonscan.com/tx/${txHash}`,
         });
+    });
+
+    // ─── ERC-8004 admin endpoints ──────────────────────────────────────
+
+    // GET /api/admin/erc8004/status — Full diagnostic of ERC-8004 reputation push pipeline
+    router.get('/api/admin/erc8004/status', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const [pushStatus, walletInfo, agentIdResult, trustScoreResult] = await Promise.all([
+                getPushStatus(),
+                getFeedbackWalletInfo(),
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('erc8004_agent_id', 'is', null),
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('trust_score', 'is', null),
+            ]);
+
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.json({
+                feedback_wallet: walletInfo,
+                last_push: pushStatus,
+                services: {
+                    with_agent_id: agentIdResult.count || 0,
+                    with_trust_score: trustScoreResult.count || 0,
+                },
+                env: {
+                    ERC8004_FEEDBACK_KEY: !!process.env.ERC8004_FEEDBACK_KEY,
+                    ERC8004_REGISTRY_KEY: !!(process.env.ERC8004_REGISTRY_KEY || process.env.AGENT_PRIVATE_KEY),
+                },
+            });
+        } catch (err) {
+            logger.error('ERC8004', `Admin status error: ${err.message}`);
+            res.status(500).json({ error: 'Failed to get ERC-8004 status' });
+        }
+    });
+
+    // POST /api/admin/erc8004/push — Force immediate trust score push (synchronous)
+    router.post('/api/admin/erc8004/push', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const result = await forcePushAllScores(supabase);
+            logActivity('admin', `Force ERC-8004 push: ${result.pushed}/${result.total} ok`);
+            res.json(result);
+        } catch (err) {
+            logger.error('ERC8004', `Force push error: ${err.message}`);
+            res.status(500).json({ error: err.message });
+        }
     });
 
     // POST /api/admin/fee-splitter/withdraw — Emergency withdraw to platform wallet

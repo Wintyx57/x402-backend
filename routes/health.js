@@ -253,6 +253,45 @@ function createHealthRouter(supabase) {
             checks.fee_splitter = { status: 'error', error: e.message };
         }
 
+        // 5. ERC-8004 Reputation push status
+        try {
+            const erc8004 = require('../lib/erc8004-registry');
+            const [pushStatus, walletInfo] = await Promise.all([
+                erc8004.getPushStatus(),
+                erc8004.getFeedbackWalletInfo(),
+            ]);
+
+            // Count services with agent_id + trust_score in DB
+            const [agentIdCount, trustScoreCount] = await Promise.all([
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('erc8004_agent_id', 'is', null),
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('trust_score', 'is', null),
+            ]);
+
+            const erc8004Status = !walletInfo.configured ? 'not_configured'
+                : (pushStatus.error ? 'error' : 'ok');
+
+            checks.erc8004_reputation = {
+                status: erc8004Status,
+                feedback_wallet_configured: walletInfo.configured,
+                feedback_wallet_address: walletInfo.address
+                    ? `${walletInfo.address.slice(0, 6)}...${walletInfo.address.slice(-4)}` : null,
+                feedback_wallet_credits: walletInfo.credits_balance,
+                last_push: pushStatus.timestamp ? {
+                    timestamp: pushStatus.timestamp,
+                    pushed: pushStatus.pushed,
+                    failed: pushStatus.failed,
+                    total: pushStatus.total,
+                    duration_ms: pushStatus.duration_ms,
+                    ...(pushStatus.error && { error: pushStatus.error }),
+                } : null,
+                push_in_progress: pushStatus.pushInProgress,
+                services_with_agent_id: agentIdCount.count || 0,
+                services_with_trust_score: trustScoreCount.count || 0,
+            };
+        } catch (e) {
+            checks.erc8004_reputation = { status: 'error', error: e.message };
+        }
+
         const status = allOk ? 'ok' : 'degraded';
         res.status(allOk ? 200 : 503).json({
             status,
