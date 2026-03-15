@@ -491,7 +491,11 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         });
 
         // Diagnostic: which community-agent env vars are set (no values exposed)
+        // Blocked in production — only for local/staging debugging
         router.get('/api/admin/env-check', adminAuth, (req, res) => {
+            if (process.env.NODE_ENV === 'production') {
+                return res.status(404).json({ error: 'Not found' });
+            }
             const keys = [
                 'AGENT_PRIVATE_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'TELEGRAM_CHANNEL_ID',
                 'GEMINI_API_KEY', 'DISCORD_WEBHOOK_URL', 'OPENAI_API_KEY', 'ENABLE_COMMUNITY_AGENT',

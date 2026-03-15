@@ -124,7 +124,7 @@ function createMonitoringRouter(supabase, statsLimiter) {
       supabase.from('activity').select('*', { count: 'exact', head: true }).eq('type', 'api_call').gte('created_at', since24h),
       supabase.from('monitoring_checks').select('status').gte('checked_at', since24h),
       supabase.from('services').select('url, name, owner_address'),
-      supabase.from('activity').select('detail').eq('type', 'payment').order('created_at', { ascending: false }).limit(5000),
+      supabase.from('activity').select('amount').eq('type', 'payment').limit(5000),
     ]);
 
     // Extraire chaque resultat avec fallback
@@ -177,12 +177,12 @@ function createMonitoringRouter(supabase, statsLimiter) {
       logger.warn('PublicStats', `Failed to count external providers: ${allServicesResult.reason?.message}`);
     }
 
-    // USDC volume
+    // USDC volume — sum the numeric `amount` column directly (no regex parsing needed)
     let usdcVolume = 0;
     if (usdcPaymentsResult.status === 'fulfilled' && usdcPaymentsResult.value.data) {
       for (const p of usdcPaymentsResult.value.data) {
-        const match = p.detail?.match(/([\d.]+)\s*USDC/i);
-        if (match) usdcVolume += parseFloat(match[1]);
+        const val = parseFloat(p.amount);
+        if (Number.isFinite(val) && val > 0) usdcVolume += val;
       }
       usdcVolume = parseFloat(usdcVolume.toFixed(2));
     } else if (usdcPaymentsResult.status === 'rejected') {
