@@ -146,6 +146,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             return res.status(500).json({ error: 'Failed to fetch services' });
         }
         const enriched = enrichWithParams(data);
+        res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
         res.json({
             data: enriched,
             pagination: {

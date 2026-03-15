@@ -347,20 +347,16 @@ const serverInstance = app.listen(PORT, async () => {
         logger.warn('ERC8004', `On-chain registry init failed (non-blocking): ${err.message}`);
     }
 
-    // Keep-alive: ping external Render URL every 10min to prevent free-tier spin-down
-    // Render only counts EXTERNAL requests for idle detection, localhost doesn't count
+    // Keep-alive: ping external Render URL every 14min to prevent free-tier spin-down
+    // Render spins down after 15min of inactivity — 14min gives a 1min safety margin.
+    // Render only counts EXTERNAL requests for idle detection, localhost doesn't count.
     const externalUrl = process.env.RENDER_EXTERNAL_URL;
     if (externalUrl) {
-        const KEEP_ALIVE_INTERVAL = 10 * 60 * 1000; // 10 minutes
-        setInterval(async () => {
-            try {
-                const res = await fetch(`${externalUrl}/health`);
-                logger.info('KeepAlive', `Ping ${externalUrl}/health -> ${res.status}`);
-            } catch (err) {
-                logger.warn('KeepAlive', `Ping failed: ${err.message}`);
-            }
+        const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes (Render spin-down = 15min)
+        setInterval(() => {
+            fetch(`${externalUrl}/health`).catch(() => {});
         }, KEEP_ALIVE_INTERVAL).unref();
-        logger.info('KeepAlive', `Self-ping every 10min to ${externalUrl}`);
+        logger.info('KeepAlive', `Self-ping every 14min to ${externalUrl}`);
     }
 });
 
