@@ -150,11 +150,20 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
     // --- API activity log (gratuit, pour le dashboard) ---
     router.get('/api/activity', adminAuth, dashboardApiLimiter, async (req, res) => {
-        const { data, error } = await supabase
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
+        const typeFilter = (req.query.type || '').trim().slice(0, 50);
+
+        let query = supabase
             .from('activity')
             .select('type, detail, amount, created_at')
             .order('created_at', { ascending: false })
-            .limit(50);
+            .limit(limit);
+
+        if (typeFilter) {
+            query = query.eq('type', typeFilter);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             logger.error('Supabase', '/api/activity error:', error.message);
