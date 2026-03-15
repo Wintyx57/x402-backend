@@ -101,8 +101,7 @@ async function refreshBalanceCache() {
                 functionName: 'balanceOf',
                 args: [account.address],
             });
-            // SKALE USDC has 18 decimals, others have 6
-            const decimals = key === 'skale' ? 18 : 6;
+            const decimals = cfg.decimals ?? 6;
             return { key, balance: Number(raw) / (10 ** decimals) };
         })
     );
