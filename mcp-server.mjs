@@ -39,7 +39,7 @@ const CHAINS = {
     skale: {
         chain: skaleOnBase,
         usdc: '0x85889c8c714505E0c94b30fcfcF64fE3Ac8FCb20',
-        decimals: 18, // SKALE bridge-wrapped USDC has 18 decimals
+        decimals: 6, // USDC on SKALE on Base has 6 decimals (verified on-chain)
         explorer: 'https://skale-base-explorer.skalenodes.com',
         label: 'SKALE on Base (ultra-low gas)',
         paymentHeader: 'skale',
