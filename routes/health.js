@@ -285,11 +285,6 @@ function createHealthRouter(supabase) {
                     ...(pushStatus.error && { error: pushStatus.error }),
                 } : null,
                 push_in_progress: pushStatus.pushInProgress,
-                auto_refill: {
-                    enabled: !!(process.env.AGENT_PRIVATE_KEY || process.env.FAUCET_PRIVATE_KEY),
-                    threshold: '0.1 CREDITS',
-                    amount: '2.0 CREDITS',
-                },
                 services_with_agent_id: agentIdCount.count || 0,
                 services_with_trust_score: trustScoreCount.count || 0,
             };

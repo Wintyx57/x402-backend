@@ -163,7 +163,6 @@ const dashboardApiLimiter = rateLimit({
     max: 60,
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: true, // Don't count 2xx/3xx responses
     message: { error: 'Too many requests', message: 'Dashboard API rate limit exceeded.' }
 });
 
@@ -176,7 +175,6 @@ const adminDashboardLimiter = rateLimit({
     max: 300,
     standardHeaders: true,
     legacyHeaders: false,
-    skipSuccessfulRequests: true,
     message: { error: 'Too many requests', message: 'Admin dashboard rate limit exceeded. Try again in 15 minutes.' }
 });
 

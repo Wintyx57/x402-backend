@@ -472,7 +472,6 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
 
         const result = {
             address: `${address.slice(0, 6)}...${address.slice(-4)}`,
-            address_full: address,
             skale: {
                 credits: +(Number(val(skaleCredits)) / 1e18).toFixed(4),
                 usdc: +(Number(val(skaleUsdc)) / 1e6).toFixed(4),
