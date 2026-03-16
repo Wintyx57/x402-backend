@@ -96,6 +96,14 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             logger.error('Balance', `Failed to read USDC balance: ${err.message}`);
         }
 
+        // Agent wallet balances (unified wallet)
+        let agentWallet = null;
+        try {
+            agentWallet = await getAgentWalletBalances();
+        } catch (err) {
+            logger.warn('Dashboard', `Agent wallet balance failed: ${err.message}`);
+        }
+
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
         res.setHeader('Pragma', 'no-cache');
         res.json({
@@ -108,6 +116,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             explorer: EXPLORER_URL,
             usdcContract: USDC_CONTRACT,
             ...(balanceError && { balanceError: 'Balance temporarily unavailable' }),
+            agentWallet,
         });
     });
 
@@ -413,6 +422,94 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             amount_usdc: amountUsdc,
             explorer: `https://polygonscan.com/tx/${txHash}`,
         });
+    });
+
+    // ─── Agent Wallet balances (unified wallet) ───────────────────────
+
+    // Cache agent wallet balances — TTL 5 minutes
+    let _agentWalletCache = { value: null, ts: 0 };
+    const AGENT_WALLET_TTL = 5 * 60_000;
+
+    async function getAgentWalletBalances() {
+        if (_agentWalletCache.value && Date.now() - _agentWalletCache.ts < AGENT_WALLET_TTL) {
+            return _agentWalletCache.value;
+        }
+
+        const pk = process.env.AGENT_PRIVATE_KEY;
+        if (!pk) return null;
+
+        const { privateKeyToAccount } = require('viem/accounts');
+        const normalizedKey = pk.startsWith('0x') ? pk : `0x${pk}`;
+        const address = privateKeyToAccount(normalizedKey).address;
+        const padded = '000000000000000000000000' + address.slice(2).toLowerCase();
+        const balanceOfCall = '0x70a08231' + padded;
+
+        async function rpc(url, method, params) {
+            const r = await fetchWithTimeout(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ jsonrpc: '2.0', method, params, id: 1 }),
+            });
+            const j = await r.json();
+            if (!j.result) return 0n;
+            return BigInt(j.result);
+        }
+
+        const skaleRpc = CHAINS.skale?.rpcUrl || 'https://skale-base.skalenodes.com/v1/base';
+        const baseRpc = CHAINS.base?.rpcUrl || 'https://mainnet.base.org';
+        const polygonRpc = CHAINS.polygon?.rpcUrl || 'https://polygon-bor-rpc.publicnode.com';
+
+        const [skaleCredits, skaleUsdc, baseUsdc, baseEth, polyUsdc, polyPol] = await Promise.allSettled([
+            rpc(skaleRpc, 'eth_getBalance', [address, 'latest']),
+            rpc(skaleRpc, 'eth_call', [{ to: CHAINS.skale?.usdcContract, data: balanceOfCall }, 'latest']),
+            rpc(baseRpc, 'eth_call', [{ to: CHAINS.base?.usdcContract, data: balanceOfCall }, 'latest']),
+            rpc(baseRpc, 'eth_getBalance', [address, 'latest']),
+            rpc(polygonRpc, 'eth_call', [{ to: CHAINS.polygon?.usdcContract, data: balanceOfCall }, 'latest']),
+            rpc(polygonRpc, 'eth_getBalance', [address, 'latest']),
+        ]);
+
+        const val = (r) => r.status === 'fulfilled' ? r.value : 0n;
+
+        const result = {
+            address: `${address.slice(0, 6)}...${address.slice(-4)}`,
+            address_full: address,
+            skale: {
+                credits: +(Number(val(skaleCredits)) / 1e18).toFixed(4),
+                usdc: +(Number(val(skaleUsdc)) / 1e6).toFixed(4),
+            },
+            base: {
+                usdc: +(Number(val(baseUsdc)) / 1e6).toFixed(4),
+                eth: +(Number(val(baseEth)) / 1e18).toFixed(8),
+            },
+            polygon: {
+                usdc: +(Number(val(polyUsdc)) / 1e6).toFixed(4),
+                pol: +(Number(val(polyPol)) / 1e18).toFixed(6),
+            },
+            total_usdc: +(
+                Number(val(skaleUsdc)) / 1e6 +
+                Number(val(baseUsdc)) / 1e6 +
+                Number(val(polyUsdc)) / 1e6
+            ).toFixed(4),
+            timestamp: new Date().toISOString(),
+        };
+
+        _agentWalletCache = { value: result, ts: Date.now() };
+        return result;
+    }
+
+    // GET /api/admin/agent-wallet — Real-time balances of the unified agent wallet
+    router.get('/api/admin/agent-wallet', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const balances = await getAgentWalletBalances();
+            if (!balances) {
+                return res.status(503).json({ error: 'AGENT_PRIVATE_KEY not configured' });
+            }
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.json(balances);
+        } catch (err) {
+            logger.error('AgentWallet', `Balance check failed: ${err.message}`);
+            res.status(500).json({ error: 'Failed to read agent wallet balances' });
+        }
     });
 
     // ─── ERC-8004 admin endpoints ──────────────────────────────────────
