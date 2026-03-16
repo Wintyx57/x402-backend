@@ -228,7 +228,44 @@ function createHealthRouter(supabase) {
             allOk = false;
         }
 
-        // 4. FeeSplitter status (Polygon distribute)
+        // 4. Polygon RPC — eth_blockNumber
+        const polygonRpcUrls = CHAINS.polygon ? CHAINS.polygon.rpcUrls : [];
+        let polygonRpcChecked = false;
+        for (const rpcUrl of polygonRpcUrls) {
+            try {
+                const start = Date.now();
+                const response = await fetch(rpcUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_blockNumber', params: [], id: 1 }),
+                    signal: AbortSignal.timeout(5000),
+                });
+                const latencyMs = Date.now() - start;
+                const json = await response.json();
+                if (json.result) {
+                    checks.rpc_polygon = {
+                        status: 'ok',
+                        latency_ms: latencyMs,
+                        block_number: parseInt(json.result, 16),
+                        url: rpcUrl,
+                    };
+                } else {
+                    checks.rpc_polygon = { status: 'error', latency_ms: latencyMs, url: rpcUrl, error: json.error?.message || 'No result' };
+                    allOk = false;
+                }
+                polygonRpcChecked = true;
+                break;
+            } catch (e) {
+                // Try next RPC URL
+                logger.warn('health/deep', `Polygon RPC ${rpcUrl} unreachable: ${e.message}`);
+            }
+        }
+        if (!polygonRpcChecked) {
+            checks.rpc_polygon = { status: 'error', error: 'All Polygon RPC endpoints unreachable' };
+            allOk = false;
+        }
+
+        // 5. FeeSplitter status (Polygon distribute) — was check 4
         try {
             const feeSplitter = require('../lib/fee-splitter');
             const fsConfigured = feeSplitter.isConfigured();
@@ -253,7 +290,7 @@ function createHealthRouter(supabase) {
             checks.fee_splitter = { status: 'error', error: e.message };
         }
 
-        // 5. ERC-8004 Reputation push status
+        // 6. ERC-8004 Reputation push status
         try {
             const erc8004 = require('../lib/erc8004-registry');
             const [pushStatus, walletInfo] = await Promise.all([
@@ -392,14 +429,42 @@ function createHealthRouter(supabase) {
             return res.status(400).json({ funded: false, reason: 'invalid_address' });
         }
 
-        // 2. Check wallet key — unified AGENT_PRIVATE_KEY (or legacy FAUCET_PRIVATE_KEY)
+        // 2. Wallet-level rate limit: max 1 claim per wallet per 24h (Supabase check)
+        try {
+            const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const { data: recentClaims, error: dbErr } = await supabase
+                .from('activity')
+                .select('created_at')
+                .eq('type', 'faucet_claim')
+                .eq('detail', address.toLowerCase())
+                .gte('created_at', since)
+                .limit(1);
+
+            if (!dbErr && recentClaims && recentClaims.length > 0) {
+                const lastClaimAt = new Date(recentClaims[0].created_at).getTime();
+                const nextClaimAt = lastClaimAt + 24 * 60 * 60 * 1000;
+                const remainingMs = Math.max(0, nextClaimAt - Date.now());
+                const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+                return res.status(429).json({
+                    funded: false,
+                    reason: 'wallet_rate_limited',
+                    message: `This wallet already claimed CREDITS in the last 24h. Try again in ${remainingHours}h.`,
+                    retry_after_hours: remainingHours,
+                });
+            }
+        } catch (rateCheckErr) {
+            // Non-blocking: if DB check fails, continue (fail open for faucet availability)
+            logger.warn('Faucet', `Wallet rate-limit DB check failed: ${rateCheckErr.message}`);
+        }
+
+        // 3. Check wallet key — unified AGENT_PRIVATE_KEY (or legacy FAUCET_PRIVATE_KEY)
         const faucetKey = process.env.AGENT_PRIVATE_KEY || process.env.FAUCET_PRIVATE_KEY;
         if (!faucetKey) {
             return res.status(503).json({ funded: false, reason: 'faucet_not_configured' });
         }
 
         try {
-            // 3. Check target CREDITS balance on SKALE (reuse singleton client)
+            // 4. Check target CREDITS balance on SKALE (reuse singleton client)
             const pubClient = _skalePublicClient;
             const balance = await pubClient.getBalance({ address });
 
@@ -440,6 +505,14 @@ function createHealthRouter(supabase) {
             await pubClient.waitForTransactionReceipt({ hash: txHash, confirmations: 1, timeout: 30_000 });
 
             logger.info('Faucet', `Sent 0.1 CREDITS to ${address} — tx: ${txHash}`);
+
+            // Record claim in activity for wallet-level rate limiting
+            supabase.from('activity').insert([{
+                type: 'faucet_claim',
+                detail: address.toLowerCase(),
+                amount: 0,
+            }]).then(null, (err) => logger.warn('Faucet', `Failed to log activity: ${err.message}`));
+
             res.json({
                 funded: true,
                 amount_credits: '0.1',

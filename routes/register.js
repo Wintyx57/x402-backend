@@ -1,12 +1,47 @@
 // routes/register.js — POST /register + deep auto-verification on registration
 
 const express = require('express');
+const { recoverMessageAddress } = require('viem');
 const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
 const { ServiceRegistrationSchema, QuickRegisterSchema } = require('../schemas');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
+
+// Max allowed age for the signed timestamp (5 minutes)
+const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
+
+/**
+ * Verify an EIP-191 personal_sign signature for quick-register.
+ * Expected signed message format: "quick-register:<url>:<ownerAddress>:<timestamp>"
+ * Returns { valid: true } or { valid: false, reason: string }
+ */
+async function verifyQuickRegisterSignature({ url, ownerAddress, timestamp, signature }) {
+    // 1. Validate timestamp freshness (prevent replay attacks)
+    const ts = Number(timestamp);
+    if (!Number.isInteger(ts) || ts <= 0) {
+        return { valid: false, reason: 'invalid_timestamp' };
+    }
+    const age = Date.now() - ts;
+    if (age < 0 || age > SIGNATURE_MAX_AGE_MS) {
+        return { valid: false, reason: 'timestamp_expired', age_ms: age };
+    }
+
+    // 2. Reconstruct the exact message that was signed
+    const message = `quick-register:${url}:${ownerAddress}:${timestamp}`;
+
+    // 3. Recover the signer address from the signature
+    try {
+        const recovered = await recoverMessageAddress({ message, signature });
+        if (recovered.toLowerCase() !== ownerAddress.toLowerCase()) {
+            return { valid: false, reason: 'signature_mismatch', recovered };
+        }
+        return { valid: true };
+    } catch (err) {
+        return { valid: false, reason: 'signature_recovery_failed', error: err.message };
+    }
+}
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
     const router = express.Router();
@@ -21,6 +56,31 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 message: err.message,
             }));
             return res.status(400).json({ error: 'Validation failed', details: errors });
+        }
+
+        // EIP-191 wallet ownership proof
+        const { signature, timestamp } = req.body;
+        if (!signature || !timestamp) {
+            return res.status(400).json({
+                error: 'Signature required',
+                message: 'Provide "signature" (EIP-191 personal_sign) and "timestamp" (unix ms). Sign the message: quick-register:<url>:<ownerAddress>:<timestamp>',
+            });
+        }
+
+        const sigCheck = await verifyQuickRegisterSignature({
+            url: validatedData.url,
+            ownerAddress: validatedData.ownerAddress,
+            timestamp,
+            signature,
+        });
+
+        if (!sigCheck.valid) {
+            logger.warn('QuickRegister', `Signature rejected for ${validatedData.ownerAddress}: ${sigCheck.reason}`);
+            return res.status(401).json({
+                error: 'Invalid signature',
+                reason: sigCheck.reason,
+                message: 'Could not verify wallet ownership. Ensure you signed: quick-register:<url>:<ownerAddress>:<timestamp> with timestamp within 5 minutes.',
+            });
         }
 
         // SSRF protection

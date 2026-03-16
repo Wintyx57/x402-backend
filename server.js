@@ -154,7 +154,7 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
+    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
