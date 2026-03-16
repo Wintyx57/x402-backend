@@ -286,7 +286,7 @@ function createHealthRouter(supabase) {
                 } : null,
                 push_in_progress: pushStatus.pushInProgress,
                 auto_refill: {
-                    enabled: !!process.env.FAUCET_PRIVATE_KEY,
+                    enabled: !!(process.env.AGENT_PRIVATE_KEY || process.env.FAUCET_PRIVATE_KEY),
                     threshold: '0.1 CREDITS',
                     amount: '2.0 CREDITS',
                 },
@@ -397,8 +397,8 @@ function createHealthRouter(supabase) {
             return res.status(400).json({ funded: false, reason: 'invalid_address' });
         }
 
-        // 2. Check FAUCET_PRIVATE_KEY
-        const faucetKey = process.env.FAUCET_PRIVATE_KEY;
+        // 2. Check wallet key — unified AGENT_PRIVATE_KEY (or legacy FAUCET_PRIVATE_KEY)
+        const faucetKey = process.env.AGENT_PRIVATE_KEY || process.env.FAUCET_PRIVATE_KEY;
         if (!faucetKey) {
             return res.status(503).json({ funded: false, reason: 'faucet_not_configured' });
         }

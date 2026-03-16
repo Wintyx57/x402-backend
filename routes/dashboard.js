@@ -441,9 +441,8 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                     with_trust_score: trustScoreResult.count || 0,
                 },
                 env: {
+                    AGENT_PRIVATE_KEY: !!process.env.AGENT_PRIVATE_KEY,
                     ERC8004_FEEDBACK_KEY: !!process.env.ERC8004_FEEDBACK_KEY,
-                    ERC8004_REGISTRY_KEY: !!(process.env.ERC8004_REGISTRY_KEY || process.env.AGENT_PRIVATE_KEY),
-                    FAUCET_PRIVATE_KEY: !!process.env.FAUCET_PRIVATE_KEY,
                 },
             });
         } catch (err) {

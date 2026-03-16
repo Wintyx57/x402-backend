@@ -25,11 +25,6 @@ services:
         sync: false
       - key: ADMIN_TOKEN
         sync: false
-      # --- Payment / RPC ---
-      - key: COINBASE_API_KEY
-        sync: false
-      - key: COINBASE_API_SECRET
-        sync: false
       # --- AI ---
       - key: OPENAI_API_KEY
         sync: false
@@ -56,6 +51,9 @@ services:
       #   value: "true"
       - key: GEMINI_API_KEY
         sync: false
+      # --- DEPRECATED: FAUCET_PRIVATE_KEY — now uses AGENT_PRIVATE_KEY ---
+      # Keep temporarily for one-shot CREDITS consolidation into agent wallet.
+      # Remove from Render after confirming old faucet wallet is empty.
       - key: FAUCET_PRIVATE_KEY
         sync: false
       # --- ERC-8004 on-chain reputation ---
@@ -68,7 +66,7 @@ services:
         value: https://x402.polygon.technology
       - key: POLYGON_FEE_SPLITTER_CONTRACT
         value: "0x820d4b07D09e5E07598464E6E36cB12561e0Ba56"
-      # --- FeeSplitter operator key — calls distribute() after facilitator payment ---
-      # Must be the operator/owner of the FeeSplitter contract on Polygon mainnet
+      # --- DEPRECATED: FEE_SPLITTER_OPERATOR_KEY — now uses AGENT_PRIVATE_KEY ---
+      # Remove from Render once confirmed that AGENT_PRIVATE_KEY works for distribute()
       - key: FEE_SPLITTER_OPERATOR_KEY
         sync: false
