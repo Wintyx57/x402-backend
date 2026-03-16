@@ -7,7 +7,7 @@ const { fetchWithTimeout, TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment'
 const { getDailyTesterStatus } = require('../lib/daily-tester');
 const { getTrustBreakdown, recalculateAllScores } = require('../lib/trust-score');
 const feeSplitter = require('../lib/fee-splitter');
-const { getPushStatus, getFeedbackWalletInfo, forcePushAllScores } = require('../lib/erc8004-registry');
+const { getPushStatus, getFeedbackWalletInfo, forcePushAllScores, ensureFeedbackCredits } = require('../lib/erc8004-registry');
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)
 let _balanceCache = { value: null, ts: 0 };
@@ -431,6 +431,11 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             res.json({
                 feedback_wallet: walletInfo,
                 last_push: pushStatus,
+                auto_refill: {
+                    enabled: !!process.env.FAUCET_PRIVATE_KEY,
+                    threshold_credits: '0.1',
+                    refill_amount_credits: '2.0',
+                },
                 services: {
                     with_agent_id: agentIdResult.count || 0,
                     with_trust_score: trustScoreResult.count || 0,
@@ -438,6 +443,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 env: {
                     ERC8004_FEEDBACK_KEY: !!process.env.ERC8004_FEEDBACK_KEY,
                     ERC8004_REGISTRY_KEY: !!(process.env.ERC8004_REGISTRY_KEY || process.env.AGENT_PRIVATE_KEY),
+                    FAUCET_PRIVATE_KEY: !!process.env.FAUCET_PRIVATE_KEY,
                 },
             });
         } catch (err) {
