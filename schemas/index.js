@@ -232,6 +232,29 @@ const ServiceUpdateSchema = z.object({
   logo_url: z.string().url().max(500).optional().nullable(),
 }).refine(data => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
+// ─── Batch Register Schema ────────────────────────────────────────────
+/**
+ * Schema for POST /batch-register
+ * Validates bulk service registration with wallet signature
+ */
+const BatchRegisterSchema = z.object({
+  services: z.array(z.object({
+    name: z.string().trim().min(1).max(200),
+    url: z.string().url().max(500),
+    price: z.number().min(0.001).max(1000),
+    description: z.string().trim().max(1000).optional().default(''),
+    tags: z.array(z.string().max(50)).max(10).optional().default([]),
+    required_parameters: z.object({
+      properties: z.record(z.any()).optional(),
+      required: z.array(z.string().max(100)).max(50).optional(),
+    }).optional().nullable(),
+    logo_url: z.string().url().max(500).optional().nullable(),
+  })).min(1).max(50),
+  ownerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  signature: z.string(),
+  timestamp: z.number(),
+});
+
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
@@ -243,4 +266,5 @@ module.exports = {
   SentimentAnalysisSchema,
   CodeExecutionSchema,
   ServiceUpdateSchema,
+  BatchRegisterSchema,
 };

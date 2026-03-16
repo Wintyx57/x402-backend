@@ -4,7 +4,7 @@ const express = require('express');
 const { recoverMessageAddress } = require('viem');
 const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
-const { ServiceRegistrationSchema, QuickRegisterSchema } = require('../schemas');
+const { ServiceRegistrationSchema, QuickRegisterSchema, BatchRegisterSchema } = require('../schemas');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
@@ -41,6 +41,39 @@ async function verifyQuickRegisterSignature({ url, ownerAddress, timestamp, sign
     } catch (err) {
         return { valid: false, reason: 'signature_recovery_failed', error: err.message };
     }
+}
+
+async function verifyBatchRegisterSignature({ ownerAddress, serviceCount, timestamp, signature }) {
+    const ts = Number(timestamp);
+    if (!Number.isInteger(ts) || ts <= 0) {
+        return { valid: false, reason: 'invalid_timestamp' };
+    }
+    const age = Date.now() - ts;
+    if (age < 0 || age > SIGNATURE_MAX_AGE_MS) {
+        return { valid: false, reason: 'timestamp_expired', age_ms: age };
+    }
+    const message = `batch-register:${ownerAddress}:${serviceCount}:${timestamp}`;
+    try {
+        const recovered = await recoverMessageAddress({ message, signature });
+        if (recovered.toLowerCase() !== ownerAddress.toLowerCase()) {
+            return { valid: false, reason: 'signature_mismatch', recovered };
+        }
+        return { valid: true };
+    } catch (err) {
+        return { valid: false, reason: 'signature_recovery_failed', error: err.message };
+    }
+}
+
+async function checkDuplicateUrl(supabase, url) {
+    const { data } = await supabase
+        .from('services')
+        .select('id, name')
+        .eq('url', url)
+        .limit(1);
+    if (data && data.length > 0) {
+        return data[0];
+    }
+    return null;
 }
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
@@ -90,6 +123,16 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             return res.status(400).json({
                 error: 'Invalid service URL',
                 message: 'URL must point to a publicly reachable address'
+            });
+        }
+
+        // Duplicate URL check
+        const existingService = await checkDuplicateUrl(supabase, validatedData.url);
+        if (existingService) {
+            return res.status(409).json({
+                error: 'URL already registered',
+                existing_service_id: existingService.id,
+                existing_service_name: existingService.name,
             });
         }
 
@@ -179,6 +222,16 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             });
         }
 
+        // Duplicate URL check
+        const existingService = await checkDuplicateUrl(supabase, validatedData.url);
+        if (existingService) {
+            return res.status(409).json({
+                error: 'URL already registered',
+                existing_service_id: existingService.id,
+                existing_service_name: existingService.name,
+            });
+        }
+
         const insertData = {
             name: validatedData.name,
             description: validatedData.description,
@@ -228,6 +281,137 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         });
     });
 
+    router.post('/batch-register', registerLimiter, async (req, res) => {
+        let validatedData;
+        try {
+            validatedData = BatchRegisterSchema.parse(req.body);
+        } catch (zodError) {
+            const errors = (zodError.issues || zodError.errors || []).map(err => ({
+                field: err.path.join('.') || 'root',
+                message: err.message,
+            }));
+            return res.status(400).json({ error: 'Validation failed', details: errors });
+        }
+
+        // Verify signature
+        const sigCheck = await verifyBatchRegisterSignature({
+            ownerAddress: validatedData.ownerAddress,
+            serviceCount: validatedData.services.length,
+            timestamp: validatedData.timestamp,
+            signature: validatedData.signature,
+        });
+
+        if (!sigCheck.valid) {
+            logger.warn('BatchRegister', `Signature rejected for ${validatedData.ownerAddress}: ${sigCheck.reason}`);
+            return res.status(401).json({
+                error: 'Invalid signature',
+                reason: sigCheck.reason,
+                message: 'Could not verify wallet ownership. Sign: batch-register:<ownerAddress>:<serviceCount>:<timestamp>',
+            });
+        }
+
+        // SSRF check all URLs
+        for (const svc of validatedData.services) {
+            try {
+                await safeUrl(svc.url);
+            } catch (urlErr) {
+                return res.status(400).json({
+                    error: 'Invalid service URL',
+                    message: `URL "${svc.url}" must point to a publicly reachable address`,
+                    service_name: svc.name,
+                });
+            }
+        }
+
+        // Intra-batch duplicate check
+        const urls = validatedData.services.map(s => s.url);
+        const uniqueUrls = new Set(urls);
+        if (uniqueUrls.size !== urls.length) {
+            return res.status(400).json({
+                error: 'Duplicate URLs in batch',
+                message: 'Each service must have a unique URL within the batch',
+            });
+        }
+
+        // Check existing URLs in database
+        const { data: existingServices } = await supabase
+            .from('services')
+            .select('id, name, url')
+            .in('url', urls);
+
+        if (existingServices && existingServices.length > 0) {
+            return res.status(409).json({
+                error: 'URLs already registered',
+                duplicates: existingServices.map(s => ({
+                    url: s.url,
+                    existing_service_id: s.id,
+                    existing_service_name: s.name,
+                })),
+            });
+        }
+
+        // Build insert array
+        const insertArray = validatedData.services.map(svc => {
+            const row = {
+                name: svc.name,
+                description: svc.description || '',
+                url: svc.url,
+                price_usdc: svc.price,
+                owner_address: validatedData.ownerAddress,
+                tags: svc.tags || [],
+            };
+            if (svc.required_parameters) row.required_parameters = svc.required_parameters;
+            if (svc.logo_url) row.logo_url = svc.logo_url;
+            return row;
+        });
+
+        // Insert all services
+        const { data, error } = await supabase
+            .from('services')
+            .insert(insertArray)
+            .select();
+
+        if (error) {
+            logger.error('Supabase', '/batch-register error:', error.message);
+            return res.status(500).json({ error: 'Batch registration failed' });
+        }
+
+        logger.info('Bazaar', `Batch registered ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);
+        logActivity('batch_register', `${data.length} services by ${validatedData.ownerAddress.slice(0, 8)}`);
+
+        // Auto-test in batches of 5 (fire-and-forget)
+        const BATCH_SIZE = 5;
+        for (let i = 0; i < data.length; i += BATCH_SIZE) {
+            const batch = data.slice(i, i + BATCH_SIZE);
+            Promise.all(batch.map(svc => autoTestService(svc, supabase))).catch(err => {
+                logger.error('AutoTest', `Batch auto-test error: ${err.message}`);
+            });
+        }
+
+        // ERC-8004 registration sequential (fire-and-forget)
+        (async () => {
+            for (const svc of data) {
+                try {
+                    await registerOnChain(svc, supabase);
+                } catch (err) {
+                    logger.error('ERC8004', `Batch on-chain registration failed for "${svc.name}": ${err.message}`);
+                }
+            }
+        })();
+
+        // Notify admin
+        const serviceList = data.map(s => `• ${s.name} ($${s.price_usdc})`).join('\n');
+        notifyAdmin(
+            `📦 *Batch Register*\n*Owner:* \`${validatedData.ownerAddress.slice(0, 10)}...\`\n*Services (${data.length}):*\n${serviceList}`
+        ).catch(() => {});
+
+        res.status(201).json({
+            success: true,
+            message: `${data.length} services registered successfully!`,
+            data,
+        });
+    });
+
     return router;
 }
 
@@ -257,12 +441,13 @@ async function autoTestService(service, supabase) {
 
     // Notify admin via Telegram with rich details
     const VERDICT_EMOJI = {
-        mainnet_verified: '\u2705',  // ✅
-        reachable: '\u2139\uFE0F',   // ℹ️
-        testnet: '\u26A0\uFE0F',     // ⚠️
-        wrong_chain: '\u26A0\uFE0F', // ⚠️
-        no_x402: '\u2753',           // ❓
-        offline: '\uD83D\uDD34',     // 🔴
+        mainnet_verified: '\u2705',      // ✅
+        reachable: '\u2139\uFE0F',       // ℹ️
+        testnet: '\u26A0\uFE0F',         // ⚠️
+        wrong_chain: '\u26A0\uFE0F',     // ⚠️
+        no_x402: '\u2753',               // ❓
+        offline: '\uD83D\uDD34',         // 🔴
+        potential_wrapper: '\u26A0\uFE0F', // ⚠️
     };
     const VERDICT_LABEL = {
         mainnet_verified: 'MAINNET VERIFIE',
@@ -271,6 +456,7 @@ async function autoTestService(service, supabase) {
         wrong_chain: 'CHAIN INCONNUE',
         no_x402: 'PAS DE x402',
         offline: 'HORS LIGNE',
+        potential_wrapper: 'WRAPPER POTENTIEL',
     };
 
     const emoji = VERDICT_EMOJI[report.verdict] || '\u2753';
@@ -295,6 +481,10 @@ async function autoTestService(service, supabase) {
 
     if (report.endpoints.health) lines.push(`*/health:* accessible \u2705`);
     if (report.details) lines.push(`\n_${report.details}_`);
+    if (report.potentialWrapper) {
+        lines.push(`\n\u26A0\uFE0F *ATTENTION: Wrapper potentiel détecté*`);
+        lines.push(`_${report.wrapperReason}_`);
+    }
     lines.push(`\n*ID:* \`${id.slice(0, 8)}...\``);
 
     await notifyAdmin(lines.filter(Boolean).join('\n'));
