@@ -26,6 +26,26 @@ function setCachedCrypto(coin, data) {
     }
 }
 
+// --- Weather cache (10min TTL) ---
+const weatherCache = new Map();
+const WEATHER_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+function getCachedWeather(city) {
+    const key = city.toLowerCase();
+    const entry = weatherCache.get(key);
+    if (entry && (Date.now() - entry.ts) < WEATHER_CACHE_TTL) return entry.data;
+    return null;
+}
+
+function setCachedWeather(city, data) {
+    const key = city.toLowerCase();
+    weatherCache.set(key, { data, ts: Date.now() });
+    if (weatherCache.size > 200) {
+        const oldest = weatherCache.keys().next().value;
+        weatherCache.delete(oldest);
+    }
+}
+
 function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     const router = express.Router();
 
@@ -42,6 +62,13 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         }
 
         try {
+            // Check cache first (10min TTL)
+            const cached = getCachedWeather(city);
+            if (cached) {
+                logActivity('api_call', `Weather API (cached): ${city}`);
+                return res.json(cached);
+            }
+
             // Primary: Open-Meteo (geocode + forecast)
             let weatherResult = null;
             try {
@@ -99,7 +126,9 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
             }
 
             logActivity('api_call', `Weather API: ${city} -> ${weatherResult.city}, ${weatherResult.country}`);
-            res.json({ success: true, ...weatherResult });
+            const weatherResponse = { success: true, ...weatherResult };
+            setCachedWeather(city, weatherResponse);
+            res.json(weatherResponse);
         } catch (err) {
             logger.error('Weather API', err.message);
             return res.status(500).json({ error: 'Weather API request failed' });
@@ -185,6 +214,7 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                     setCachedCrypto(coin, result);
                     return res.json(result);
                 }
+                logger.warn('Crypto API', `CryptoCompare returned OK but no data for symbol ${sym}`);
             }
 
             // Fallback 2: Binance API (symbol-based, no coin ID)
@@ -205,9 +235,34 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                         setCachedCrypto(coin, result);
                         return res.json(result);
                     }
+                    logger.warn('Crypto API', `Binance returned OK but no price for symbol ${sym}USDT`);
                 }
             } catch (binErr) {
                 logger.warn('Crypto API', `Binance fallback also failed: ${binErr.message}`);
+            }
+
+            // Fallback 3: CoinCap API (free, no key, reliable)
+            try {
+                const capUrl = `https://api.coincap.io/v2/assets/${encodeURIComponent(coin)}`;
+                const capRes = await fetchWithTimeout(capUrl, { headers: apiHeaders }, 8000);
+                if (capRes.ok) {
+                    const capData = await capRes.json();
+                    if (capData.data && capData.data.priceUsd) {
+                        const d = capData.data;
+                        logActivity('api_call', `Crypto Price API (coincap): ${coin}`);
+                        const result = {
+                            success: true, coin,
+                            usd: parseFloat(d.priceUsd),
+                            eur: null,
+                            usd_24h_change: parseFloat(d.changePercent24Hr) || 0,
+                            source: 'coincap'
+                        };
+                        setCachedCrypto(coin, result);
+                        return res.json(result);
+                    }
+                }
+            } catch (capErr) {
+                logger.warn('Crypto API', `CoinCap fallback also failed: ${capErr.message}`);
             }
 
             return res.status(404).json({ error: 'Cryptocurrency not found', coin });

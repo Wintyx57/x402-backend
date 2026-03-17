@@ -10,6 +10,26 @@ const { fetchWithTimeout } = require('../../lib/payment');
 const { openaiRetry } = require('../../lib/openai-retry');
 const { safeUrl } = require('../../lib/safe-url');
 
+// --- Crypto Intelligence cache (5min TTL) ---
+const cryptoIntelCache = new Map();
+const CRYPTO_INTEL_CACHE_TTL = 5 * 60 * 1000;
+
+function getCachedCryptoIntel(symbol) {
+    const key = symbol.toLowerCase();
+    const entry = cryptoIntelCache.get(key);
+    if (entry && (Date.now() - entry.ts) < CRYPTO_INTEL_CACHE_TTL) return entry.data;
+    return null;
+}
+
+function setCachedCryptoIntel(symbol, data) {
+    const key = symbol.toLowerCase();
+    cryptoIntelCache.set(key, { data, ts: Date.now() });
+    if (cryptoIntelCache.size > 200) {
+        const oldest = cryptoIntelCache.keys().next().value;
+        cryptoIntelCache.delete(oldest);
+    }
+}
+
 function createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
     const router = express.Router();
 
@@ -20,7 +40,11 @@ function createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLi
         if (text.length > 30000) return res.status(400).json({ error: 'Text too long (max 30000 chars)' });
 
         try {
-            const model = getGemini().getGenerativeModel({
+            const gemini = getGemini();
+            if (!gemini) {
+                return res.status(503).json({ error: 'AI service not configured', message: 'GEMINI_API_KEY not set' });
+            }
+            const model = gemini.getGenerativeModel({
                 model: 'gemini-2.5-flash',
                 systemInstruction: `You are a legal contract analyst. Analyze the contract text and identify risky clauses. Respond ONLY with valid JSON in this exact format:
 {"overall_risk":"high|medium|low","risk_score":0-100,"summary":"brief overall assessment","clauses":[{"text":"exact problematic text (max 200 chars)","risk_level":"high|medium|low","category":"liability|privacy|termination|payment|ip|non-compete|arbitration|other","explanation":"why this is risky"}]}
@@ -56,7 +80,11 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
         if (email.length > 10000) return res.status(400).json({ error: 'Email too long (max 10000 chars)' });
 
         try {
-            const model = getGemini().getGenerativeModel({
+            const gemini = getGemini();
+            if (!gemini) {
+                return res.status(503).json({ error: 'AI service not configured', message: 'GEMINI_API_KEY not set' });
+            }
+            const model = gemini.getGenerativeModel({
                 model: 'gemini-2.5-flash',
                 systemInstruction: `Extract CRM data from this email. Respond ONLY with valid JSON:
 {"sender_name":"full name or null","sender_email":"email or null","company":"company name or null","phone":"phone or null","intent":"inquiry|complaint|purchase|partnership|support|other","sentiment":"positive|neutral|negative","urgency":"high|medium|low","key_topics":["topic1","topic2"],"follow_up_action":"suggested action in one sentence","summary":"2-sentence summary of the email"}`
@@ -92,7 +120,11 @@ Focus on: unlimited liability, data sharing, automatic renewals, unilateral chan
         if (code.length > 20000) return res.status(400).json({ error: 'Code too long (max 20000 chars)' });
 
         try {
-            const model = getGemini().getGenerativeModel({
+            const gemini = getGemini();
+            if (!gemini) {
+                return res.status(503).json({ error: 'AI service not configured', message: 'GEMINI_API_KEY not set' });
+            }
+            const model = gemini.getGenerativeModel({
                 model: 'gemini-2.5-flash',
                 systemInstruction: `You are a senior code reviewer. Review the provided code and respond ONLY with valid JSON:
 {"language":"detected language","quality_score":0-100,"summary":"one sentence overall assessment","issues":[{"line":line_number_or_null,"severity":"critical|major|minor|info","type":"bug|security|performance|style|maintainability","message":"description of the issue","suggestion":"how to fix it"}],"strengths":["thing done well"]}
@@ -128,7 +160,11 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         if (csv.length > 20000) return res.status(400).json({ error: 'Data too large (max 20000 chars)' });
 
         try {
-            const model = getGemini().getGenerativeModel({
+            const gemini = getGemini();
+            if (!gemini) {
+                return res.status(503).json({ error: 'AI service not configured', message: 'GEMINI_API_KEY not set' });
+            }
+            const model = gemini.getGenerativeModel({
                 model: 'gemini-2.5-flash',
                 systemInstruction: `You are a data analyst. Analyze the CSV/table data and respond ONLY with valid JSON:
 {"rows":total_row_count,"columns":["col1","col2"],"insights":["insight 1","insight 2","insight 3"],"anomalies":["anomaly 1"],"trends":["trend 1"],"recommendations":["action 1"],"summary":"2-sentence overview of the dataset"}`
@@ -459,6 +495,13 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
         const symbol = (req.query.symbol || req.query.id || '').trim().toLowerCase().slice(0, 50);
         if (!symbol) return res.status(400).json({ error: "Param 'symbol' required. Ex: /api/crypto-intelligence?symbol=bitcoin" });
 
+        // Check cache first (5min TTL)
+        const cached = getCachedCryptoIntel(symbol);
+        if (cached) {
+            logActivity('api_call', `Crypto Intelligence (cached): ${symbol}`);
+            return res.json(cached);
+        }
+
         try {
             // Search for the coin id
             const searchRes = await fetchWithTimeout(
@@ -466,9 +509,18 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                 { headers: { Accept: 'application/json' } },
                 8000
             );
+
+            if (searchRes.status === 429) {
+                logger.warn('CryptoIntelligence', 'CoinGecko search 429, trying CoinCap fallback');
+                throw { coinGecko429: true };
+            }
+
             const searchData = await searchRes.json();
             const coin = searchData.coins?.[0];
-            if (!coin) return res.status(404).json({ error: `Token '${symbol}' not found on CoinGecko` });
+            if (!coin) {
+                // Try CoinCap before returning 404
+                throw { coinGecko404: true };
+            }
 
             // Full coin data
             const coinRes = await fetchWithTimeout(
@@ -476,15 +528,24 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                 { headers: { Accept: 'application/json' } },
                 10000
             );
+
+            if (coinRes.status === 429) {
+                logger.warn('CryptoIntelligence', 'CoinGecko coin data 429, trying CoinCap fallback');
+                throw { coinGecko429: true };
+            }
+
             const data = await coinRes.json();
-            if (data.status?.error_code === 429) return res.status(429).json({ error: 'CoinGecko rate limit, retry in 60s' });
+            if (data.status?.error_code === 429) {
+                logger.warn('CryptoIntelligence', 'CoinGecko rate limit in response body, trying CoinCap fallback');
+                throw { coinGecko429: true };
+            }
 
             const md = data.market_data;
             const dev = data.developer_data;
             const community = data.community_data;
 
             logActivity('api_call', `Crypto Intelligence: ${data.symbol?.toUpperCase()} $${md?.current_price?.usd}`);
-            res.json({
+            const result = {
                 success: true,
                 id: data.id,
                 name: data.name,
@@ -514,10 +575,56 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
                     github: data.links?.repos_url?.github?.[0] || null,
                 },
                 description: data.description?.en?.replace(/<[^>]+>/g, '').slice(0, 500) || null,
-            });
+            };
+            setCachedCryptoIntel(symbol, result);
+            res.json(result);
         } catch (err) {
-            logger.error('CryptoIntelligence', err.message);
-            if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) return res.status(429).json({ error: 'Rate limit exceeded' });
+            // Fallback: CoinCap API (free, no key, reliable)
+            if (err.coinGecko429 || err.coinGecko404 || err.message?.includes('fetch') || err.code === 'ETIMEDOUT') {
+                try {
+                    const capUrl = `https://api.coincap.io/v2/assets/${encodeURIComponent(symbol)}`;
+                    const capRes = await fetchWithTimeout(capUrl, { headers: { Accept: 'application/json' } }, 8000);
+                    if (capRes.ok) {
+                        const capData = await capRes.json();
+                        if (capData.data && capData.data.priceUsd) {
+                            const d = capData.data;
+                            logActivity('api_call', `Crypto Intelligence (coincap): ${symbol}`);
+                            const result = {
+                                success: true,
+                                id: d.id,
+                                name: d.name,
+                                symbol: d.symbol?.toUpperCase(),
+                                price_usd: parseFloat(d.priceUsd),
+                                market_cap_usd: parseFloat(d.marketCapUsd) || null,
+                                volume_24h: parseFloat(d.volumeUsd24Hr) || null,
+                                change_24h: parseFloat(d.changePercent24Hr) || null,
+                                change_7d: null,
+                                ath_usd: null,
+                                ath_date: null,
+                                circulating_supply: parseFloat(d.supply) || null,
+                                total_supply: parseFloat(d.maxSupply) || null,
+                                github: { stars: 0, forks: 0, commits_4w: 0, contributors: 0 },
+                                community: { twitter_followers: 0, telegram_users: 0, reddit_subscribers: 0 },
+                                links: { homepage: d.explorer || null, github: null },
+                                description: null,
+                                source: 'coincap',
+                            };
+                            setCachedCryptoIntel(symbol, result);
+                            return res.json(result);
+                        }
+                    }
+                } catch (capErr) {
+                    logger.warn('CryptoIntelligence', `CoinCap fallback also failed: ${capErr.message}`);
+                }
+            }
+
+            logger.error('CryptoIntelligence', err.message || JSON.stringify(err));
+            if (err.status === 429 || err.coinGecko429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
+                return res.status(429).json({ error: 'Rate limit exceeded on all providers' });
+            }
+            if (err.coinGecko404) {
+                return res.status(404).json({ error: `Token '${symbol}' not found` });
+            }
             res.status(500).json({ error: 'Crypto intelligence failed' });
         }
     });

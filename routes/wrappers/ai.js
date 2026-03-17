@@ -189,7 +189,27 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
     });
 
     // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
-    // Uses Wandbox (wandbox.org) — free, open-source, no API key required
+    // Primary: Piston API (emkc.org) — free, reliable, no API key required
+    // Fallback: Wandbox (wandbox.org) — free, open-source
+    const PISTON_LANG_MAP = {
+        python:     { language: 'python', version: '3.10.0' },
+        python3:    { language: 'python', version: '3.10.0' },
+        javascript: { language: 'javascript', version: '18.15.0' },
+        js:         { language: 'javascript', version: '18.15.0' },
+        typescript: { language: 'typescript', version: '5.0.3' },
+        ts:         { language: 'typescript', version: '5.0.3' },
+        ruby:       { language: 'ruby', version: '3.0.1' },
+        go:         { language: 'go', version: '1.16.2' },
+        rust:       { language: 'rust', version: '1.68.2' },
+        c:          { language: 'c', version: '10.2.0' },
+        cpp:        { language: 'c++', version: '10.2.0' },
+        java:       { language: 'java', version: '15.0.2' },
+        php:        { language: 'php', version: '8.2.3' },
+        bash:       { language: 'bash', version: '5.2.0' },
+        swift:      { language: 'swift', version: '5.3.3' },
+        kotlin:     { language: 'kotlin', version: '1.8.20' },
+    };
+
     const WANDBOX_COMPILER_MAP = {
         python:     'cpython-3.12.7',
         python3:    'cpython-3.12.7',
@@ -222,19 +242,58 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
         const language = parseResult.data.language.toLowerCase();
         const code = parseResult.data.code;
 
-        const compiler = WANDBOX_COMPILER_MAP[language];
-        if (!compiler) {
-            const supported = Object.keys(WANDBOX_COMPILER_MAP).join(', ');
+        const pistonLang = PISTON_LANG_MAP[language];
+        const wandboxCompiler = WANDBOX_COMPILER_MAP[language];
+        if (!pistonLang && !wandboxCompiler) {
+            const supported = [...new Set([...Object.keys(PISTON_LANG_MAP), ...Object.keys(WANDBOX_COMPILER_MAP)])].join(', ');
             return res.status(400).json({ error: `Unsupported language "${language}". Supported: ${supported}` });
         }
 
         try {
+            // Primary: Piston API (emkc.org)
+            if (pistonLang) {
+                try {
+                    const pistonRes = await fetchWithTimeout('https://emkc.org/api/v2/piston/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            language: pistonLang.language,
+                            version: pistonLang.version,
+                            files: [{ content: code }]
+                        })
+                    }, 20000);
+
+                    if (pistonRes.ok) {
+                        const data = await pistonRes.json();
+                        const run = data.run || {};
+                        const compile = data.compile || {};
+                        logActivity('api_call', `Code Execution API (piston): ${language} (${code.length} chars)`);
+                        return res.json({
+                            success: true,
+                            language,
+                            output: run.stdout || run.output || '',
+                            stderr: run.stderr || '',
+                            compiler_error: compile.stderr || '',
+                            exit_code: String(run.code ?? '0')
+                        });
+                    }
+                    logger.warn('Code Execution API', `Piston HTTP ${pistonRes.status}, trying Wandbox fallback`);
+                } catch (pistonErr) {
+                    logger.warn('Code Execution API', `Piston failed: ${pistonErr.message}, trying Wandbox fallback`);
+                }
+            }
+
+            // Fallback: Wandbox
+            if (!wandboxCompiler) {
+                return res.status(500).json({ error: 'Code execution failed — primary engine unavailable and no fallback for this language' });
+            }
+
             const apiUrl = 'https://wandbox.org/api/compile.json';
             const apiRes = await fetchWithTimeout(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ compiler, code })
-            }, 20000); // 20s timeout for code execution
+                body: JSON.stringify({ compiler: wandboxCompiler, code })
+            }, 20000);
 
             if (!apiRes.ok) {
                 const errText = await apiRes.text().catch(() => '');
@@ -244,7 +303,7 @@ function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, get
 
             const data = await apiRes.json();
 
-            logActivity('api_call', `Code Execution API: ${language} (${code.length} chars)`);
+            logActivity('api_call', `Code Execution API (wandbox): ${language} (${code.length} chars)`);
 
             res.json({
                 success: true,
