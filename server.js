@@ -154,7 +154,8 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
+    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status')
+        || req.headers['x-payment-txhash'] || req.headers['x-payment-txhash-provider'],
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
