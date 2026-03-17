@@ -513,3 +513,45 @@ describe('proxy route — upstream 4xx accepted (not retried)', () => {
         assert.strictEqual(shouldRetry, true);
     });
 });
+
+// ---------------------------------------------------------------------------
+// Suite 9 — Consumer Protection: 4xx responses include _payment_status
+// ---------------------------------------------------------------------------
+
+describe('proxy route — consumer protection metadata', () => {
+    const { shouldChargeForResponse } = require('../routes/proxy');
+
+    it('4xx response should yield _payment_status: not_charged semantics', () => {
+        const decision = shouldChargeForResponse(400, { error: 'bad request' });
+        assert.strictEqual(decision.shouldCharge, false);
+        // In the actual proxy, this means _payment_status: 'not_charged' is set
+    });
+
+    it('404 response should yield not_charged with reason including 404', () => {
+        const decision = shouldChargeForResponse(404, { error: 'not found' });
+        assert.strictEqual(decision.shouldCharge, false);
+        assert.ok(decision.reason.includes('404'));
+    });
+
+    it('429 rate limited should yield not_charged', () => {
+        const decision = shouldChargeForResponse(429, { error: 'too many requests' });
+        assert.strictEqual(decision.shouldCharge, false);
+    });
+
+    it('200 with empty body should yield not_charged', () => {
+        const decision = shouldChargeForResponse(200, {});
+        assert.strictEqual(decision.shouldCharge, false);
+        assert.strictEqual(decision.reason, 'empty_response');
+    });
+
+    it('200 with actual data should yield charged', () => {
+        const decision = shouldChargeForResponse(200, { result: 'weather data' });
+        assert.strictEqual(decision.shouldCharge, true);
+        assert.strictEqual(decision.reason, 'data_delivered');
+    });
+
+    it('200 with all-null fields should yield not_charged', () => {
+        const decision = shouldChargeForResponse(200, { data: null, meta: null });
+        assert.strictEqual(decision.shouldCharge, false);
+    });
+});

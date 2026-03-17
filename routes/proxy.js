@@ -486,6 +486,51 @@ function recordCircuitFailure(serviceUrl) {
     }
 }
 
+// ─── Consumer Protection: Response Quality Gate ──────────────────────────────
+// Only charge the user when the upstream response contains useful data.
+
+/**
+ * Check if response data is empty / useless.
+ * Conservative: arrays (even empty), booleans, numbers (even 0) are NOT empty.
+ */
+function isEmptyResponse(data) {
+    if (data == null) return true;                          // null or undefined
+    if (typeof data !== 'object') return false;             // primitives (string, number, boolean) are data
+    if (Array.isArray(data)) return false;                  // arrays are valid (even [])
+
+    const keys = Object.keys(data);
+    if (keys.length === 0) return true;                     // {}
+
+    // { raw: "" } or { raw: "   " } — text fallback with empty content
+    if (keys.length === 1 && keys[0] === 'raw' && typeof data.raw === 'string' && data.raw.trim() === '') return true;
+
+    // All values are null: { data: null, result: null }
+    if (keys.every(k => data[k] === null)) return true;
+
+    return false;
+}
+
+/**
+ * Decide whether to charge the user for this upstream response.
+ * @param {number} httpStatus - upstream HTTP status code
+ * @param {*} responseData - parsed response body
+ * @returns {{ shouldCharge: boolean, reason: string }}
+ */
+function shouldChargeForResponse(httpStatus, responseData) {
+    // 4xx → upstream error, user should not pay
+    if (httpStatus >= 400 && httpStatus < 500) {
+        return { shouldCharge: false, reason: `upstream_error_${httpStatus}` };
+    }
+
+    // 2xx/3xx with empty data → no useful data delivered
+    if (isEmptyResponse(responseData)) {
+        return { shouldCharge: false, reason: 'empty_response' };
+    }
+
+    // 2xx/3xx with data → charge
+    return { shouldCharge: true, reason: 'data_delivered' };
+}
+
 async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess }) {
     // SSRF check on service URL
     try {
@@ -580,6 +625,30 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 responseData = { raw: await proxyRes.text() };
             }
 
+            // --- CONSUMER PROTECTION: Response Quality Gate ---
+            const chargeDecision = shouldChargeForResponse(proxyRes.status, responseData);
+
+            // Upstream responded (even 4xx) → circuit breaker success (service is reachable)
+            recordCircuitSuccess(service.url);
+
+            if (!chargeDecision.shouldCharge) {
+                // NOT charging: skip onSuccess/FeeSplitter/payout — tx hash remains reusable
+                logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
+
+                return res.status(proxyRes.status).json({
+                    success: false,
+                    service: { id: service.id, name: service.name },
+                    data:    responseData,
+                    _payment_status: 'not_charged',
+                    _x402: {
+                        retry_eligible: true,
+                        tx_hash:        txHash,
+                        payment:        price + ' USDC',
+                        reason:         chargeDecision.reason,
+                    },
+                });
+            }
+
             // --- DEFERRED CLAIMING: claim tx AFTER successful upstream response ---
             if (onSuccess) {
                 const claimResult = await onSuccess();
@@ -666,9 +735,6 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                     };
                   })();
 
-            // Upstream responded successfully → reset circuit breaker
-            recordCircuitSuccess(service.url);
-
             const responseBody = {
                 success: proxyRes.ok,
                 service: { id: service.id, name: service.name },
@@ -704,3 +770,5 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 }
 
 module.exports = createProxyRouter;
+module.exports.shouldChargeForResponse = shouldChargeForResponse;
+module.exports.isEmptyResponse = isEmptyResponse;

@@ -6,6 +6,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { TX_HASH_REGEX, UUID_REGEX } = require('../lib/payment');
+const { shouldChargeForResponse, isEmptyResponse } = require('../routes/proxy');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -409,5 +410,179 @@ describe('proxy — deferred claiming (onSuccess contract)', () => {
             assert.strictEqual(response.body.error, 'TX_ALREADY_USED');
             assert.strictEqual(response.body.code, 'TX_REPLAY');
         }
+    });
+});
+
+// ─── Suite 8: isEmptyResponse ─────────────────────────────────────────────────
+
+describe('proxy — isEmptyResponse heuristic', () => {
+    it('null → empty', () => {
+        assert.strictEqual(isEmptyResponse(null), true);
+    });
+
+    it('undefined → empty', () => {
+        assert.strictEqual(isEmptyResponse(undefined), true);
+    });
+
+    it('{} (zero keys) → empty', () => {
+        assert.strictEqual(isEmptyResponse({}), true);
+    });
+
+    it('{ raw: "" } → empty (text fallback with no content)', () => {
+        assert.strictEqual(isEmptyResponse({ raw: '' }), true);
+    });
+
+    it('{ raw: "   " } → empty (whitespace-only text)', () => {
+        assert.strictEqual(isEmptyResponse({ raw: '   ' }), true);
+    });
+
+    it('all-null values → empty', () => {
+        assert.strictEqual(isEmptyResponse({ data: null, result: null }), true);
+    });
+
+    it('single null value → empty', () => {
+        assert.strictEqual(isEmptyResponse({ data: null }), true);
+    });
+
+    it('{ count: 0 } → NOT empty (zero is significant data)', () => {
+        assert.strictEqual(isEmptyResponse({ count: 0 }), false);
+    });
+
+    it('{ items: [] } → NOT empty (empty array is a valid search result)', () => {
+        assert.strictEqual(isEmptyResponse({ items: [] }), false);
+    });
+
+    it('{ data: false } → NOT empty (boolean is significant)', () => {
+        assert.strictEqual(isEmptyResponse({ data: false }), false);
+    });
+
+    it('{ result: "hello" } → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse({ result: 'hello' }), false);
+    });
+
+    it('{ raw: "some text" } → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse({ raw: 'some text' }), false);
+    });
+
+    it('string primitive → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse('hello'), false);
+    });
+
+    it('number primitive → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse(42), false);
+    });
+
+    it('boolean primitive → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse(false), false);
+    });
+
+    it('array → NOT empty (even empty array)', () => {
+        assert.strictEqual(isEmptyResponse([]), false);
+    });
+
+    it('mixed null and non-null → NOT empty', () => {
+        assert.strictEqual(isEmptyResponse({ data: null, count: 5 }), false);
+    });
+});
+
+// ─── Suite 9: shouldChargeForResponse ─────────────────────────────────────────
+
+describe('proxy — shouldChargeForResponse (consumer protection)', () => {
+    // --- 4xx: should NOT charge ---
+    it('400 Bad Request → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(400, { error: 'bad request' });
+        assert.strictEqual(r.shouldCharge, false);
+        assert.ok(r.reason.includes('400'));
+    });
+
+    it('403 Forbidden → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(403, { error: 'forbidden' });
+        assert.strictEqual(r.shouldCharge, false);
+        assert.ok(r.reason.includes('403'));
+    });
+
+    it('404 Not Found → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(404, { error: 'not found' });
+        assert.strictEqual(r.shouldCharge, false);
+        assert.ok(r.reason.includes('404'));
+    });
+
+    it('429 Too Many Requests → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(429, { error: 'rate limited' });
+        assert.strictEqual(r.shouldCharge, false);
+        assert.ok(r.reason.includes('429'));
+    });
+
+    it('422 Unprocessable → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(422, { error: 'validation' });
+        assert.strictEqual(r.shouldCharge, false);
+    });
+
+    // --- 2xx with data: should charge ---
+    it('200 + data → shouldCharge: true', () => {
+        const r = shouldChargeForResponse(200, { result: 'hello' });
+        assert.strictEqual(r.shouldCharge, true);
+        assert.strictEqual(r.reason, 'data_delivered');
+    });
+
+    it('201 + data → shouldCharge: true', () => {
+        const r = shouldChargeForResponse(201, { id: 123 });
+        assert.strictEqual(r.shouldCharge, true);
+    });
+
+    // --- 2xx with empty data: should NOT charge ---
+    it('200 + {} → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(200, {});
+        assert.strictEqual(r.shouldCharge, false);
+        assert.strictEqual(r.reason, 'empty_response');
+    });
+
+    it('200 + null → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(200, null);
+        assert.strictEqual(r.shouldCharge, false);
+        assert.strictEqual(r.reason, 'empty_response');
+    });
+
+    it('200 + all-null values → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(200, { data: null, result: null });
+        assert.strictEqual(r.shouldCharge, false);
+        assert.strictEqual(r.reason, 'empty_response');
+    });
+
+    it('200 + { raw: "" } → shouldCharge: false', () => {
+        const r = shouldChargeForResponse(200, { raw: '' });
+        assert.strictEqual(r.shouldCharge, false);
+    });
+
+    // --- 2xx edge cases: should charge ---
+    it('200 + { count: 0 } → shouldCharge: true (zero is data)', () => {
+        const r = shouldChargeForResponse(200, { count: 0 });
+        assert.strictEqual(r.shouldCharge, true);
+    });
+
+    it('200 + { items: [] } → shouldCharge: true (empty array is valid)', () => {
+        const r = shouldChargeForResponse(200, { items: [] });
+        assert.strictEqual(r.shouldCharge, true);
+    });
+
+    it('200 + { data: false } → shouldCharge: true (boolean is data)', () => {
+        const r = shouldChargeForResponse(200, { data: false });
+        assert.strictEqual(r.shouldCharge, true);
+    });
+
+    // --- reason format ---
+    it('reason for 4xx includes status code', () => {
+        const r = shouldChargeForResponse(418, { error: "I'm a teapot" });
+        assert.strictEqual(r.reason, 'upstream_error_418');
+    });
+
+    it('reason for empty 2xx is "empty_response"', () => {
+        const r = shouldChargeForResponse(200, {});
+        assert.strictEqual(r.reason, 'empty_response');
+    });
+
+    it('reason for valid 2xx is "data_delivered"', () => {
+        const r = shouldChargeForResponse(200, { joke: 'Why did the chicken...' });
+        assert.strictEqual(r.reason, 'data_delivered');
     });
 });

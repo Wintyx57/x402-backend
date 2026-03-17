@@ -1407,7 +1407,7 @@ describe('proxy.js — deferred claiming (upstream failures)', () => {
         assert.equal(insertCalled, false, 'TX should NOT be claimed on network error');
     });
 
-    it('should claim tx when upstream returns 4xx (service processed request)', async () => {
+    it('should NOT claim tx when upstream returns 4xx (consumer protection)', async () => {
         global.fetch = async () => ({
             ok: false, status: 400,
             headers: { get: () => 'application/json' },
@@ -1434,10 +1434,12 @@ describe('proxy.js — deferred claiming (upstream failures)', () => {
         );
 
         await invokeRouteHandler(router, req, res);
-        const { statusCode } = res.getResponse();
+        const { statusCode, body } = res.getResponse();
 
         assert.equal(statusCode, 400);
-        assert.equal(payoutMock.calls.recordSplitPayout.length, 1, 'TX should be claimed on 4xx (service processed it)');
+        assert.equal(payoutMock.calls.recordSplitPayout.length, 0, 'TX should NOT be claimed on 4xx (consumer protection)');
+        assert.equal(body._payment_status, 'not_charged', 'Response should include _payment_status: not_charged');
+        assert.equal(body._x402.retry_eligible, true, 'TX should be retry eligible');
     });
 
     it('should retry on 5xx and succeed on 2nd attempt', async () => {
