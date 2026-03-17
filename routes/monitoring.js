@@ -196,7 +196,7 @@ function createMonitoringRouter(supabase, statsLimiter) {
     const responseObj = {
       success: true,
       services: servicesCount,
-      nativeEndpoints: 69,
+      nativeEndpoints: 95,
       apiCalls: totalApiCalls,
       totalPayments,
       recentCallCount24h,

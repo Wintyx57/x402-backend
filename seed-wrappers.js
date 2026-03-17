@@ -6,7 +6,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 const SERVER_WALLET = process.env.WALLET_ADDRESS;
 const BASE_URL = 'https://x402-api.onrender.com';
 
-// All 69 x402 Native wrapper APIs — real endpoints proxied via x402 payments
+// All 95 x402 Native wrapper APIs — real endpoints proxied via x402 payments
 const WRAPPER_SERVICES = [
     // --- HIGH-VALUE SERVICES (0.005 USDC) ---
     {
@@ -837,12 +837,10 @@ const WRAPPER_SERVICES = [
 async function seedWrappers() {
     console.log(`Seeding ${WRAPPER_SERVICES.length} x402 native wrapper services...\n`);
 
-    // Remove previous wrapper seeds (same owner, no tx_hash, url starts with BASE_URL)
+    // Remove ALL previous native wrapper seeds matching the URL pattern (any owner)
     const { error: delErr } = await supabase
         .from('services')
         .delete()
-        .eq('owner_address', SERVER_WALLET)
-        .is('tx_hash', null)
         .like('url', `${BASE_URL}/api/%`);
 
     if (delErr) {
