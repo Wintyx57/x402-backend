@@ -151,6 +151,31 @@ async function selectBestChain(requiredAmount) {
 let sessionSpending = 0;
 const sessionPayments = [];
 
+// Pool of reusable tx hashes (from not_charged responses — consumer protection)
+const reusableHashes = []; // { txHash, amount, chain, headers, timestamp, txHashPlatform? }
+const REUSABLE_HASH_TTL = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Find a reusable tx hash from a previous not_charged response.
+ * Only reuses legacy hashes (single transfer to WALLET_ADDRESS).
+ * Returns the hash object and removes it from the pool, or null.
+ */
+function findReusableHash(chainKey, cost) {
+    const now = Date.now();
+    // Purge expired hashes
+    for (let i = reusableHashes.length - 1; i >= 0; i--) {
+        if (now - reusableHashes[i].timestamp > REUSABLE_HASH_TTL) {
+            reusableHashes.splice(i, 1);
+        }
+    }
+    // Find compatible: same chain, amount >= cost, legacy only (no splitMode)
+    const idx = reusableHashes.findIndex(h =>
+        h.chain === chainKey && h.amount >= cost && !h.splitMode
+    );
+    if (idx === -1) return null;
+    return reusableHashes.splice(idx, 1)[0];
+}
+
 // ─── Wallet (viem — multi-chain, no Coinbase CDP dependency) ────────
 let account = null;
 const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet } }
@@ -682,6 +707,24 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 endpoint: url.replace(SERVER_URL, ''),
             });
 
+            // Consumer protection: handle not_charged for facilitator
+            if (result && result._payment_status === 'not_charged') {
+                const facPayment = sessionPayments[sessionPayments.length - 1];
+                sessionSpending = Math.max(0, sessionSpending - cost);
+                if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+                facPayment.status = 'not_charged';
+                console.error(`[Payment] Facilitator response not_charged — budget refunded`);
+                result._payment = {
+                    amount: details.amount, currency: 'USDC', status: 'not_charged',
+                    paymentMode: 'facilitator', chain: cfg.label,
+                    session_spent: sessionSpending.toFixed(2),
+                    session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+                };
+                if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+                if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+                return result;
+            }
+
             // Enrich result with payment info and return early
             result._payment = {
                 amount:            details.amount,
@@ -698,26 +741,42 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             return result;
         }
 
-        // Standard on-chain transfer (Base / SKALE)
-        const txHash = await sendUsdcTransfer(resolvedChainKey, details.recipient, amountInUnits);
+        // Check for reusable tx hash from a previous not_charged response
+        const reusable = findReusableHash(resolvedChainKey, cost);
+        if (reusable) {
+            console.error(`[Payment] Reusing tx hash from previous not_charged response (${reusable.amount} USDC on ${resolvedChainKey})`);
+            retryHeaders = reusable.headers;
+            sessionPayments.push({
+                amount: cost,
+                txHash: reusable.txHash,
+                chain: resolvedChainKey,
+                reused: true,
+                timestamp: new Date().toISOString(),
+                endpoint: url.replace(SERVER_URL, ''),
+            });
+            // Don't increment sessionSpending — it was already counted when first sent
+        } else {
+            // Standard on-chain transfer (Base / SKALE)
+            const txHash = await sendUsdcTransfer(resolvedChainKey, details.recipient, amountInUnits);
 
-        // Track spending
-        sessionSpending += cost;
-        // Update balance cache after payment
-        if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
-        sessionPayments.push({
-            amount: cost,
-            txHash,
-            chain: resolvedChainKey,
-            timestamp: new Date().toISOString(),
-            endpoint: url.replace(SERVER_URL, ''),
-        });
+            // Track spending
+            sessionSpending += cost;
+            // Update balance cache after payment
+            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
+            sessionPayments.push({
+                amount: cost,
+                txHash,
+                chain: resolvedChainKey,
+                timestamp: new Date().toISOString(),
+                endpoint: url.replace(SERVER_URL, ''),
+            });
 
-        retryHeaders = {
-            ...fetchOptions.headers,
-            'X-Payment-TxHash': txHash,
-            'X-Payment-Chain': cfg.paymentHeader,
-        };
+            retryHeaders = {
+                ...fetchOptions.headers,
+                'X-Payment-TxHash': txHash,
+                'X-Payment-Chain': cfg.paymentHeader,
+            };
+        }
     }
 
     // Retry with payment proof
@@ -736,8 +795,53 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         result = await retryRes.json();
     }
 
-    // Enrich result with payment info
+    // Consumer protection: handle not_charged responses (session 79)
     const lastPayment = sessionPayments[sessionPayments.length - 1];
+    if (result && result._payment_status === 'not_charged') {
+        if (lastPayment && !lastPayment.reused) {
+            // Refund the budget — this payment wasn't consumed
+            sessionSpending = Math.max(0, sessionSpending - cost);
+            // Restore balance cache (USDC is on-chain but tx hash is reusable)
+            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+            lastPayment.status = 'not_charged';
+            lastPayment.reusable = true;
+
+            // Store for reuse (legacy mode only — split has specific recipients)
+            if (!lastPayment.splitMode) {
+                reusableHashes.push({
+                    txHash: lastPayment.txHash,
+                    amount: lastPayment.amount,
+                    chain: lastPayment.chain,
+                    headers: retryHeaders,
+                    timestamp: Date.now(),
+                });
+                console.error(`[Payment] Response not_charged — tx hash stored for reuse (pool: ${reusableHashes.length})`);
+            }
+        }
+
+        // Enrich response with reuse info
+        result._payment = {
+            amount: details.amount,
+            currency: 'USDC',
+            status: 'not_charged',
+            reusable_tx_hash: true,
+            txHash: lastPayment.txHash,
+            chain: cfg.label,
+            session_spent: sessionSpending.toFixed(2),
+            session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+        };
+        if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+        if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+        return result;
+    }
+
+    // Handle reused hash that succeeded — count spending now
+    if (lastPayment && lastPayment.reused) {
+        sessionSpending += cost;
+        if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - cost);
+    }
+
+    // Enrich result with payment info
     result._payment = {
         amount: details.amount,
         currency: 'USDC',
@@ -758,7 +862,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '2.4.1',
+    version: '2.5.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
@@ -1387,6 +1491,7 @@ server.tool(
                     spent: sessionSpending.toFixed(2) + ' USDC',
                     remaining: (MAX_BUDGET - sessionSpending).toFixed(2) + ' USDC',
                     payments_count: sessionPayments.length,
+                    reusable_hashes: reusableHashes.length,
                     payments: sessionPayments,
                     default_chain: CHAINS[DEFAULT_CHAIN_KEY].label,
                     supported_chains: Object.entries(CHAINS)
