@@ -115,7 +115,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     // --- API services (gratuit, pour le dashboard) ---
     router.get('/api/services', dashboardApiLimiter, async (req, res) => {
         const page = Math.max(1, parseInt(req.query.page) || 1);
-        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+        const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 50));
         const offset = (page - 1) * limit;
         const rawSearch = (req.query.search || '').trim().slice(0, 200);
         const rawTag = (req.query.tag || '').trim().slice(0, 100);
