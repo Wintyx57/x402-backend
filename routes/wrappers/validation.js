@@ -372,6 +372,50 @@ function createValidationRouter(logActivity, paymentMiddleware, paidEndpointLimi
         }
     });
 
+    // --- MALWARE URL CHECK API (0.005 USDC) ---
+    router.get('/api/malware-check', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Malware URL Check API"), async (req, res) => {
+        const url = (req.query.url || '').trim().slice(0, 2000);
+
+        if (!url) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/malware-check?url=https://example.com" });
+        }
+
+        try {
+            new URL(url); // Validate format
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        const { fetchWithTimeout } = require('../../lib/payment');
+
+        try {
+            const apiRes = await fetchWithTimeout('https://urlhaus-api.abuse.ch/v1/url/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `url=${encodeURIComponent(url)}`
+            }, 10000);
+            const data = await apiRes.json();
+
+            const isMalicious = data.query_status === 'listed' || data.url_status === 'online';
+
+            logActivity('api_call', `Malware URL Check API: ${url.slice(0, 50)}... -> ${isMalicious ? 'MALICIOUS' : 'clean'}`);
+            res.json({
+                success: true,
+                url,
+                is_malicious: isMalicious,
+                status: data.query_status || 'not_found',
+                threat_type: data.threat || '',
+                tags: data.tags || [],
+                date_added: data.date_added || null,
+                reporter: data.reporter || '',
+                source: 'URLhaus (abuse.ch)'
+            });
+        } catch (err) {
+            logger.error('Malware URL Check API', err.message);
+            return res.status(500).json({ error: 'Malware URL Check API request failed' });
+        }
+    });
+
     return router;
 }
 

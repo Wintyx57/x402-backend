@@ -505,6 +505,168 @@ function createDataRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         });
     });
 
+    // --- BTC ADDRESS INFO API (0.005 USDC) ---
+    router.get('/api/btc-address', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "BTC Address Info API"), async (req, res) => {
+        const address = (req.query.address || '').trim().slice(0, 100);
+
+        if (!address) {
+            return res.status(400).json({ error: "Parameter 'address' required. Ex: /api/btc-address?address=1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" });
+        }
+
+        if (!/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^bc1[a-zA-HJ-NP-Z0-9]{25,90}$/.test(address)) {
+            return res.status(400).json({ error: 'Invalid Bitcoin address format' });
+        }
+
+        try {
+            const apiUrl = `https://blockchain.info/rawaddr/${encodeURIComponent(address)}?limit=0`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 10000);
+
+            if (!apiRes.ok) {
+                return res.status(404).json({ error: 'Bitcoin address not found', address });
+            }
+
+            const data = await apiRes.json();
+
+            logActivity('api_call', `BTC Address Info API: ${address.slice(0, 10)}...`);
+            res.json({
+                success: true,
+                address: data.address,
+                balance_satoshi: data.final_balance || 0,
+                balance_btc: (data.final_balance || 0) / 1e8,
+                total_received_satoshi: data.total_received || 0,
+                total_sent_satoshi: data.total_sent || 0,
+                tx_count: data.n_tx || 0
+            });
+        } catch (err) {
+            logger.error('BTC Address Info API', err.message);
+            return res.status(500).json({ error: 'BTC Address Info API request failed' });
+        }
+    });
+
+    // --- ETH GAS PRICE API (0.003 USDC) ---
+    router.get('/api/eth-gas', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "ETH Gas Price API"), async (req, res) => {
+        try {
+            // Fetch gas prices from multiple chains
+            const chains = [
+                { name: 'ethereum', rpc: 'https://eth.llamarpc.com' },
+                { name: 'base', rpc: 'https://base.publicnode.com' },
+                { name: 'polygon', rpc: 'https://polygon.publicnode.com' }
+            ];
+
+            const results = {};
+            await Promise.all(chains.map(async (chain) => {
+                try {
+                    const rpcRes = await fetchWithTimeout(chain.rpc, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ jsonrpc: '2.0', method: 'eth_gasPrice', params: [], id: 1 })
+                    }, 5000);
+                    const rpcData = await rpcRes.json();
+                    if (rpcData.result) {
+                        const weiPrice = parseInt(rpcData.result, 16);
+                        results[chain.name] = {
+                            wei: weiPrice,
+                            gwei: +(weiPrice / 1e9).toFixed(4)
+                        };
+                    }
+                } catch {
+                    // Skip failed chains
+                }
+            }));
+
+            if (Object.keys(results).length === 0) {
+                return res.status(502).json({ error: 'Could not fetch gas prices from any chain' });
+            }
+
+            logActivity('api_call', `ETH Gas Price API: ${Object.keys(results).join(', ')}`);
+            res.json({ success: true, chains: results, timestamp: Math.floor(Date.now() / 1000) });
+        } catch (err) {
+            logger.error('ETH Gas Price API', err.message);
+            return res.status(500).json({ error: 'ETH Gas Price API request failed' });
+        }
+    });
+
+    // --- ELEVATION API (0.003 USDC) ---
+    router.get('/api/elevation', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Elevation API"), async (req, res) => {
+        const lat = parseFloat(req.query.lat);
+        const lon = parseFloat(req.query.lon);
+
+        if (isNaN(lat) || isNaN(lon)) {
+            return res.status(400).json({ error: "Parameters 'lat' and 'lon' required. Ex: /api/elevation?lat=48.85&lon=2.35" });
+        }
+        if (lat < -90 || lat > 90) {
+            return res.status(400).json({ error: 'Latitude must be between -90 and 90' });
+        }
+        if (lon < -180 || lon > 180) {
+            return res.status(400).json({ error: 'Longitude must be between -180 and 180' });
+        }
+
+        try {
+            const apiUrl = `https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lon}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 10000);
+            const data = await apiRes.json();
+
+            const result = data.results?.[0];
+            if (!result) {
+                return res.status(500).json({ error: 'Could not get elevation data' });
+            }
+
+            logActivity('api_call', `Elevation API: ${lat},${lon} -> ${result.elevation}m`);
+            res.json({
+                success: true,
+                latitude: result.latitude,
+                longitude: result.longitude,
+                elevation_meters: result.elevation,
+                elevation_feet: +(result.elevation * 3.28084).toFixed(1)
+            });
+        } catch (err) {
+            logger.error('Elevation API', err.message);
+            return res.status(500).json({ error: 'Elevation API request failed' });
+        }
+    });
+
+    // --- TIMEZONE API (0.003 USDC) ---
+    router.get('/api/timezone', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Timezone API"), async (req, res) => {
+        const lat = parseFloat(req.query.lat);
+        const lon = parseFloat(req.query.lon);
+
+        if (isNaN(lat) || isNaN(lon)) {
+            return res.status(400).json({ error: "Parameters 'lat' and 'lon' required. Ex: /api/timezone?lat=48.85&lon=2.35" });
+        }
+        if (lat < -90 || lat > 90) {
+            return res.status(400).json({ error: 'Latitude must be between -90 and 90' });
+        }
+        if (lon < -180 || lon > 180) {
+            return res.status(400).json({ error: 'Longitude must be between -180 and 180' });
+        }
+
+        try {
+            const apiUrl = `https://timeapi.io/api/time/current/coordinate?latitude=${lat}&longitude=${lon}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
+            const data = await apiRes.json();
+
+            if (!data.timeZone) {
+                return res.status(500).json({ error: 'Could not determine timezone' });
+            }
+
+            logActivity('api_call', `Timezone API: ${lat},${lon} -> ${data.timeZone}`);
+            res.json({
+                success: true,
+                latitude: lat,
+                longitude: lon,
+                timezone: data.timeZone,
+                datetime: data.dateTime || '',
+                date: data.date || '',
+                time: data.time || '',
+                day_of_week: data.dayOfWeek || '',
+                utc_offset: data.currentUtcOffset?.standardOffset || ''
+            });
+        } catch (err) {
+            logger.error('Timezone API', err.message);
+            return res.status(500).json({ error: 'Timezone API request failed' });
+        }
+    });
+
     return router;
 }
 

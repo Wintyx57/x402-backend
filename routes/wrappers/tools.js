@@ -564,6 +564,144 @@ function createToolsRouter(logActivity, paymentMiddleware, paidEndpointLimiter) 
         }
     });
 
+    // --- PUBLIC IP API (0.001 USDC) ---
+    router.get('/api/public-ip', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Public IP API"), async (req, res) => {
+        const clientIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+            || req.headers['x-real-ip']
+            || req.socket?.remoteAddress
+            || 'unknown';
+
+        logActivity('api_call', `Public IP API: ${clientIp}`);
+        res.json({
+            success: true,
+            ip: clientIp,
+            timestamp: new Date().toISOString()
+        });
+    });
+
+    // --- UPTIME CHECK API (0.003 USDC) ---
+    router.get('/api/uptime', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Uptime Check API"), async (req, res) => {
+        const url = (req.query.url || '').trim().slice(0, 2000);
+
+        if (!url) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/uptime?url=https://example.com" });
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(url);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
+            }
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        try {
+            await safeUrl(url);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+
+        try {
+            const start = Date.now();
+            const headRes = await fetchWithTimeout(url, { method: 'HEAD', redirect: 'follow' }, 10000);
+            const latencyMs = Date.now() - start;
+
+            logActivity('api_call', `Uptime Check API: ${parsed.hostname} -> ${headRes.status} (${latencyMs}ms)`);
+            res.json({
+                success: true,
+                url,
+                status_code: headRes.status,
+                is_up: headRes.status >= 200 && headRes.status < 400,
+                latency_ms: latencyMs,
+                timestamp: new Date().toISOString()
+            });
+        } catch (err) {
+            const latencyMs = Date.now() - Date.now();
+            logActivity('api_call', `Uptime Check API: ${parsed.hostname} -> DOWN`);
+            res.json({
+                success: true,
+                url,
+                status_code: 0,
+                is_up: false,
+                latency_ms: null,
+                error: 'Connection failed',
+                timestamp: new Date().toISOString()
+            });
+        }
+    });
+
+    // --- ROBOTS.TXT PARSER API (0.003 USDC) ---
+    router.get('/api/robots', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Robots.txt Parser API"), async (req, res) => {
+        const url = (req.query.url || '').trim().slice(0, 2000);
+
+        if (!url) {
+            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/robots?url=https://example.com" });
+        }
+
+        let parsed;
+        try {
+            parsed = new URL(url);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return res.status(400).json({ error: 'Only HTTP/HTTPS URLs allowed' });
+            }
+        } catch {
+            return res.status(400).json({ error: 'Invalid URL format' });
+        }
+
+        try {
+            await safeUrl(url);
+        } catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+
+        try {
+            const robotsUrl = `${parsed.protocol}//${parsed.host}/robots.txt`;
+            const apiRes = await fetchWithTimeout(robotsUrl, {}, 8000);
+            const text = await apiRes.text();
+
+            if (!apiRes.ok || !text.trim()) {
+                return res.json({ success: true, url: robotsUrl, found: false, rules: [], sitemaps: [] });
+            }
+
+            // Parse robots.txt
+            const rules = [];
+            const sitemaps = [];
+            let currentAgent = '*';
+
+            for (const line of text.split('\n')) {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) continue;
+
+                const [directive, ...rest] = trimmed.split(':');
+                const value = rest.join(':').trim();
+                const dir = directive.trim().toLowerCase();
+
+                if (dir === 'user-agent') {
+                    currentAgent = value;
+                } else if (dir === 'allow' || dir === 'disallow') {
+                    rules.push({ user_agent: currentAgent, directive: dir, path: value });
+                } else if (dir === 'sitemap') {
+                    sitemaps.push(value);
+                }
+            }
+
+            logActivity('api_call', `Robots.txt Parser API: ${parsed.hostname} -> ${rules.length} rules`);
+            res.json({
+                success: true,
+                url: robotsUrl,
+                found: true,
+                rules_count: rules.length,
+                rules: rules.slice(0, 50),
+                sitemaps
+            });
+        } catch (err) {
+            logger.error('Robots.txt Parser API', err.message);
+            return res.status(500).json({ error: 'Robots.txt Parser API request failed' });
+        }
+    });
+
     return router;
 }
 

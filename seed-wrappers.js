@@ -607,6 +607,231 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "image", "avatar", "svg", "generator", "identity", "live"]
     },
+    // --- SCIENCE & SPACE (session 80) ---
+    {
+        name: "x402 ArXiv Search",
+        description: "Search academic papers on ArXiv. Returns titles, authors, summaries, publication dates and categories. Usage: /api/arxiv?query=transformer+attention&max=5",
+        url: `${BASE_URL}/api/arxiv`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "science", "academic", "papers", "arxiv", "research", "live"]
+    },
+    {
+        name: "x402 NASA APOD",
+        description: "NASA Astronomy Picture of the Day. Get the current featured image with title, explanation, and HD URL. Usage: /api/nasa",
+        url: `${BASE_URL}/api/nasa`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "science", "space", "nasa", "astronomy", "live"]
+    },
+    {
+        name: "x402 ISS Tracker",
+        description: "Real-time International Space Station position (lat/lon) and current crew members. Usage: /api/iss",
+        url: `${BASE_URL}/api/iss`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "science", "space", "iss", "tracking", "live"]
+    },
+    {
+        name: "x402 SpaceX Launches",
+        description: "Latest or upcoming SpaceX launches with details, links, and patch images. Usage: /api/spacex or /api/spacex?type=upcoming",
+        url: `${BASE_URL}/api/spacex`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "science", "space", "spacex", "rockets", "live"]
+    },
+    {
+        name: "x402 Crossref Academic Search",
+        description: "Search academic publications via Crossref. Returns DOI, authors, journal, citation count. Usage: /api/crossref?query=machine+learning&max=5",
+        url: `${BASE_URL}/api/crossref`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "science", "academic", "doi", "citations", "research", "live"]
+    },
+
+    // --- MEDIA & ENTERTAINMENT (session 80) ---
+    {
+        name: "x402 TV Show Search",
+        description: "Search TV shows by name. Returns ratings, genres, status, premiere date and summary. Powered by TVmaze. Usage: /api/tvshow?q=breaking+bad",
+        url: `${BASE_URL}/api/tvshow`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "media", "tv", "shows", "entertainment", "live"]
+    },
+    {
+        name: "x402 Books Search",
+        description: "Search books via Open Library. Returns author, year, ISBN, subjects and cover image. Usage: /api/books?q=dune+frank+herbert",
+        url: `${BASE_URL}/api/books`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "media", "books", "library", "literature", "live"]
+    },
+    {
+        name: "x402 iTunes Search",
+        description: "Search iTunes for music, movies, podcasts, audiobooks. Returns artist, price, artwork, preview URL. Usage: /api/itunes?q=radiohead&media=music",
+        url: `${BASE_URL}/api/itunes`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "media", "music", "itunes", "entertainment", "live"]
+    },
+    {
+        name: "x402 Anime Search",
+        description: "Search anime by name via Jikan (MyAnimeList). Returns score, episodes, synopsis, genres. Usage: /api/anime?q=naruto",
+        url: `${BASE_URL}/api/anime`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "media", "anime", "manga", "entertainment", "live"]
+    },
+
+    // --- BLOCKCHAIN (session 80) ---
+    {
+        name: "x402 BTC Address Info",
+        description: "Get Bitcoin address balance and transaction count from blockchain.com. Usage: /api/btc-address?address=1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+        url: `${BASE_URL}/api/btc-address`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "blockchain", "bitcoin", "address", "balance", "live"]
+    },
+    {
+        name: "x402 ETH Gas Prices",
+        description: "Current gas prices in Gwei for Ethereum, Base and Polygon. Zero external APIs — reads directly from RPC nodes. Usage: /api/eth-gas",
+        url: `${BASE_URL}/api/eth-gas`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "blockchain", "ethereum", "gas", "defi", "live"]
+    },
+
+    // --- IMAGES & CREATIVE (session 80) ---
+    {
+        name: "x402 Random Cat",
+        description: "Random cat image from cataas.com. Returns image URL and tags. Usage: /api/cat",
+        url: `${BASE_URL}/api/cat`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "fun", "cat", "image", "random", "live"]
+    },
+    {
+        name: "x402 Color Palette Generator",
+        description: "Generate a harmonious 5-color palette. Optionally seed with a hex color. Powered by Colormind AI. Usage: /api/color-palette or /api/color-palette?seed=ff5733",
+        url: `${BASE_URL}/api/color-palette`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "design", "color", "palette", "creative", "live"]
+    },
+    {
+        name: "x402 Openverse Image Search",
+        description: "Search CC-licensed images via Openverse. Returns URLs, creator, license info. Usage: /api/openverse?q=sunset+mountain",
+        url: `${BASE_URL}/api/openverse`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "image", "search", "creative-commons", "openverse", "live"]
+    },
+
+    // --- DEV TOOLS (session 80) ---
+    {
+        name: "x402 Public IP",
+        description: "Get the caller's public IP address. Zero external calls — reads from request headers. Usage: /api/public-ip",
+        url: `${BASE_URL}/api/public-ip`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "network", "ip", "utility", "live"]
+    },
+    {
+        name: "x402 Uptime Check",
+        description: "Check if a website is up with response time in milliseconds. Usage: /api/uptime?url=https://example.com",
+        url: `${BASE_URL}/api/uptime`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "monitoring", "uptime", "website", "health", "live"]
+    },
+    {
+        name: "x402 Robots.txt Parser",
+        description: "Fetch and parse a website's robots.txt. Returns rules, sitemaps, and crawling directives. Usage: /api/robots?url=https://example.com",
+        url: `${BASE_URL}/api/robots`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "seo", "robots", "crawler", "web", "live"]
+    },
+
+    // --- LOCATION (session 80) ---
+    {
+        name: "x402 Elevation API",
+        description: "Get elevation in meters/feet for any GPS coordinates. Usage: /api/elevation?lat=48.85&lon=2.35",
+        url: `${BASE_URL}/api/elevation`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "location", "elevation", "geography", "coordinates", "live"]
+    },
+    {
+        name: "x402 Timezone API",
+        description: "Get timezone and current time for any GPS coordinates. Usage: /api/timezone?lat=48.85&lon=2.35",
+        url: `${BASE_URL}/api/timezone`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "location", "timezone", "time", "coordinates", "live"]
+    },
+
+    // --- FUN & MOCK DATA (session 80) ---
+    {
+        name: "x402 Random User",
+        description: "Generate a random fake user with name, email, phone, location, avatar. Perfect for testing. Usage: /api/random-user",
+        url: `${BASE_URL}/api/random-user`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "data", "mock", "random", "testing", "live"]
+    },
+    {
+        name: "x402 Emoji Search",
+        description: "Search emojis by name, category or group. Returns emoji character, name, category and unicode. Usage: /api/emoji?q=smile",
+        url: `${BASE_URL}/api/emoji`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "fun", "emoji", "search", "unicode", "live"]
+    },
+    {
+        name: "x402 Pokemon API",
+        description: "Get Pokemon data by name: types, abilities, stats, sprites. Usage: /api/pokemon?name=pikachu",
+        url: `${BASE_URL}/api/pokemon`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "fun", "pokemon", "game", "data", "live"]
+    },
+
+    // --- TEXT & NLP (session 80) ---
+    {
+        name: "x402 Language Detection",
+        description: "Detect the language of any text using franc-min (local, no external API). Returns ISO 639-3 code with confidence and alternatives. Usage: POST /api/detect-lang {\"text\": \"Bonjour le monde\"}",
+        url: `${BASE_URL}/api/detect-lang`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "text", "nlp", "language", "detection", "live"]
+    },
+    {
+        name: "x402 Text Statistics",
+        description: "Analyze text: word count, sentence count, reading time, Flesch readability score, syllable count. Usage: POST /api/text-stats {\"text\": \"Your text here.\"}",
+        url: `${BASE_URL}/api/text-stats`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "text", "nlp", "statistics", "readability", "live"]
+    },
+    {
+        name: "x402 METAR Aviation Weather",
+        description: "Get current aviation weather (METAR) for any airport by ICAO code. Temperature, wind, visibility, flight category. Usage: /api/metar?icao=KJFK",
+        url: `${BASE_URL}/api/metar`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "aviation", "weather", "metar", "airport", "live"]
+    },
+
+    // --- SECURITY (session 80) ---
+    {
+        name: "x402 Malware URL Check",
+        description: "Check if a URL is known malware/phishing via URLhaus (abuse.ch). Returns threat type, tags and status. Usage: /api/malware-check?url=https://example.com",
+        url: `${BASE_URL}/api/malware-check`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "security", "malware", "phishing", "url", "threat", "live"]
+    },
 ];
 
 async function seedWrappers() {

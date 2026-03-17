@@ -10,6 +10,8 @@ const createToolsRouter = require('./tools');
 const createAiRouter = require('./ai');
 const createMiscRouter = require('./misc');
 const createIntelligenceRouter = require('./intelligence');
+const createScienceRouter = require('./science');
+const createMediaRouter = require('./media');
 
 function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
     const router = express.Router();
@@ -23,6 +25,8 @@ function createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimite
     router.use(createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
     router.use(createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
     router.use(createIntelligenceRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
+    router.use(createScienceRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
+    router.use(createMediaRouter(logActivity, paymentMiddleware, paidEndpointLimiter));
 
     return router;
 }

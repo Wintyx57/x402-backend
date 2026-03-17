@@ -788,6 +788,209 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
         res.send(svgContent);
     });
 
+    // --- CAT IMAGE API (0.003 USDC) ---
+    router.get('/api/cat', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Cat Image API"), async (req, res) => {
+        try {
+            const apiRes = await fetchWithTimeout('https://cataas.com/cat?json=true', {}, 5000);
+            const data = await apiRes.json();
+
+            logActivity('api_call', 'Cat Image API');
+            res.json({
+                success: true,
+                image_url: data.url ? `https://cataas.com${data.url}` : `https://cataas.com/cat/${data._id}`,
+                tags: data.tags || [],
+                id: data._id || ''
+            });
+        } catch (err) {
+            logger.error('Cat Image API', err.message);
+            return res.status(500).json({ error: 'Cat Image API request failed' });
+        }
+    });
+
+    // --- COLOR PALETTE API (0.005 USDC) ---
+    router.get('/api/color-palette', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Color Palette API"), async (req, res) => {
+        try {
+            const seed = (req.query.seed || '').trim().replace(/^#/, '');
+            let model = 'default';
+            let input = [[Math.random() * 255 | 0, Math.random() * 255 | 0, Math.random() * 255 | 0], 'N', 'N', 'N', 'N'];
+
+            if (seed && /^[0-9a-fA-F]{6}$/.test(seed)) {
+                const r = parseInt(seed.substring(0, 2), 16);
+                const g = parseInt(seed.substring(2, 4), 16);
+                const b = parseInt(seed.substring(4, 6), 16);
+                input = [[r, g, b], 'N', 'N', 'N', 'N'];
+            }
+
+            const apiRes = await fetchWithTimeout('http://colormind.io/api/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model, input })
+            }, 8000);
+            const data = await apiRes.json();
+
+            if (!data.result || !Array.isArray(data.result)) {
+                return res.status(500).json({ error: 'Invalid color palette response' });
+            }
+
+            const palette = data.result.map(rgb => ({
+                rgb: { r: rgb[0], g: rgb[1], b: rgb[2] },
+                hex: `#${rgb[0].toString(16).padStart(2, '0')}${rgb[1].toString(16).padStart(2, '0')}${rgb[2].toString(16).padStart(2, '0')}`
+            }));
+
+            logActivity('api_call', `Color Palette API: ${seed || 'random'}`);
+            res.json({ success: true, seed: seed || null, palette });
+        } catch (err) {
+            logger.error('Color Palette API', err.message);
+            return res.status(500).json({ error: 'Color Palette API request failed' });
+        }
+    });
+
+    // --- OPENVERSE IMAGE SEARCH API (0.005 USDC) ---
+    router.get('/api/openverse', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Openverse Image Search API"), async (req, res) => {
+        const q = (req.query.q || '').trim().slice(0, 200);
+        const limit = Math.min(Math.max(parseInt(req.query.limit) || 10, 1), 20);
+
+        if (!q) {
+            return res.status(400).json({ error: "Parameter 'q' required. Ex: /api/openverse?q=sunset+mountain" });
+        }
+
+        try {
+            const apiUrl = `https://api.openverse.org/v1/images/?q=${encodeURIComponent(q)}&page_size=${limit}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {
+                headers: { 'User-Agent': 'x402-bazaar/1.0' }
+            }, 10000);
+            const data = await apiRes.json();
+
+            const images = (data.results || []).map(img => ({
+                title: img.title || '',
+                url: img.url || '',
+                thumbnail: img.thumbnail || '',
+                creator: img.creator || '',
+                license: img.license || '',
+                license_url: img.license_url || '',
+                source: img.source || '',
+                width: img.width || null,
+                height: img.height || null
+            }));
+
+            logActivity('api_call', `Openverse Image Search API: "${q}" -> ${images.length} results`);
+            res.json({ success: true, query: q, results_count: images.length, results: images });
+        } catch (err) {
+            logger.error('Openverse Image Search API', err.message);
+            return res.status(500).json({ error: 'Openverse Image Search API request failed' });
+        }
+    });
+
+    // --- RANDOM USER API (0.003 USDC) ---
+    router.get('/api/random-user', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Random User API"), async (req, res) => {
+        try {
+            const apiRes = await fetchWithTimeout('https://randomuser.me/api/', {}, 5000);
+            const data = await apiRes.json();
+
+            const user = data.results?.[0];
+            if (!user) {
+                return res.status(500).json({ error: 'Invalid random user data' });
+            }
+
+            logActivity('api_call', 'Random User API');
+            res.json({
+                success: true,
+                name: `${user.name?.first || ''} ${user.name?.last || ''}`.trim(),
+                email: user.email || '',
+                gender: user.gender || '',
+                phone: user.phone || '',
+                nationality: user.nat || '',
+                location: {
+                    city: user.location?.city || '',
+                    state: user.location?.state || '',
+                    country: user.location?.country || ''
+                },
+                picture: user.picture?.large || '',
+                username: user.login?.username || '',
+                age: user.dob?.age || null
+            });
+        } catch (err) {
+            logger.error('Random User API', err.message);
+            return res.status(500).json({ error: 'Random User API request failed' });
+        }
+    });
+
+    // --- EMOJI SEARCH API (0.001 USDC) ---
+    router.get('/api/emoji', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Emoji Search API"), async (req, res) => {
+        const q = (req.query.q || '').trim().toLowerCase().slice(0, 50);
+
+        if (!q) {
+            return res.status(400).json({ error: "Parameter 'q' required. Ex: /api/emoji?q=smile" });
+        }
+
+        try {
+            const apiRes = await fetchWithTimeout('https://emojihub.yurace.pro/api/all', {}, 8000);
+            const data = await apiRes.json();
+
+            if (!Array.isArray(data)) {
+                return res.status(500).json({ error: 'Invalid emoji data' });
+            }
+
+            const filtered = data
+                .filter(e => e.name?.toLowerCase().includes(q) || e.category?.toLowerCase().includes(q) || e.group?.toLowerCase().includes(q))
+                .slice(0, 20)
+                .map(e => ({
+                    name: e.name || '',
+                    emoji: e.htmlCode?.[0] ? String.fromCodePoint(parseInt(e.htmlCode[0].replace('&#', '').replace(';', ''))) : '',
+                    category: e.category || '',
+                    group: e.group || '',
+                    unicode: (e.unicode || []).join(' ')
+                }));
+
+            logActivity('api_call', `Emoji Search API: "${q}" -> ${filtered.length} results`);
+            res.json({ success: true, query: q, results_count: filtered.length, results: filtered });
+        } catch (err) {
+            logger.error('Emoji Search API', err.message);
+            return res.status(500).json({ error: 'Emoji Search API request failed' });
+        }
+    });
+
+    // --- POKEMON API (0.003 USDC) ---
+    router.get('/api/pokemon', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Pokemon API"), async (req, res) => {
+        const name = (req.query.name || '').trim().toLowerCase().slice(0, 50);
+
+        if (!name) {
+            return res.status(400).json({ error: "Parameter 'name' required. Ex: /api/pokemon?name=pikachu" });
+        }
+
+        if (!/^[a-z0-9-]+$/.test(name)) {
+            return res.status(400).json({ error: 'Invalid Pokemon name format' });
+        }
+
+        try {
+            const apiUrl = `https://pokeapi.co/api/v2/pokemon/${encodeURIComponent(name)}`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
+
+            if (!apiRes.ok) {
+                return res.status(404).json({ error: 'Pokemon not found', name });
+            }
+
+            const data = await apiRes.json();
+
+            logActivity('api_call', `Pokemon API: ${name}`);
+            res.json({
+                success: true,
+                name: data.name,
+                id: data.id,
+                height: data.height,
+                weight: data.weight,
+                types: (data.types || []).map(t => t.type?.name).filter(Boolean),
+                abilities: (data.abilities || []).map(a => a.ability?.name).filter(Boolean),
+                stats: (data.stats || []).map(s => ({ name: s.stat?.name, value: s.base_stat })),
+                sprite: data.sprites?.front_default || '',
+                sprite_shiny: data.sprites?.front_shiny || ''
+            });
+        } catch (err) {
+            logger.error('Pokemon API', err.message);
+            return res.status(500).json({ error: 'Pokemon API request failed' });
+        }
+    });
+
     return router;
 }
 

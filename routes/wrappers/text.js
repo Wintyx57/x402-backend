@@ -318,6 +318,142 @@ function createTextRouter(logActivity, paymentMiddleware, paidEndpointLimiter, g
         });
     });
 
+    // --- LANGUAGE DETECTION API (0.003 USDC) ---
+    router.post('/api/detect-lang', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "Language Detection API"), async (req, res) => {
+        const text = (req.body?.text || '').trim();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required in body. POST /api/detect-lang {\"text\": \"Bonjour le monde\"}" });
+        }
+        if (text.length > 10000) {
+            return res.status(400).json({ error: 'Text too long (max 10000 characters)' });
+        }
+        if (text.length < 10) {
+            return res.status(400).json({ error: 'Text too short for reliable detection (min 10 characters)' });
+        }
+
+        try {
+            const { franc, francAll } = require('franc-min');
+            const detected = franc(text);
+            const all = francAll(text).slice(0, 5);
+
+            const langNames = {
+                eng: 'English', fra: 'French', deu: 'German', spa: 'Spanish', ita: 'Italian',
+                por: 'Portuguese', nld: 'Dutch', rus: 'Russian', jpn: 'Japanese', zho: 'Chinese',
+                kor: 'Korean', ara: 'Arabic', hin: 'Hindi', tur: 'Turkish', pol: 'Polish',
+                swe: 'Swedish', dan: 'Danish', nor: 'Norwegian', fin: 'Finnish', ces: 'Czech',
+                und: 'Undetermined'
+            };
+
+            logActivity('api_call', `Language Detection API: ${detected} (${text.length} chars)`);
+            res.json({
+                success: true,
+                detected_language: detected,
+                language_name: langNames[detected] || detected,
+                confidence: all[0] ? all[0][1] : 0,
+                alternatives: all.map(([lang, score]) => ({
+                    language: lang,
+                    name: langNames[lang] || lang,
+                    score
+                })),
+                text_length: text.length
+            });
+        } catch (err) {
+            logger.error('Language Detection API', err.message);
+            return res.status(500).json({ error: 'Language Detection API request failed' });
+        }
+    });
+
+    // --- TEXT STATISTICS API (0.001 USDC) ---
+    router.post('/api/text-stats', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Text Statistics API"), async (req, res) => {
+        const text = (req.body?.text || '').trim();
+
+        if (!text) {
+            return res.status(400).json({ error: "Parameter 'text' required in body. POST /api/text-stats {\"text\": \"Your text here.\"}" });
+        }
+        if (text.length > 100000) {
+            return res.status(400).json({ error: 'Text too long (max 100000 characters)' });
+        }
+
+        const words = text.split(/\s+/).filter(Boolean);
+        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+        const syllables = words.reduce((acc, w) => acc + Math.max(1, w.replace(/e$/i, '').match(/[aeiouy]{1,2}/gi)?.length || 1), 0);
+
+        // Flesch Reading Ease (for English)
+        const avgSentenceLen = words.length / Math.max(sentences.length, 1);
+        const avgSyllablesPerWord = syllables / Math.max(words.length, 1);
+        const fleschScore = Math.max(0, Math.min(100, +(206.835 - 1.015 * avgSentenceLen - 84.6 * avgSyllablesPerWord).toFixed(1)));
+
+        // Reading time (avg 200 words/min)
+        const readingTimeMin = +(words.length / 200).toFixed(1);
+
+        // Character frequency (top 5)
+        const charFreq = {};
+        for (const ch of text.toLowerCase()) {
+            if (/[a-z]/.test(ch)) charFreq[ch] = (charFreq[ch] || 0) + 1;
+        }
+        const topChars = Object.entries(charFreq).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        logActivity('api_call', `Text Statistics API: ${words.length} words, ${sentences.length} sentences`);
+        res.json({
+            success: true,
+            characters: text.length,
+            characters_no_spaces: text.replace(/\s/g, '').length,
+            words: words.length,
+            sentences: sentences.length,
+            paragraphs: paragraphs.length,
+            syllables,
+            flesch_reading_ease: fleschScore,
+            reading_time_minutes: readingTimeMin,
+            avg_word_length: +(words.reduce((a, w) => a + w.length, 0) / Math.max(words.length, 1)).toFixed(1),
+            top_characters: topChars.map(([ch, count]) => ({ character: ch, count }))
+        });
+    });
+
+    // --- METAR AVIATION WEATHER API (0.005 USDC) ---
+    router.get('/api/metar', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "METAR Aviation Weather API"), async (req, res) => {
+        const icao = (req.query.icao || '').trim().toUpperCase().slice(0, 4);
+
+        if (!icao) {
+            return res.status(400).json({ error: "Parameter 'icao' required. Ex: /api/metar?icao=KJFK" });
+        }
+        if (!/^[A-Z]{4}$/.test(icao)) {
+            return res.status(400).json({ error: 'Invalid ICAO code (must be 4 uppercase letters)' });
+        }
+
+        try {
+            const apiUrl = `https://aviationweather.gov/api/data/metar?ids=${encodeURIComponent(icao)}&format=json`;
+            const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
+            const data = await apiRes.json();
+
+            if (!Array.isArray(data) || data.length === 0) {
+                return res.status(404).json({ error: 'No METAR data found for this station', icao });
+            }
+
+            const metar = data[0];
+            logActivity('api_call', `METAR Aviation Weather API: ${icao}`);
+            res.json({
+                success: true,
+                icao: metar.icaoId || icao,
+                raw: metar.rawOb || '',
+                temperature_c: metar.temp ?? null,
+                dewpoint_c: metar.dewp ?? null,
+                wind_direction: metar.wdir ?? null,
+                wind_speed_kt: metar.wspd ?? null,
+                wind_gust_kt: metar.wgst ?? null,
+                visibility_miles: metar.visib ?? null,
+                altimeter_hpa: metar.altim ?? null,
+                flight_category: metar.fltcat || '',
+                cloud_cover: metar.cover || '',
+                observation_time: metar.reportTime || ''
+            });
+        } catch (err) {
+            logger.error('METAR Aviation Weather API', err.message);
+            return res.status(500).json({ error: 'METAR Aviation Weather API request failed' });
+        }
+    });
+
     return router;
 }
 
