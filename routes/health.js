@@ -343,6 +343,27 @@ function createHealthRouter(supabase) {
             checks.erc8004_reputation = { status: 'error', error: e.message };
         }
 
+        // 8. AI Quality Audit Agent
+        try {
+            const { getQualityAuditStatus } = require('../lib/ai-quality-agent');
+            const qaStatus = getQualityAuditStatus();
+            checks.quality_audit = {
+                status: qaStatus.enabled ? 'ok' : 'not_configured',
+                enabled: qaStatus.enabled,
+                running: qaStatus.running,
+                wallet: qaStatus.walletAddress ? `${qaStatus.walletAddress.slice(0, 6)}...${qaStatus.walletAddress.slice(-4)}` : null,
+                chain: qaStatus.chain,
+                schedule: qaStatus.schedule,
+                last_run: qaStatus.lastRun.at ? {
+                    timestamp: new Date(qaStatus.lastRun.at).toISOString(),
+                    status: qaStatus.lastRun.status,
+                    ...(qaStatus.lastRun.error && { error: qaStatus.lastRun.error }),
+                } : null,
+            };
+        } catch (e) {
+            checks.quality_audit = { status: 'error', error: e.message };
+        }
+
         const status = allOk ? 'ok' : 'degraded';
         res.status(allOk ? 200 : 503).json({
             status,

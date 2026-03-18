@@ -24,6 +24,7 @@ const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
 const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
 const { scheduleRefundRetry, stopRefundRetry } = require('./lib/refund-retry');
 const { startLiveAgent, stopLiveAgent, runLiveAgentOnce } = require('./lib/live-agent');
+const { startQualityAudit, stopQualityAudit } = require('./lib/ai-quality-agent');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -346,6 +347,11 @@ const serverInstance = app.listen(PORT, async () => {
         startLiveAgent(`http://localhost:${PORT}`, supabase);
     }
 
+    // AI Quality Audit Agent: Gemini-based semantic evaluation, 2x/day
+    if (process.env.AGENT_PRIVATE_KEY && process.env.GEMINI_API_KEY) {
+        startQualityAudit(`http://localhost:${PORT}`, supabase, getGemini);
+    }
+
     // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
     try {
         const { initClients: initERC8004, repairAgentMapping } = require('./lib/erc8004-registry');
@@ -380,6 +386,7 @@ async function gracefulShutdown(signal) {
     stopTrustScore();
     stopRefundRetry();
     stopLiveAgent();
+    stopQualityAudit();
     await stopAgent().catch(err => {
         logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
     });
