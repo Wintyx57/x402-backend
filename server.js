@@ -295,6 +295,22 @@ app.post('/api/admin/quality-audit/run', adminAuth, (req, res) => {
     res.json({ triggered: true, message: 'Quality audit started. Check Telegram for report.' });
 });
 
+// Admin view for latest quality audit results
+app.get('/api/admin/quality-audit/latest', adminAuth, async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('quality_audits')
+            .select('service_name, overall_score, severity, error, http_status, response_latency_ms, payment_amount_usdc, gemini_summary, checked_at')
+            .order('checked_at', { ascending: false })
+            .limit(20);
+        if (error) return res.status(500).json({ error: error.message });
+        const { getQualityAuditStatus } = require('./lib/ai-quality-agent');
+        res.json({ status: getQualityAuditStatus(), results: data || [] });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- SWAGGER UI ---
 const openApiSpec = require('./openapi.json');
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customSiteTitle: 'x402 Bazaar API Docs' }));
