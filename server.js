@@ -24,7 +24,7 @@ const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
 const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
 const { scheduleRefundRetry, stopRefundRetry } = require('./lib/refund-retry');
 const { startLiveAgent, stopLiveAgent, runLiveAgentOnce } = require('./lib/live-agent');
-const { startQualityAudit, stopQualityAudit } = require('./lib/ai-quality-agent');
+const { startQualityAudit, stopQualityAudit, runQualityAuditOnce } = require('./lib/ai-quality-agent');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -281,6 +281,17 @@ app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
+
+// Admin trigger for AI Quality Audit
+app.post('/api/admin/quality-audit/run', adminAuth, async (req, res) => {
+    try {
+        const result = await runQualityAuditOnce();
+        res.json({ triggered: true, result });
+    } catch (err) {
+        logger.error('QualityAudit', `Manual run: ${err.message}`);
+        res.status(500).json({ error: 'Quality audit run failed', message: err.message });
+    }
+});
 
 // --- SWAGGER UI ---
 const openApiSpec = require('./openapi.json');
