@@ -22,6 +22,7 @@ const { startAgent, stopAgent } = require('./lib/agent-process');
 const { createPayoutManager } = require('./lib/payouts');
 const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
 const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
+const { startLiveAgent, stopLiveAgent, runLiveAgentOnce } = require('./lib/live-agent');
 
 // --- Route factories ---
 const createHealthRouter = require('./routes/health');
@@ -37,6 +38,7 @@ const createStreamRouter = require('./routes/stream');
 const createReviewsRouter = require('./routes/reviews');
 const createProxyRouter = require('./routes/proxy');
 const createProviderRouter = require('./routes/provider');
+const createAgentReportsRouter = require('./routes/agent-reports');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -276,6 +278,7 @@ app.use(createProviderRouter(supabase, logActivity, dashboardApiLimiter));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
+app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
 
 // --- SWAGGER UI ---
 const openApiSpec = require('./openapi.json');
@@ -334,6 +337,11 @@ const serverInstance = app.listen(PORT, async () => {
     // Proof of Quality: recalculate TrustScores every 6h
     scheduleTrustScore(supabase);
 
+    // Live AI Agent: calls 3 space APIs with real USDC payments, 2x/day
+    if (process.env.AGENT_PRIVATE_KEY) {
+        startLiveAgent(`http://localhost:${PORT}`, supabase);
+    }
+
     // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
     try {
         const { initClients: initERC8004, repairAgentMapping } = require('./lib/erc8004-registry');
@@ -366,6 +374,7 @@ async function gracefulShutdown(signal) {
     stopTelegramBot();
     stopDailyTest();
     stopTrustScore();
+    stopLiveAgent();
     await stopAgent().catch(err => {
         logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
     });
