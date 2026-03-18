@@ -7,6 +7,7 @@ const { safeUrl } = require('../lib/safe-url');
 const { TX_HASH_REGEX, UUID_REGEX, createInternalBypassToken, checkWalletRateLimit, WALLET_RATE_LIMIT } = require('../lib/payment');
 const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discovery');
 const { DEFAULT_CHAIN_KEY, getChainConfig } = require('../lib/chains');
+const { getExpectedFieldsForUrl, validateResponseSchema, scoreContentQuality, buildValidationMeta } = require('../lib/response-validator');
 const feeSplitter = require('../lib/fee-splitter');
 
 // Hostname of this server — used to detect internal service URLs
@@ -512,19 +513,50 @@ function isEmptyResponse(data) {
 
 /**
  * Decide whether to charge the user for this upstream response.
+ * Layer 0: 4xx / empty check (existing)
+ * Layer 1: Schema validation (fields match) — if serviceUrl provided
+ * Layer 2: Content quality scoring — if schema available
+ *
  * @param {number} httpStatus - upstream HTTP status code
  * @param {*} responseData - parsed response body
- * @returns {{ shouldCharge: boolean, reason: string }}
+ * @param {string} [serviceUrl] - optional service URL for schema-based validation
+ * @returns {{ shouldCharge: boolean, reason: string, _validation?: object }}
  */
-function shouldChargeForResponse(httpStatus, responseData) {
-    // 4xx → upstream error, user should not pay
+function shouldChargeForResponse(httpStatus, responseData, serviceUrl) {
+    // Layer 0: 4xx → upstream error, user should not pay
     if (httpStatus >= 400 && httpStatus < 500) {
         return { shouldCharge: false, reason: `upstream_error_${httpStatus}` };
     }
 
-    // 2xx/3xx with empty data → no useful data delivered
+    // Layer 0: 2xx/3xx with empty data → no useful data delivered
     if (isEmptyResponse(responseData)) {
         return { shouldCharge: false, reason: 'empty_response' };
+    }
+
+    // Layer 1+2: Schema-based validation (only for known internal APIs)
+    if (serviceUrl) {
+        const expected = getExpectedFieldsForUrl(serviceUrl);
+        if (expected) {
+            // Layer 1: Field presence check
+            const schemaResult = validateResponseSchema(responseData, expected.fields);
+            if (!schemaResult.valid) {
+                return {
+                    shouldCharge: false,
+                    reason: 'schema_mismatch',
+                    _validation: { schema_match: schemaResult.ratio, fields_missing: schemaResult.missing },
+                };
+            }
+
+            // Layer 2: Content quality scoring
+            const qualityResult = scoreContentQuality(responseData, expected.example);
+            if (qualityResult.score < 0.3) {
+                return {
+                    shouldCharge: false,
+                    reason: 'low_quality_content',
+                    _validation: { quality_score: qualityResult.score, reasons: qualityResult.reasons },
+                };
+            }
+        }
     }
 
     // 2xx/3xx with data → charge
@@ -625,8 +657,8 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 responseData = { raw: await proxyRes.text() };
             }
 
-            // --- CONSUMER PROTECTION: Response Quality Gate ---
-            const chargeDecision = shouldChargeForResponse(proxyRes.status, responseData);
+            // --- CONSUMER PROTECTION: Response Quality Gate (Layers 0+1+2) ---
+            const chargeDecision = shouldChargeForResponse(proxyRes.status, responseData, service.url);
 
             // Upstream responded (even 4xx) → circuit breaker success (service is reachable)
             recordCircuitSuccess(service.url);
@@ -734,6 +766,20 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         tx_hash:        txHash,
                     };
                   })();
+
+            // Layer 3: Build signed _validation metadata for client-side verification
+            const validationSecret = process.env.VALIDATION_SECRET || null;
+            const expectedSchema = getExpectedFieldsForUrl(service.url);
+            let validationMeta = null;
+            if (expectedSchema) {
+                const schemaCheck = validateResponseSchema(responseData, expectedSchema.fields);
+                const qualityCheck = scoreContentQuality(responseData, expectedSchema.example);
+                validationMeta = buildValidationMeta(schemaCheck, qualityCheck, validationSecret);
+            }
+
+            if (validationMeta) {
+                x402Meta._validation = validationMeta;
+            }
 
             const responseBody = {
                 success: proxyRes.ok,

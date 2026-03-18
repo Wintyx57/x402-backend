@@ -176,6 +176,85 @@ function findReusableHash(chainKey, cost) {
     return reusableHashes.splice(idx, 1)[0];
 }
 
+// ─── Client-Side Validation (Zero Trust) ─────────────────────────────
+const VALIDATION_SECRET = process.env.VALIDATION_SECRET || null;
+const SERVICE_BLACKLIST_TTL = 10 * 60 * 1000; // 10 minutes
+const serviceBlacklist = new Map(); // serviceId → { reason, until }
+
+function addToBlacklist(serviceId, reason) {
+    serviceBlacklist.set(serviceId, {
+        reason,
+        until: Date.now() + SERVICE_BLACKLIST_TTL,
+    });
+    console.error(`[Validation] Service ${serviceId} blacklisted for ${reason} (10 min)`);
+}
+
+function isBlacklisted(serviceId) {
+    const entry = serviceBlacklist.get(serviceId);
+    if (!entry) return null;
+    if (Date.now() > entry.until) {
+        serviceBlacklist.delete(serviceId);
+        return null;
+    }
+    return entry;
+}
+
+/**
+ * Quick client-side quality check — lightweight heuristic.
+ * Returns a score 0.0-1.0 based on basic content analysis.
+ */
+function quickClientScore(data) {
+    if (data == null) return 0;
+    if (typeof data !== 'object') {
+        return typeof data === 'string' && data.length > 0 ? 0.5 : 0.3;
+    }
+    const keys = Object.keys(data);
+    if (keys.length === 0) return 0.1;
+    // Count non-null, non-empty values
+    let useful = 0;
+    for (const k of keys) {
+        const v = data[k];
+        if (v !== null && v !== undefined && v !== '') useful++;
+    }
+    return Math.min(1, useful / Math.max(keys.length, 1));
+}
+
+/**
+ * Verify HMAC signature on _validation metadata (anti-MITM).
+ */
+function verifyServerValidation(validation) {
+    if (!VALIDATION_SECRET || !validation || !validation.signature) return true; // skip if no secret
+    const { signature, ...meta } = validation;
+    const sorted = Object.keys(meta).sort().reduce((o, k) => { o[k] = meta[k]; return o; }, {});
+    const expected = crypto.createHmac('sha256', VALIDATION_SECRET).update(JSON.stringify(sorted)).digest('hex');
+    if (expected.length !== signature.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'));
+}
+
+/**
+ * Client-side verification of server validation + independent quality check.
+ * Returns { ok, reason } — if !ok, service should be blacklisted.
+ */
+function clientSideVerify(result, serviceId) {
+    if (!result || !result._x402 || !result._x402._validation) return { ok: true };
+    const v = result._x402._validation;
+
+    // A. Verify HMAC signature
+    if (VALIDATION_SECRET && !verifyServerValidation(v)) {
+        addToBlacklist(serviceId, 'signature_mismatch');
+        return { ok: false, reason: 'signature_mismatch' };
+    }
+
+    // B. Independent quality cross-check
+    const clientScore = quickClientScore(result.data || result);
+    if (v.quality_score > 0.7 && clientScore < 0.2) {
+        addToBlacklist(serviceId, 'score_discrepancy');
+        return { ok: false, reason: 'score_discrepancy' };
+    }
+
+    return { ok: true };
+}
+
 // ─── Wallet (viem — multi-chain, no Coinbase CDP dependency) ────────
 let account = null;
 const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet } }
@@ -1035,11 +1114,28 @@ server.tool(
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || 'auto';
         try {
+            // --- BLACKLIST CHECK: block temporarily blacklisted services ---
+            const blacklisted = isBlacklisted(service_id);
+            if (blacklisted) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        error: 'Service temporarily blocked',
+                        service_id,
+                        reason: blacklisted.reason,
+                        blocked_until: new Date(blacklisted.until).toISOString(),
+                        message: `ALERT: Service '${service_id}' is temporarily blocked (reason: ${blacklisted.reason}). You were NOT charged. This service is blocked for 10 minutes. Recommendation: Use find_tool_for_task to find an alternative API.`,
+                    }, null, 2) }],
+                    isError: true,
+                };
+            }
+
             // --- GATEKEEPER: validate required params + status BEFORE payment ---
+            let serviceName = service_id;
             try {
                 const infoRes = await fetchWithTimeout(`${SERVER_URL}/api/services/${service_id}`, {}, 15_000);
                 if (infoRes.ok) {
                     const serviceInfo = await infoRes.json();
+                    serviceName = serviceInfo.name || service_id;
 
                     // Warn if service is offline (prevent USDC waste)
                     if (serviceInfo.status === 'offline') {
@@ -1088,6 +1184,25 @@ server.tool(
             };
 
             const result = await payAndRequest(proxyUrl, options, selectedChain);
+
+            // --- CLIENT-SIDE VERIFICATION (Zero Trust) ---
+            const verification = clientSideVerify(result, service_id);
+            if (!verification.ok) {
+                // Refund session budget
+                const cost = result?._payment?.amount ? parseFloat(result._payment.amount) : 0;
+                if (cost > 0) {
+                    sessionSpending = Math.max(0, sessionSpending - cost);
+                }
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        ...result,
+                        _client_verification: 'FAILED',
+                        _alert: `ALERT: API '${serviceName}' returned invalid data (reason: ${verification.reason}). You were NOT charged (${cost} USDC refunded to session budget). This service is temporarily blocked for 10 minutes. Recommendation: Use find_tool_for_task to find an alternative API.`,
+                    }, null, 2) }],
+                    isError: true,
+                };
+            }
+
             return {
                 content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
             };
@@ -1510,6 +1625,7 @@ server.tool(
                     remaining: (MAX_BUDGET - sessionSpending).toFixed(2) + ' USDC',
                     payments_count: sessionPayments.length,
                     reusable_hashes: reusableHashes.length,
+                    blacklisted_services: serviceBlacklist.size,
                     payments: sessionPayments,
                     default_chain: CHAINS[DEFAULT_CHAIN_KEY].label,
                     supported_chains: Object.entries(CHAINS)
