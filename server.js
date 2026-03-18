@@ -282,15 +282,17 @@ app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
 
-// Admin trigger for AI Quality Audit
-app.post('/api/admin/quality-audit/run', adminAuth, async (req, res) => {
-    try {
-        const result = await runQualityAuditOnce();
-        res.json({ triggered: true, result });
-    } catch (err) {
-        logger.error('QualityAudit', `Manual run: ${err.message}`);
-        res.status(500).json({ error: 'Quality audit run failed', message: err.message });
+// Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
+app.post('/api/admin/quality-audit/run', adminAuth, (req, res) => {
+    const { getQualityAuditStatus } = require('./lib/ai-quality-agent');
+    const status = getQualityAuditStatus();
+    if (status.running) {
+        return res.json({ triggered: false, reason: 'already_running' });
     }
+    runQualityAuditOnce().catch(err => {
+        logger.error('QualityAudit', `Manual run failed: ${err.message}`);
+    });
+    res.json({ triggered: true, message: 'Quality audit started. Check Telegram for report.' });
 });
 
 // --- SWAGGER UI ---
