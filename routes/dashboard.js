@@ -112,6 +112,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             totalRevenue: Math.round(totalRevenue * 100) / 100,
             walletBalance,
             wallet: walletAddr ? `${walletAddr.slice(0, 6)}...${walletAddr.slice(-4)}` : null,
+            walletFull: walletAddr || null,
             network: NETWORK_LABEL,
             explorer: EXPLORER_URL,
             usdcContract: USDC_CONTRACT,
@@ -132,14 +133,14 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 avgPriceResult,
                 walletBalanceResult,
             ] = await Promise.allSettled([
-                // 1. Payments — limite 5000 pour eviter full scan
-                supabase.from('activity').select('amount, created_at').eq('type', 'payment').order('created_at', { ascending: true }).limit(5000),
+                // 1. Payments — last 90 days for charts
+                supabase.from('activity').select('amount, created_at').eq('type', 'payment').gte('created_at', new Date(Date.now() - 90 * 86400000).toISOString()).order('created_at', { ascending: true }).limit(50000),
                 // 2. API calls pour top services
                 supabase.from('activity').select('detail, created_at').eq('type', 'api_call').order('created_at', { ascending: false }).limit(1000),
                 // 3. Total services count
                 supabase.from('services').select('*', { count: 'exact', head: true }),
-                // 4. Recent activity (last 10) — tx_hash truncated for security
-                supabase.from('activity').select('type, detail, amount, created_at, tx_hash').order('created_at', { ascending: false }).limit(10),
+                // 4. Recent activity (last 10) — admin-only, full tx_hash
+                supabase.from('activity').select('type, detail, amount, created_at, tx_hash, chain').order('created_at', { ascending: false }).limit(10),
                 // 5. Average price of paid services
                 supabase.from('services').select('price_usdc').gt('price_usdc', 0),
                 // 6. Wallet balance (cache TTL 5min — evite 1-3s RPC par appel)
@@ -216,7 +217,8 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                     detail: a.detail,
                     amount: a.amount,
                     time: a.created_at,
-                    txHash: a.tx_hash ? `${a.tx_hash.slice(0, 10)}...${a.tx_hash.slice(-6)}` : null
+                    txHash: a.tx_hash || null,
+                    chain: a.chain || null,
                 }));
             } else if (recentActivityResult.status === 'rejected') {
                 logger.warn('Analytics', `Failed to fetch recent activity: ${recentActivityResult.reason?.message}`);
@@ -472,6 +474,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
 
         const result = {
             address: `${address.slice(0, 6)}...${address.slice(-4)}`,
+            address_full: address,
             skale: {
                 credits: +(Number(val(skaleCredits)) / 1e18).toFixed(4),
                 usdc: +(Number(val(skaleUsdc)) / 1e6).toFixed(4),
@@ -544,6 +547,65 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         } catch (err) {
             logger.error('ERC8004', `Admin status error: ${err.message}`);
             res.status(500).json({ error: 'Failed to get ERC-8004 status' });
+        }
+    });
+
+    // POST /api/admin/trust-score/recalculate — Force immediate trust score recalculation + push
+    router.post('/api/admin/trust-score/recalculate', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const { recalculateAllScores } = require('../lib/trust-score');
+            await recalculateAllScores(supabase);
+
+            // Read updated counts
+            const [trustCount, agentCount] = await Promise.all([
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('trust_score', 'is', null),
+                supabase.from('services').select('id', { count: 'exact', head: true }).not('erc8004_agent_id', 'is', null),
+            ]);
+
+            res.json({
+                success: true,
+                services_with_trust_score: trustCount.count || 0,
+                services_with_agent_id: agentCount.count || 0,
+            });
+        } catch (err) {
+            logger.error('TrustScore', `Force recalculate error: ${err.message}`);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // GET /api/admin/trust-score/diagnostic — Check monitoring data availability
+    router.get('/api/admin/trust-score/diagnostic', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const cutoff = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+
+            const [monCount, dailyCount, sampleMon, sampleDaily, serviceCount] = await Promise.all([
+                supabase.from('monitoring_checks').select('id', { count: 'exact', head: true }).gte('checked_at', cutoff),
+                supabase.from('daily_checks').select('id', { count: 'exact', head: true }).gte('checked_at', cutoff),
+                supabase.from('monitoring_checks').select('endpoint, status, latency, checked_at').gte('checked_at', cutoff).order('checked_at', { ascending: false }).limit(5),
+                supabase.from('daily_checks').select('endpoint, overall_status, call_latency_ms, checked_at').gte('checked_at', cutoff).order('checked_at', { ascending: false }).limit(5),
+                supabase.from('services').select('id, url, trust_score, erc8004_agent_id').limit(5),
+            ]);
+
+            // Count unique endpoints in monitoring_checks
+            const { data: uniqueEndpoints } = await supabase.from('monitoring_checks')
+                .select('endpoint').gte('checked_at', cutoff).limit(5000);
+            const uniqueEpSet = new Set((uniqueEndpoints || []).map(r => r.endpoint));
+
+            res.json({
+                monitoring_checks: { total_rows: monCount.count || 0, unique_endpoints: uniqueEpSet.size },
+                daily_checks: { total_rows: dailyCount.count || 0 },
+                sample_monitoring: sampleMon.data || [],
+                sample_daily: sampleDaily.data || [],
+                sample_services: (serviceCount.data || []).map(s => ({
+                    id: s.id.slice(0, 8),
+                    path: (() => { try { return new URL(s.url).pathname; } catch { return s.url; } })(),
+                    trust_score: s.trust_score,
+                    erc8004_agent_id: s.erc8004_agent_id,
+                })),
+                cutoff_date: cutoff,
+            });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
         }
     });
 

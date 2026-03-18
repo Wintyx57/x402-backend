@@ -165,7 +165,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
         let query = supabase
             .from('activity')
-            .select('type, detail, amount, created_at')
+            .select('type, detail, amount, created_at, tx_hash, chain')
             .order('created_at', { ascending: false })
             .limit(limit);
 
@@ -186,6 +186,8 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
             detail: a.detail,
             amount: Number(a.amount),
             time: a.created_at,
+            txHash: a.tx_hash || null,
+            chain: a.chain || null,
         }));
 
         res.json(activity);
