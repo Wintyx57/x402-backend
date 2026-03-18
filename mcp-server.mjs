@@ -611,6 +611,7 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
         ...fetchOptions.headers,
         'X-Payment-TxHash': txHash,
         'X-Payment-Chain':  chainConfig.paymentHeader,
+        'X-Agent-Wallet':   account.address,
     };
 
     const retryRes = await fetchWithTimeout(apiUrl, { ...fetchOptions, headers: retryHeaders }, 15_000);
@@ -685,10 +686,12 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
     // Always send X-Payment-Chain on the initial request so the backend
     // returns the correct payment_mode (e.g. 'fee_splitter' for Polygon).
+    // X-Agent-Wallet enables auto-refund when the upstream returns garbage.
     const cfg = CHAINS[resolvedChainKey];
     const initialHeaders = {
         ...fetchOptions.headers,
         'X-Payment-Chain': cfg ? cfg.paymentHeader : resolvedChainKey,
+        'X-Agent-Wallet': account.address,
     };
     const res = await fetchWithTimeout(url, { ...fetchOptions, headers: initialHeaders }, 15_000);
 
@@ -772,6 +775,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             ...fetchOptions.headers,
             'X-Payment-TxHash-Provider': txHashProvider,
             'X-Payment-Chain': cfg.paymentHeader,
+            'X-Agent-Wallet': account.address,
         };
         if (txHashPlatform) {
             retryHeaders['X-Payment-TxHash-Platform'] = txHashPlatform;
@@ -895,6 +899,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 ...fetchOptions.headers,
                 'X-Payment-TxHash': txHash,
                 'X-Payment-Chain': cfg.paymentHeader,
+                'X-Agent-Wallet': account.address,
             };
         }
     }
