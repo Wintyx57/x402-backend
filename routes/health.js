@@ -290,7 +290,21 @@ function createHealthRouter(supabase) {
             checks.fee_splitter = { status: 'error', error: e.message };
         }
 
-        // 6. ERC-8004 Reputation push status
+        // 6. Refund Engine
+        try {
+            const refundEngine = require('../lib/refund');
+            const refConfigured = refundEngine.isConfigured();
+            const refStatus = refConfigured ? refundEngine.getRefundStatus() : null;
+            checks.refund_engine = {
+                status: refConfigured ? 'ok' : 'not_configured',
+                configured: refConfigured,
+                ...(refStatus || {}),
+            };
+        } catch (e) {
+            checks.refund_engine = { status: 'error', error: e.message };
+        }
+
+        // 7. ERC-8004 Reputation push status
         try {
             const erc8004 = require('../lib/erc8004-registry');
             const [pushStatus, walletInfo] = await Promise.all([

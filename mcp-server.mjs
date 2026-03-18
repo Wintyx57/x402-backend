@@ -804,6 +804,29 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 endpoint: url.replace(SERVER_URL, ''),
             });
 
+            // Consumer protection: handle refunded for facilitator
+            if (result && result._payment_status === 'refunded') {
+                const facPayment = sessionPayments[sessionPayments.length - 1];
+                sessionSpending = Math.max(0, sessionSpending - cost);
+                if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+                facPayment.status = 'refunded';
+                facPayment.refundTxHash = result._x402?.refund_tx_hash || null;
+                console.error(`[Payment] Facilitator response refunded — ${cost} USDC returned on-chain`);
+                addToBlacklist(serviceId, 'refunded_bad_response');
+                result._payment = {
+                    amount: details.amount, currency: 'USDC', status: 'refunded',
+                    paymentMode: 'facilitator',
+                    refund_tx_hash: result._x402?.refund_tx_hash,
+                    refund_wallet: result._x402?.refund_wallet,
+                    chain: cfg.label,
+                    session_spent: sessionSpending.toFixed(2),
+                    session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+                };
+                if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+                if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+                return result;
+            }
+
             // Consumer protection: handle not_charged for facilitator
             if (result && result._payment_status === 'not_charged') {
                 const facPayment = sessionPayments[sessionPayments.length - 1];
@@ -892,8 +915,35 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         result = await retryRes.json();
     }
 
-    // Consumer protection: handle not_charged responses (session 79)
+    // Consumer protection: handle refunded responses (auto-refund engine)
     const lastPayment = sessionPayments[sessionPayments.length - 1];
+    if (result && result._payment_status === 'refunded') {
+        if (lastPayment && !lastPayment.reused) {
+            // USDC returned on-chain — reverse budget tracking
+            sessionSpending = Math.max(0, sessionSpending - cost);
+            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+            lastPayment.status = 'refunded';
+            lastPayment.refundTxHash = result._x402?.refund_tx_hash || null;
+            // DO NOT add to reusableHashes — tx consumed, USDC returned on-chain
+            console.error(`[Payment] Response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
+        }
+        // Blacklist service (still delivered garbage)
+        addToBlacklist(serviceId, 'refunded_bad_response');
+
+        result._payment = {
+            amount: details.amount, currency: 'USDC', status: 'refunded',
+            refund_tx_hash: result._x402?.refund_tx_hash,
+            refund_wallet: result._x402?.refund_wallet,
+            chain: cfg.label,
+            session_spent: sessionSpending.toFixed(2),
+            session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+        };
+        if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+        if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+        return result;
+    }
+
+    // Consumer protection: handle not_charged responses (session 79)
     if (result && result._payment_status === 'not_charged') {
         if (lastPayment && !lastPayment.reused) {
             // Refund the budget — this payment wasn't consumed

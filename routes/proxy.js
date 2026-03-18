@@ -199,6 +199,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
                 splitMode: 'legacy',
                 splitMeta: null,
                 onSuccess,
+                supabase,
             });
         });
     });
@@ -398,6 +399,7 @@ async function handleSplitMode(req, res, { supabase, service, price, minAmountRa
             platform_split_status: txHashPlatform && splitResult.platformValid ? 'on_chain' : 'fallback_pending',
         },
         onSuccess,
+        supabase,
     });
 }
 
@@ -563,7 +565,7 @@ function shouldChargeForResponse(httpStatus, responseData, serviceUrl) {
     return { shouldCharge: true, reason: 'data_delivered' };
 }
 
-async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess }) {
+async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess, supabase }) {
     // SSRF check on service URL
     try {
         await safeUrl(service.url);
@@ -664,19 +666,79 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             recordCircuitSuccess(service.url);
 
             if (!chargeDecision.shouldCharge) {
-                // NOT charging: skip onSuccess/FeeSplitter/payout — tx hash remains reusable
-                logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
+                const refundEngine = require('../lib/refund');
+                const rawAgentWallet = req.headers['x-agent-wallet'];
+                const agentWallet = /^0x[a-fA-F0-9]{40}$/.test(rawAgentWallet) ? rawAgentWallet : null;
+
+                let paymentStatus = 'not_charged';
+                let refundMeta = null;
+
+                if (agentWallet && refundEngine.isConfigured()) {
+                    // Anti-double-spend: mark tx used BEFORE refund (Option A)
+                    let txClaimed = false;
+                    if (onSuccess) {
+                        const claimResult = await onSuccess();
+                        if (claimResult && !claimResult.ok) {
+                            // Race condition — tx already claimed, skip refund
+                            paymentStatus = 'not_charged';
+                        } else {
+                            txClaimed = true;
+                            // Attempt on-chain refund
+                            const refundResult = await refundEngine.processRefund(
+                                agentWallet, price, chain, service.id, txHash
+                            );
+                            if (refundResult.refunded) {
+                                paymentStatus = 'refunded';
+                                refundMeta = {
+                                    refund_tx_hash: refundResult.txHash,
+                                    refund_wallet: refundEngine.getRefundWalletAddress(),
+                                    refund_chain: chain,
+                                };
+                                logActivity('refund', `Refunded ${price} USDC to ${agentWallet.slice(0, 10)}... for "${service.name}" (${chargeDecision.reason})`, price, refundResult.txHash);
+                            } else {
+                                // Refund failed — unmark tx to restore reusability (Option A rollback)
+                                if (supabase) {
+                                    const replayKey = `${chain}:${splitMode === 'split' ? 'split_provider:' : ''}${txHash}`;
+                                    supabase.from('used_transactions').delete().eq('tx_hash', replayKey).then(null, () => {});
+                                }
+                                txClaimed = false;
+                            }
+                        }
+                    }
+                    if (paymentStatus !== 'refunded') {
+                        logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
+                    }
+                } else {
+                    logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
+                }
+
+                // Persist refund record (fire-and-forget)
+                if (supabase && agentWallet) {
+                    supabase.from('refunds').insert([{
+                        original_tx_hash: txHash,
+                        chain,
+                        service_id: service.id,
+                        service_name: service.name,
+                        amount_usdc: price,
+                        agent_wallet: agentWallet,
+                        status: paymentStatus === 'refunded' ? 'completed' : 'skipped',
+                        refund_tx_hash: refundMeta?.refund_tx_hash || null,
+                        refund_wallet: refundMeta?.refund_wallet || null,
+                        reason: chargeDecision.reason,
+                    }]).then(null, () => {});
+                }
 
                 return res.status(proxyRes.status).json({
                     success: false,
                     service: { id: service.id, name: service.name },
                     data:    responseData,
-                    _payment_status: 'not_charged',
+                    _payment_status: paymentStatus,
                     _x402: {
-                        retry_eligible: true,
+                        retry_eligible: paymentStatus !== 'refunded',
                         tx_hash:        txHash,
                         payment:        price + ' USDC',
                         reason:         chargeDecision.reason,
+                        ...(refundMeta || {}),
                     },
                 });
             }

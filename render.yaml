@@ -66,6 +66,11 @@ services:
         value: https://x402.polygon.technology
       - key: POLYGON_FEE_SPLITTER_CONTRACT
         value: "0x820d4b07D09e5E07598464E6E36cB12561e0Ba56"
+      # --- Auto-Refund Engine ---
+      - key: REFUND_PRIVATE_KEY
+        sync: false
+      - key: REFUND_DAILY_CAP_USDC
+        value: "50"
       # --- DEPRECATED: FEE_SPLITTER_OPERATOR_KEY — now uses AGENT_PRIVATE_KEY ---
       # Remove from Render once confirmed that AGENT_PRIVATE_KEY works for distribute()
       - key: FEE_SPLITTER_OPERATOR_KEY
