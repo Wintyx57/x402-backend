@@ -440,6 +440,24 @@ async function signEIP3009Auth(walletClient, amount, to, validAfter, validBefore
     };
 }
 
+// ─── fetchWithTimeout: wraps fetch with an AbortController timeout ───
+// Usage: fetchWithTimeout(url, options, timeoutMs)
+// On timeout: throws an Error with a clear message (no process crash).
+// clearTimeout is called on success to avoid timer leaks.
+function fetchWithTimeout(url, opts = {}, ms = 15_000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return fetch(url, { ...opts, signal: controller.signal })
+        .then(res => { clearTimeout(timer); return res; })
+        .catch(err => {
+            clearTimeout(timer);
+            if (err.name === 'AbortError') {
+                throw new Error(`Request timed out after ${ms / 1000}s: ${url}`);
+            }
+            throw err;
+        });
+}
+
 // ─── Facilitator Payment Flow (Polygon Phase 2 — gas-free EIP-3009) ──
 //
 // Standard x402 facilitator flow:
@@ -494,11 +512,11 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
 
     // Step 3: POST to facilitator /settle — facilitator executes on-chain
     const settleUrl = `${chainConfig.facilitator}/settle`;
-    const settleRes = await fetch(settleUrl, {
+    const settleRes = await fetchWithTimeout(settleUrl, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ x402Version: 1, paymentPayload, paymentRequirements }),
-    });
+    }, 15_000);
 
     const settleData = await settleRes.json();
     if (!settleData.success) {
@@ -516,7 +534,7 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
         'X-Payment-Chain':  chainConfig.paymentHeader,
     };
 
-    const retryRes = await fetch(apiUrl, { ...fetchOptions, headers: retryHeaders });
+    const retryRes = await fetchWithTimeout(apiUrl, { ...fetchOptions, headers: retryHeaders }, 15_000);
 
     // Parse response
     let data;
@@ -543,7 +561,7 @@ async function getCachedServices() {
     if (servicesCache && Date.now() - servicesCacheTime < SERVICES_CACHE_TTL) {
         return servicesCache;
     }
-    const res = await fetch(`${SERVER_URL}/api/services`);
+    const res = await fetchWithTimeout(`${SERVER_URL}/api/services`, {}, 15_000);
     const data = await res.json();
     servicesCache = data.data || data.services || [];
     servicesCacheTime = Date.now();
@@ -566,7 +584,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     let autoChainWarning = null;
     if (chainKey === 'auto') {
         // We need to probe for the price first
-        const probeRes = await fetch(url, { ...fetchOptions, headers: { ...fetchOptions.headers } });
+        const probeRes = await fetchWithTimeout(url, { ...fetchOptions, headers: { ...fetchOptions.headers } }, 15_000);
         if (probeRes.status === 402) {
             let probeBody;
             try { probeBody = await probeRes.json(); } catch { probeBody = {}; }
@@ -593,7 +611,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         ...fetchOptions.headers,
         'X-Payment-Chain': cfg ? cfg.paymentHeader : resolvedChainKey,
     };
-    const res = await fetch(url, { ...fetchOptions, headers: initialHeaders });
+    const res = await fetchWithTimeout(url, { ...fetchOptions, headers: initialHeaders }, 15_000);
 
     // ── Non-402 response ──────────────────────────────────────────────
     if (res.status !== 402) {
@@ -780,7 +798,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     }
 
     // Retry with payment proof
-    const retryRes = await fetch(url, { ...fetchOptions, headers: retryHeaders });
+    const retryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: retryHeaders }, 15_000);
 
     // Parse retry response: use text+fallback when requested (call_api path)
     let result;
@@ -872,7 +890,7 @@ server.tool(
     {},
     async () => {
         try {
-            const res = await fetch(SERVER_URL);
+            const res = await fetchWithTimeout(SERVER_URL, {}, 15_000);
             const data = await res.json();
             return {
                 content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
@@ -1019,7 +1037,7 @@ server.tool(
         try {
             // --- GATEKEEPER: validate required params + status BEFORE payment ---
             try {
-                const infoRes = await fetch(`${SERVER_URL}/api/services/${service_id}`);
+                const infoRes = await fetchWithTimeout(`${SERVER_URL}/api/services/${service_id}`, {}, 15_000);
                 if (infoRes.ok) {
                     const serviceInfo = await infoRes.json();
 
