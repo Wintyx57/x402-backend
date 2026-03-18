@@ -66,11 +66,13 @@ function createScienceRouter(logActivity, paymentMiddleware, paidEndpointLimiter
     // --- NASA APOD API (0.005 USDC) ---
     router.get('/api/nasa', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "NASA APOD API"), async (req, res) => {
         try {
-            const apiUrl = 'https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY';
+            const nasaKey = process.env.NASA_API_KEY || 'DEMO_KEY';
+            const apiUrl = `https://api.nasa.gov/planetary/apod?api_key=${nasaKey}`;
             const apiRes = await fetchWithTimeout(apiUrl, {}, 8000);
             const data = await apiRes.json();
 
             if (!data.title) {
+                logger.warn('NASA APOD API', `No title in response: ${JSON.stringify(data).slice(0, 200)}`);
                 return res.status(500).json({ error: 'Invalid NASA APOD data' });
             }
 
@@ -94,30 +96,55 @@ function createScienceRouter(logActivity, paymentMiddleware, paidEndpointLimiter
     // --- ISS TRACKER API (0.003 USDC) ---
     router.get('/api/iss', paidEndpointLimiter, paymentMiddleware(3000, 0.003, "ISS Tracker API"), async (req, res) => {
         try {
-            // Fetch position and astronauts in parallel
-            const [posRes, crewRes] = await Promise.all([
-                fetchWithTimeout('http://api.open-notify.org/iss-now.json', {}, 5000),
-                fetchWithTimeout('http://api.open-notify.org/astros.json', {}, 5000)
-            ]);
-            const posData = await posRes.json();
-            const crewData = await crewRes.json();
+            // Try primary source (open-notify.org), fallback to wheretheiss.at
+            let issLat = 0, issLon = 0, timestamp = Math.floor(Date.now() / 1000);
+            let crewCount = 0, crewMembers = [], totalInSpace = 0;
 
-            const issPos = posData.iss_position || {};
-            const issCrew = (crewData.people || []).filter(p => p.craft === 'ISS');
+            // Position: try open-notify first, fallback to wheretheiss.at
+            try {
+                const posRes = await fetchWithTimeout('http://api.open-notify.org/iss-now.json', {}, 5000);
+                const posData = await posRes.json();
+                if (posData.iss_position) {
+                    issLat = parseFloat(posData.iss_position.latitude) || 0;
+                    issLon = parseFloat(posData.iss_position.longitude) || 0;
+                    timestamp = posData.timestamp || timestamp;
+                }
+            } catch {
+                // Fallback: wheretheiss.at (no API key needed)
+                try {
+                    const fallbackRes = await fetchWithTimeout('https://api.wheretheiss.at/v1/satellites/25544', {}, 5000);
+                    const fb = await fallbackRes.json();
+                    issLat = parseFloat(fb.latitude) || 0;
+                    issLon = parseFloat(fb.longitude) || 0;
+                    timestamp = Math.floor(fb.timestamp || Date.now() / 1000);
+                } catch (fbErr) {
+                    logger.warn('ISS Tracker API', `Both position sources failed: ${fbErr.message}`);
+                }
+            }
 
-            logActivity('api_call', `ISS Tracker API: ${issPos.latitude},${issPos.longitude}`);
+            // Crew: try open-notify (optional, don't fail if unavailable)
+            try {
+                const crewRes = await fetchWithTimeout('http://api.open-notify.org/astros.json', {}, 5000);
+                const crewData = await crewRes.json();
+                const issCrew = (crewData.people || []).filter(p => p.craft === 'ISS');
+                crewCount = issCrew.length;
+                crewMembers = issCrew.map(p => p.name);
+                totalInSpace = crewData.number || 0;
+            } catch {
+                logger.warn('ISS Tracker API', 'Crew data unavailable');
+            }
+
+            if (issLat === 0 && issLon === 0) {
+                return res.status(500).json({ error: 'ISS Tracker API request failed — all sources down' });
+            }
+
+            logActivity('api_call', `ISS Tracker API: ${issLat},${issLon}`);
             res.json({
                 success: true,
-                position: {
-                    latitude: parseFloat(issPos.latitude) || 0,
-                    longitude: parseFloat(issPos.longitude) || 0
-                },
-                timestamp: posData.timestamp || Math.floor(Date.now() / 1000),
-                crew: {
-                    count: issCrew.length,
-                    members: issCrew.map(p => p.name)
-                },
-                total_in_space: crewData.number || 0
+                position: { latitude: issLat, longitude: issLon },
+                timestamp,
+                crew: { count: crewCount, members: crewMembers },
+                total_in_space: totalInSpace
             });
         } catch (err) {
             logger.error('ISS Tracker API', err.message);
