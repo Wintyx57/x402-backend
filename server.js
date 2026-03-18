@@ -22,6 +22,7 @@ const { startAgent, stopAgent } = require('./lib/agent-process');
 const { createPayoutManager } = require('./lib/payouts');
 const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
 const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
+const { scheduleRefundRetry, stopRefundRetry } = require('./lib/refund-retry');
 const { startLiveAgent, stopLiveAgent, runLiveAgentOnce } = require('./lib/live-agent');
 
 // --- Route factories ---
@@ -337,6 +338,9 @@ const serverInstance = app.listen(PORT, async () => {
     // Proof of Quality: recalculate TrustScores every 6h
     scheduleTrustScore(supabase);
 
+    // Refund retry: retry failed on-chain refunds every 15min
+    scheduleRefundRetry(supabase);
+
     // Live AI Agent: calls 3 space APIs with real USDC payments, 2x/day
     if (process.env.AGENT_PRIVATE_KEY) {
         startLiveAgent(`http://localhost:${PORT}`, supabase);
@@ -374,6 +378,7 @@ async function gracefulShutdown(signal) {
     stopTelegramBot();
     stopDailyTest();
     stopTrustScore();
+    stopRefundRetry();
     stopLiveAgent();
     await stopAgent().catch(err => {
         logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);

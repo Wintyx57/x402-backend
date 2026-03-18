@@ -124,8 +124,8 @@ async function selectBestChain(requiredAmount) {
     const viable = priority.filter(key => balanceCache[key] >= requiredAmount);
 
     if (viable.length === 0) {
-        // No chain has enough — return skale as default with warning
-        return { chain: 'skale', warning: `No chain has sufficient balance for ${requiredAmount} USDC. Balances: Base=${balanceCache.base.toFixed(4)}, SKALE=${balanceCache.skale.toFixed(4)}, Polygon=${balanceCache.polygon.toFixed(4)}` };
+        // No chain has enough — surface a hard error instead of silently failing
+        return { chain: null, error: `Insufficient balance on all chains for ${requiredAmount} USDC. Balances: Base=${(balanceCache.base || 0).toFixed(4)}, SKALE=${(balanceCache.skale || 0).toFixed(4)}, Polygon=${(balanceCache.polygon || 0).toFixed(4)}` };
     }
 
     // For SKALE, also check CREDITS balance for gas
@@ -670,6 +670,9 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             try { probeBody = await probeRes.json(); } catch { probeBody = {}; }
             const cost = parseFloat(probeBody?.payment_details?.amount || '0.01');
             const selection = await selectBestChain(cost);
+            if (selection.error) {
+                throw new Error(selection.error);
+            }
             resolvedChainKey = selection.chain;
             autoChainWarning = selection.warning;
         } else {

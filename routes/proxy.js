@@ -489,6 +489,15 @@ function recordCircuitFailure(serviceUrl) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// In-Flight Dedup — prevents duplicate upstream calls for the same tx hash
+// ---------------------------------------------------------------------------
+
+const INFLIGHT_MAX_ENTRIES = 5000;
+
+// Map<"chain:txHash", true>
+const _proxyInFlight = new Map();
+
 // ─── Consumer Protection: Response Quality Gate ──────────────────────────────
 // Only charge the user when the upstream response contains useful data.
 
@@ -583,6 +592,26 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             _x402: { circuit_breaker: 'open', retry_after_ms: CB_OPEN_DURATION_MS },
         });
     }
+
+    // In-flight dedup: block concurrent upstream calls with the same txHash
+    const inflightKey = txHash ? `${chain}:${txHash}` : null;
+    if (inflightKey && _proxyInFlight.has(inflightKey)) {
+        return res.status(409).json({
+            error: 'TX_ALREADY_USED',
+            code: 'TX_REPLAY',
+            message: 'This transaction hash is already being processed by another request.',
+        });
+    }
+    if (inflightKey) {
+        // FIFO eviction when cap is reached
+        if (_proxyInFlight.size >= INFLIGHT_MAX_ENTRIES) {
+            const firstKey = _proxyInFlight.keys().next().value;
+            _proxyInFlight.delete(firstKey);
+        }
+        _proxyInFlight.set(inflightKey, true);
+    }
+
+    try {
 
     // Determine upstream HTTP method (POST for /api/code, /api/contract-risk, etc.)
     const upstreamMethod = getMethodForUrl(service.url);
@@ -723,7 +752,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         service_name: service.name,
                         amount_usdc: price,
                         agent_wallet: agentWallet,
-                        status: paymentStatus === 'refunded' ? 'completed' : 'skipped',
+                        status: paymentStatus === 'refunded' ? 'completed' : (refundSkipReason && (refundSkipReason === 'transfer_failed' || refundSkipReason === 'balance_check_failed' || refundSkipReason === 'insufficient_balance')) ? 'failed' : 'skipped',
                         refund_tx_hash: refundMeta?.refund_tx_hash || null,
                         refund_wallet: refundMeta?.refund_wallet || null,
                         reason: chargeDecision.reason,
@@ -879,6 +908,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             status:         'Payment verified but not consumed. Retry with the same X-Payment-TxHash.',
         },
     });
+
+    } finally {
+        if (inflightKey) _proxyInFlight.delete(inflightKey);
+    }
 }
 
 module.exports = createProxyRouter;
