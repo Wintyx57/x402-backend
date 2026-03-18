@@ -816,7 +816,8 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 facPayment.status = 'refunded';
                 facPayment.refundTxHash = result._x402?.refund_tx_hash || null;
                 console.error(`[Payment] Facilitator response refunded — ${cost} USDC returned on-chain`);
-                addToBlacklist(serviceId, 'refunded_bad_response');
+                const facRefundMatch = url.match(/\/api\/call\/([0-9a-f-]{36})/i);
+                if (facRefundMatch) addToBlacklist(facRefundMatch[1], 'refunded_bad_response');
                 result._payment = {
                     amount: details.amount, currency: 'USDC', status: 'refunded',
                     paymentMode: 'facilitator',
@@ -933,7 +934,9 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             console.error(`[Payment] Response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
         }
         // Blacklist service (still delivered garbage)
-        addToBlacklist(serviceId, 'refunded_bad_response');
+        // Extract serviceId from proxy URL (e.g., /api/call/uuid)
+        const refundServiceMatch = url.match(/\/api\/call\/([0-9a-f-]{36})/i);
+        if (refundServiceMatch) addToBlacklist(refundServiceMatch[1], 'refunded_bad_response');
 
         result._payment = {
             amount: details.amount, currency: 'USDC', status: 'refunded',

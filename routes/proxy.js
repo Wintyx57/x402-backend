@@ -673,6 +673,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 let paymentStatus = 'not_charged';
                 let refundMeta = null;
 
+                let refundSkipReason = null;
                 if (agentWallet && refundEngine.isConfigured()) {
                     // Anti-double-spend: mark tx used BEFORE refund (Option A)
                     let txClaimed = false;
@@ -697,6 +698,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                                 logActivity('refund', `Refunded ${price} USDC to ${agentWallet.slice(0, 10)}... for "${service.name}" (${chargeDecision.reason})`, price, refundResult.txHash);
                             } else {
                                 // Refund failed — unmark tx to restore reusability (Option A rollback)
+                                refundSkipReason = refundResult.reason;
                                 if (supabase) {
                                     const replayKey = `${chain}:${splitMode === 'split' ? 'split_provider:' : ''}${txHash}`;
                                     supabase.from('used_transactions').delete().eq('tx_hash', replayKey).then(null, () => {});
@@ -706,7 +708,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         }
                     }
                     if (paymentStatus !== 'refunded') {
-                        logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
+                        logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason}${refundSkipReason ? ', refund_skip: ' + refundSkipReason : ''})`, 0, txHash);
                     }
                 } else {
                     logActivity('proxy_not_charged', `NOT charged for "${service.name}" (${chargeDecision.reason})`, 0, txHash);
@@ -725,6 +727,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         refund_tx_hash: refundMeta?.refund_tx_hash || null,
                         refund_wallet: refundMeta?.refund_wallet || null,
                         reason: chargeDecision.reason,
+                        failure_reason: refundSkipReason || null,
                     }]).then(null, () => {});
                 }
 
@@ -738,6 +741,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         tx_hash:        txHash,
                         payment:        price + ' USDC',
                         reason:         chargeDecision.reason,
+                        ...(refundSkipReason ? { refund_skip_reason: refundSkipReason } : {}),
                         ...(refundMeta || {}),
                     },
                 });
