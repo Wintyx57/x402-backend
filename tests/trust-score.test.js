@@ -317,7 +317,7 @@ describe('computeVolumeScore', () => {
 // computeTrustScore (integration)
 // ---------------------------------------------------------------------------
 describe('computeTrustScore', () => {
-    it('returns null score when no data available', async () => {
+    it('returns default score 43 when no data available', async () => {
         const sb = mockSupabase({
             monitoring_checks: [],
             daily_checks: [],
@@ -325,7 +325,7 @@ describe('computeTrustScore', () => {
         });
         const result = await computeTrustScore(sb, { id: 'uuid-1', url: 'https://x402-api.onrender.com/api/joke' });
         assert.strictEqual(result.hasData, false);
-        assert.strictEqual(result.score, null);
+        assert.strictEqual(result.score, 43); // Default neutral score (0.5*W for S/L/R + 0 for V)
     });
 
     it('returns a score between 0 and 100 with data', async () => {
