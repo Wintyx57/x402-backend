@@ -832,24 +832,42 @@ const WRAPPER_SERVICES = [
         owner_address: SERVER_WALLET,
         tags: ["x402-native", "security", "malware", "phishing", "url", "threat", "live"]
     },
+
+    // --- TEXT & NLP (session 80, missing from seed until session 85) ---
+    {
+        name: "x402 Language Detection",
+        description: "Detect the language of a text. POST with JSON body { text: '...' }. Returns detected language, confidence score and alternatives.",
+        url: `${BASE_URL}/api/detect-lang`,
+        price_usdc: 0.003,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "text", "nlp", "language", "detection", "live"]
+    },
+    {
+        name: "x402 Text Statistics",
+        description: "Analyze text and return statistics: word count, sentence count, reading time, readability score, character frequency. POST with JSON body { text: '...' }.",
+        url: `${BASE_URL}/api/text-stats`,
+        price_usdc: 0.001,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "text", "statistics", "analysis", "readability", "live"]
+    },
+    {
+        name: "x402 METAR Aviation Weather",
+        description: "Get real-time aviation weather (METAR) data for any airport by ICAO code. Returns raw METAR string and decoded fields. Usage: /api/metar?icao=LFPG",
+        url: `${BASE_URL}/api/metar`,
+        price_usdc: 0.005,
+        owner_address: SERVER_WALLET,
+        tags: ["x402-native", "aviation", "weather", "metar", "airport", "live"]
+    },
 ];
 
 async function seedWrappers() {
     console.log(`Seeding ${WRAPPER_SERVICES.length} x402 native wrapper services...\n`);
 
-    // Remove ALL previous native wrapper seeds matching the URL pattern (any owner)
-    const { error: delErr } = await supabase
-        .from('services')
-        .delete()
-        .like('url', `${BASE_URL}/api/%`);
-
-    if (delErr) {
-        console.error('Warning: could not clear previous wrapper seeds:', delErr.message);
-    }
-
+    // Upsert on URL — preserves existing id, trust_score, erc8004_agent_id, monitoring data
+    // Only updates name, description, price, owner_address, tags for existing entries
     const { data, error } = await supabase
         .from('services')
-        .insert(WRAPPER_SERVICES)
+        .upsert(WRAPPER_SERVICES, { onConflict: 'url', ignoreDuplicates: false })
         .select();
 
     if (error) {
@@ -857,9 +875,11 @@ async function seedWrappers() {
         process.exit(1);
     }
 
-    console.log(`\u2705 ${data.length} x402 native services inserted:\n`);
+    console.log(`\u2705 ${data.length} x402 native services upserted:\n`);
     data.forEach((s, i) => {
-        console.log(`  ${(i + 1).toString().padStart(2)}. ${s.name} (${s.price_usdc} USDC) — ${s.url}`);
+        const hasAgent = s.erc8004_agent_id ? ` [ERC-8004 #${s.erc8004_agent_id}]` : '';
+        const hasTrust = s.trust_score != null ? ` (trust: ${s.trust_score})` : '';
+        console.log(`  ${(i + 1).toString().padStart(2)}. ${s.name} (${s.price_usdc} USDC)${hasAgent}${hasTrust}`);
     });
     console.log(`\nDone. These will appear with "x402 Native" badge on the marketplace.`);
 }
