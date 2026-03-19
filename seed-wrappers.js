@@ -833,31 +833,6 @@ const WRAPPER_SERVICES = [
         tags: ["x402-native", "security", "malware", "phishing", "url", "threat", "live"]
     },
 
-    // --- TEXT & NLP (session 80, missing from seed until session 85) ---
-    {
-        name: "x402 Language Detection",
-        description: "Detect the language of a text. POST with JSON body { text: '...' }. Returns detected language, confidence score and alternatives.",
-        url: `${BASE_URL}/api/detect-lang`,
-        price_usdc: 0.003,
-        owner_address: SERVER_WALLET,
-        tags: ["x402-native", "text", "nlp", "language", "detection", "live"]
-    },
-    {
-        name: "x402 Text Statistics",
-        description: "Analyze text and return statistics: word count, sentence count, reading time, readability score, character frequency. POST with JSON body { text: '...' }.",
-        url: `${BASE_URL}/api/text-stats`,
-        price_usdc: 0.001,
-        owner_address: SERVER_WALLET,
-        tags: ["x402-native", "text", "statistics", "analysis", "readability", "live"]
-    },
-    {
-        name: "x402 METAR Aviation Weather",
-        description: "Get real-time aviation weather (METAR) data for any airport by ICAO code. Returns raw METAR string and decoded fields. Usage: /api/metar?icao=LFPG",
-        url: `${BASE_URL}/api/metar`,
-        price_usdc: 0.005,
-        owner_address: SERVER_WALLET,
-        tags: ["x402-native", "aviation", "weather", "metar", "airport", "live"]
-    },
 ];
 
 async function seedWrappers() {
