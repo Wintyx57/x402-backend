@@ -72,17 +72,21 @@ function createWebRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
                 logger.warn('Search API', `DDG Lite failed: ${ddgErr.message}, trying fallback`);
             }
 
-            // Fallback: Wikipedia Search API (always reliable)
+            // Fallback: Wikipedia Search API
             if (results.length === 0) {
-                const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=${maxResults}`;
-                const wikiRes = await fetchWithTimeout(wikiUrl, {}, 8000);
-                const wikiData = await wikiRes.json();
-                if (wikiData.query?.search) {
-                    results = wikiData.query.search.map(r => ({
-                        title: r.title,
-                        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
-                        snippet: r.snippet.replace(/<[^>]+>/g, '')
-                    }));
+                try {
+                    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&srlimit=${maxResults}`;
+                    const wikiRes = await fetchWithTimeout(wikiUrl, {}, 8000);
+                    const wikiData = await wikiRes.json();
+                    if (wikiData.query?.search) {
+                        results = wikiData.query.search.map(r => ({
+                            title: r.title,
+                            url: `https://en.wikipedia.org/wiki/${encodeURIComponent(r.title.replace(/ /g, '_'))}`,
+                            snippet: r.snippet.replace(/<[^>]+>/g, '')
+                        }));
+                    }
+                } catch (wikiErr) {
+                    logger.warn('Search API', `Wikipedia fallback failed: ${wikiErr.message}`);
                 }
             }
 
