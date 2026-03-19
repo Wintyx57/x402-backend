@@ -730,7 +730,9 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                                 refundSkipReason = refundResult.reason;
                                 if (supabase) {
                                     const replayKey = `${chain}:${splitMode === 'split' ? 'split_provider:' : ''}${txHash}`;
-                                    supabase.from('used_transactions').delete().eq('tx_hash', replayKey).then(null, () => {});
+                                    supabase.from('used_transactions').delete().eq('tx_hash', replayKey).then(null, (err) => {
+                                        logger.error('Proxy:refund-rollback', `Failed to unmark tx ${replayKey}: ${err?.message}`);
+                                    });
                                 }
                                 txClaimed = false;
                             }
