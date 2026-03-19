@@ -34,7 +34,7 @@ const faucetLimiter = rateLimit({
 let _countCache = { value: 0, ts: 0 };
 const COUNT_CACHE_TTL = 60 * 1000;
 
-function createHealthRouter(supabase) {
+function createHealthRouter(supabase, adminAuth) {
     const router = express.Router();
 
     // --- OpenAPI spec for GPT Actions ---
@@ -139,7 +139,7 @@ function createHealthRouter(supabase) {
     // --- DEEP HEALTH CHECK ---
     // Checks external dependencies: Supabase and Base RPC.
     // Returns HTTP 200 if all deps are healthy, 503 if at least one is degraded.
-    router.get('/health/deep', async (req, res) => {
+    router.get('/health/deep', adminAuth, async (req, res) => {
         const checks = {};
         let allOk = true;
 

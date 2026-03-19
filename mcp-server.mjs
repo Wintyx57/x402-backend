@@ -1705,7 +1705,7 @@ server.tool(
 );
 
 // ─── Auto-update check (fire-and-forget) ────────────────────────────
-const LOCAL_VERSION = '2.4.0';
+const LOCAL_VERSION = '2.5.0';
 (async () => {
     try {
         const res = await fetch(

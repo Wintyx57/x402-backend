@@ -10,3 +10,10 @@ dist/
 setup-monitoring.js
 test-intelligence-paid.mjs
 test-intelligence-paid.js
+*.key
+*.pem
+*.p12
+wallet*.json
+credentials*.json
+*.log
+logs/

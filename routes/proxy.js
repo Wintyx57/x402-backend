@@ -618,10 +618,15 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 
     // Build target URL and request body
     let targetUrl = service.url;
-    const params = req.body && typeof req.body === 'object' ? { ...req.body } : {};
-    if (req.query && Object.keys(req.query).length > 0) {
-        Object.assign(params, req.query);
-    }
+    const DANGEROUS_PROPS = new Set(['__proto__', 'constructor', 'prototype']);
+    const safeCopy = (target, source) => {
+        for (const [k, v] of Object.entries(source)) {
+            if (!DANGEROUS_PROPS.has(k)) target[k] = v;
+        }
+    };
+    const params = Object.create(null);
+    if (req.body && typeof req.body === 'object') safeCopy(params, req.body);
+    if (req.query && Object.keys(req.query).length > 0) safeCopy(params, req.query);
     let fetchBody;
     if (upstreamMethod === 'POST') {
         // POST endpoints: send params as JSON body, keep URL clean
@@ -730,8 +735,8 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                                 refundSkipReason = refundResult.reason;
                                 if (supabase) {
                                     const replayKey = `${chain}:${splitMode === 'split' ? 'split_provider:' : ''}${txHash}`;
-                                    supabase.from('used_transactions').delete().eq('tx_hash', replayKey).then(null, (err) => {
-                                        logger.error('Proxy:refund-rollback', `Failed to unmark tx ${replayKey}: ${err?.message}`);
+                                    supabase.from('used_transactions').update({ status: 'rolled_back' }).eq('tx_hash', replayKey).then(null, (err) => {
+                                        logger.error('Proxy:refund-rollback', `Failed to mark tx ${replayKey} as rolled_back: ${err?.message}`);
                                     });
                                 }
                                 txClaimed = false;
@@ -913,6 +918,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 
     } finally {
         if (inflightKey) _proxyInFlight.delete(inflightKey);
+        if (req._releasePaymentLock) req._releasePaymentLock();
     }
 }
 

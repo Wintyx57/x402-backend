@@ -158,8 +158,7 @@ const generalLimiter = rateLimit({
     max: 500,
     standardHeaders: true,
     legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status')
-        || req.headers['x-payment-txhash'] || req.headers['x-payment-txhash-provider'],
+    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
     message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
 });
 
@@ -267,7 +266,7 @@ app.use((req, res, next) => {
 // MOUNT ROUTES
 // ============================================================
 
-app.use(createHealthRouter(supabase));
+app.use(createHealthRouter(supabase, adminAuth));
 app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth, getGemini));
 app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
 app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager));
@@ -317,7 +316,8 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customSiteT
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
-    logger.error('Global', `${req.method} ${req.originalUrl}`);
+    const safeUrl = (req.originalUrl || '').replace(/[\r\n\x00-\x1f]/g, '_');
+    logger.error('Global', `${req.method} ${safeUrl}`);
     logger.error('Global', err.stack || err.message || err);
     logActivity('error', `${req.method} ${req.originalUrl} -> Internal error`);
     res.status(err.status || 500).json({

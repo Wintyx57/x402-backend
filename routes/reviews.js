@@ -176,7 +176,7 @@ function createReviewsRouter(supabase) {
         const { data: activityRows, error: activityError } = await supabase
             .from('activity')
             .select('id')
-            .ilike('detail', `%${service_id}%`)
+            .ilike('detail', `%${service_id.replace(/[%_\\]/g, '\\$&')}%`)
             .limit(1);
 
         // Fallback: also check by wallet in detail if activity includes wallet info
@@ -187,7 +187,7 @@ function createReviewsRouter(supabase) {
             const { data: walletActivity } = await supabase
                 .from('activity')
                 .select('id')
-                .ilike('detail', `%${wallet.toLowerCase()}%`)
+                .ilike('detail', `%${wallet.toLowerCase().replace(/[%_\\]/g, '\\$&')}%`)
                 .limit(1);
 
             // If activity table is empty or wallet never used anything, still allow
