@@ -157,8 +157,6 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
 
             // Aggregate payments by day
             const dailyMap = {};
-            let cumulativeTotal = 0;
-            const cumulativeRevenue = [];
 
             for (const p of payments) {
                 const date = p.created_at?.split('T')[0];
@@ -169,20 +167,40 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 dailyMap[date].count++;
             }
 
-            const dailyVolume = Object.entries(dailyMap)
-                .sort(([a], [b]) => a.localeCompare(b))
-                .map(([date, { total, count }]) => {
-                    cumulativeTotal += total;
-                    cumulativeRevenue.push({
-                        date,
-                        total: Math.round(cumulativeTotal * 100) / 100,
-                    });
-                    return {
-                        date,
-                        total: Math.round(total * 100) / 100,
-                        count,
-                    };
+            // Fill missing calendar days so charts always show continuous data
+            const now = new Date();
+            const chartDays = 30; // show last 30 days
+            const allDates = [];
+            for (let i = chartDays - 1; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - i);
+                allDates.push(d.toISOString().split('T')[0]);
+            }
+
+            let cumulativeTotal = 0;
+            const cumulativeRevenue = [];
+
+            // Include historical data before the 30-day window for correct cumulative
+            const sortedDates = Object.keys(dailyMap).sort();
+            for (const date of sortedDates) {
+                if (date < allDates[0]) {
+                    cumulativeTotal += dailyMap[date].total;
+                }
+            }
+
+            const dailyVolume = allDates.map(date => {
+                const day = dailyMap[date] || { total: 0, count: 0 };
+                cumulativeTotal += day.total;
+                cumulativeRevenue.push({
+                    date,
+                    total: Math.round(cumulativeTotal * 100) / 100,
                 });
+                return {
+                    date,
+                    total: Math.round(day.total * 100) / 100,
+                    count: day.count,
+                };
+            });
 
             // Aggregate top services by call count
             const serviceCountMap = {};
@@ -255,6 +273,94 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         } catch (err) {
             logger.error('Analytics', err.message);
             res.status(500).json({ error: 'Analytics failed' });
+        }
+    });
+
+    // --- ADMIN: Usage metrics (unique wallets, growth, hourly distribution) ---
+    router.get('/api/admin/usage', adminRateLimit, adminAuth, async (req, res) => {
+        try {
+            const now = new Date();
+            const todayStart = new Date(now);
+            todayStart.setHours(0, 0, 0, 0);
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - 7);
+            const prevWeekStart = new Date(now);
+            prevWeekStart.setDate(prevWeekStart.getDate() - 14);
+            const monthStart = new Date(now);
+            monthStart.setDate(monthStart.getDate() - 30);
+
+            const [
+                todayCallsResult,
+                weekCallsResult,
+                prevWeekCallsResult,
+                monthCallsResult,
+                walletsResult,
+                hourlyResult,
+                errorCountResult,
+                totalCallsResult,
+                registrationsResult,
+            ] = await Promise.allSettled([
+                // Calls today
+                supabase.from('activity').select('id', { count: 'exact', head: true }).in('type', ['api_call', 'payment']).gte('created_at', todayStart.toISOString()),
+                // Calls this week
+                supabase.from('activity').select('id', { count: 'exact', head: true }).in('type', ['api_call', 'payment']).gte('created_at', weekStart.toISOString()),
+                // Calls prev week (for growth rate)
+                supabase.from('activity').select('id', { count: 'exact', head: true }).in('type', ['api_call', 'payment']).gte('created_at', prevWeekStart.toISOString()).lt('created_at', weekStart.toISOString()),
+                // Calls this month
+                supabase.from('activity').select('id', { count: 'exact', head: true }).in('type', ['api_call', 'payment']).gte('created_at', monthStart.toISOString()),
+                // Unique wallets (from used_transactions)
+                supabase.from('used_transactions').select('from_address').limit(10000),
+                // Hourly distribution (last 7 days)
+                supabase.from('activity').select('created_at').in('type', ['api_call', 'payment']).gte('created_at', weekStart.toISOString()).limit(10000),
+                // Error count this week
+                supabase.from('activity').select('id', { count: 'exact', head: true }).eq('type', 'error').gte('created_at', weekStart.toISOString()),
+                // Total calls all time
+                supabase.from('activity').select('id', { count: 'exact', head: true }).in('type', ['api_call', 'payment']),
+                // New service registrations this week
+                supabase.from('services').select('id', { count: 'exact', head: true }).gte('created_at', weekStart.toISOString()),
+            ]);
+
+            const val = (r) => r.status === 'fulfilled' ? r.value : null;
+
+            // Unique wallets
+            const walletsData = val(walletsResult)?.data || [];
+            const uniqueWallets = new Set(walletsData.map(r => r.from_address)).size;
+
+            // Hourly distribution
+            const hourly = new Array(24).fill(0);
+            const hourlyData = val(hourlyResult)?.data || [];
+            for (const row of hourlyData) {
+                if (row.created_at) {
+                    const hour = new Date(row.created_at).getUTCHours();
+                    hourly[hour]++;
+                }
+            }
+
+            // Growth rate
+            const thisWeek = val(weekCallsResult)?.count || 0;
+            const prevWeek = val(prevWeekCallsResult)?.count || 0;
+            const growthRate = prevWeek > 0 ? Math.round(((thisWeek - prevWeek) / prevWeek) * 100) : thisWeek > 0 ? 100 : 0;
+
+            // Error rate
+            const errorCount = val(errorCountResult)?.count || 0;
+            const successRate = thisWeek > 0 ? Math.round(((thisWeek - errorCount) / thisWeek) * 100) : 100;
+
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+            res.json({
+                calls_today: val(todayCallsResult)?.count || 0,
+                calls_this_week: thisWeek,
+                calls_this_month: val(monthCallsResult)?.count || 0,
+                calls_all_time: val(totalCallsResult)?.count || 0,
+                unique_wallets: uniqueWallets,
+                growth_rate_percent: growthRate,
+                success_rate_percent: successRate,
+                errors_this_week: errorCount,
+                new_services_this_week: val(registrationsResult)?.count || 0,
+                hourly_distribution: hourly,
+            });
+        } catch (err) {
+            logger.error('Usage', err.message);
+            res.status(500).json({ error: 'Usage metrics failed' });
         }
     });
 
