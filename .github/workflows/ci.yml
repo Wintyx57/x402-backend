@@ -33,37 +33,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run unit tests (no network required)
-        run: >
-          node --test
-          tests/payment.test.js
-          tests/chains.test.js
-          tests/monitor.test.js
-          tests/services-logic.test.js
-          tests/validation.test.js
-          tests/logger.test.js
-          tests/register-validation.test.js
-          tests/budget.test.js
-          tests/activity.test.js
-          tests/middleware.test.js
-          tests/new-apis.test.js
-          tests/telegram-bot.test.js
-          tests/payouts.test.js
-          tests/reviews.test.js
-          tests/split.test.js
-          tests/safe-url.test.js
-          tests/payment-verification.test.js
-          tests/payment-edge-cases.test.js
-          tests/faucet.test.js
-          tests/gatekeeper.test.js
-          tests/proxy-unit.test.js
-          tests/proxy-integration.test.js
-          tests/erc8004-registry.test.js
-          tests/trust-score.test.js
-          tests/retention.test.js
-          tests/service-verifier.test.js
-          tests/smart-search.test.js
-          tests/openai-retry.test.js
-          tests/daily-tester.test.js
+        run: node --test tests/*.test.js --exclude tests/e2e.test.js
 
   security:
     name: Security Audit
