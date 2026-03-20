@@ -66,7 +66,7 @@ const CHAINS = {
 };
 
 // ─── Helper: convert a USDC float amount to on-chain raw units ───────
-// Uses the chain's USDC decimals (6 for Base/Polygon, 18 for SKALE).
+// Uses the chain's USDC decimals (6 for all chains: Base, SKALE, Polygon).
 function usdcToRaw(amount, chainKey) {
     const decimals = CHAINS[chainKey]?.decimals ?? 6;
     return BigInt(Math.round(amount * (10 ** decimals)));
