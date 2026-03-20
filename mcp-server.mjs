@@ -1849,7 +1849,8 @@ server.tool(
             }
 
             const price = parseFloat(infoData.price_usdc);
-            const ownerWallet = infoData.owner_address;
+            // Pay the platform (WALLET_ADDRESS) — backend handles 95/5 split to creator
+            const recipient = infoData.payment_details?.recipient || process.env.WALLET_ADDRESS || infoData.owner_address;
 
             // Budget check
             if (sessionSpending + price > MAX_BUDGET) {
@@ -1870,7 +1871,7 @@ server.tool(
                 address: cfg.usdc,
                 abi: USDC_ABI,
                 functionName: 'transfer',
-                args: [ownerWallet, rawAmount],
+                args: [recipient, rawAmount],
                 ...(chainKey === 'skale' ? { type: 'legacy' } : {}),
             });
 

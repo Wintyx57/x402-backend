@@ -102,8 +102,9 @@ function buildPaymentRequired(link, chainKey = DEFAULT_CHAIN_KEY) {
  * @param {Function} logActivity - Activity logger
  * @param {object} createLinkLimiter - express-rate-limit instance (registerLimiter is reused)
  * @param {object} paymentSystem - { verifyPayment, markTxUsed } from createPaymentSystem()
+ * @param {object} payoutManager - from createPayoutManager (records 95/5 split payouts)
  */
-function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paymentSystem) {
+function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paymentSystem, payoutManager) {
     // Destructure once at factory init — avoid per-request property lookup
     const { verifyPayment, markTxUsed } = paymentSystem;
 
@@ -331,7 +332,21 @@ function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paym
             });
         }
 
-        // 8. Update paid_count and total_earned_usdc (fire-and-forget)
+        // 8. Record 95/5 split payout (same as proxy.js) — fire-and-forget
+        if (payoutManager && link.owner_address) {
+            payoutManager.recordPayout({
+                serviceId:      id,
+                serviceName:    `PayLink: ${link.title}`,
+                providerWallet: link.owner_address,
+                grossAmount:    price,
+                txHashIn:       txHash,
+                chain:          chainKey,
+            }).catch(err => {
+                logger.error('PaymentLinks', `Failed to record payout for "${link.title}": ${err.message}`);
+            });
+        }
+
+        // 9. Update paid_count and total_earned_usdc (fire-and-forget)
         supabase
             .from('payment_links')
             .update({
@@ -342,7 +357,7 @@ function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paym
             .then(() => {})
             .catch(() => {});
 
-        logActivity('payment', `Payment link accessed: "${link.title}" @ ${price} USDC`, price, txHash);
+        logActivity('payment_link', `Payment link accessed: "${link.title}" @ ${price} USDC (95/5 split)`, price, txHash);
 
         return res.json({
             success: true,

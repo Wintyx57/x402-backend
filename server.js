@@ -281,7 +281,7 @@ app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
-app.use(createPaymentLinksRouter(supabase, logActivity, registerLimiter, paymentSystem));
+app.use(createPaymentLinksRouter(supabase, logActivity, registerLimiter, paymentSystem, payoutManager));
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
 app.post('/api/admin/quality-audit/run', adminAuth, (req, res) => {
