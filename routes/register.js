@@ -486,6 +486,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
             const enriched = endpoints.map(e => ({
                 ...e,
+                full_url: e.fullUrl,
                 already_registered: existingUrls.has(e.fullUrl),
             }));
 
