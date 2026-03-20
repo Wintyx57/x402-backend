@@ -116,7 +116,7 @@ function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paym
         if (!parsed.success) {
             return res.status(400).json({
                 error: 'Validation Error',
-                details: parsed.error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+                details: (parsed.error.issues || parsed.error.errors || []).map(e => ({ field: e.path.join('.'), message: e.message })),
             });
         }
 
