@@ -112,6 +112,15 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         },
     });
 
+    // Conditional multer: only process multipart/form-data, skip for JSON requests
+    function optionalUpload(req, res, next) {
+        const ct = req.headers['content-type'] || '';
+        if (ct.startsWith('multipart/form-data')) {
+            return upload.single('specFile')(req, res, next);
+        }
+        next();
+    }
+
     router.post('/quick-register', registerLimiter, async (req, res) => {
         let validatedData;
         try {
@@ -445,7 +454,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         });
     });
 
-    router.post('/api/import-openapi/preview', registerLimiter, upload.single('specFile'), async (req, res) => {
+    router.post('/api/import-openapi/preview', registerLimiter, optionalUpload, async (req, res) => {
         try {
             let source;
             if (req.file) {
@@ -494,7 +503,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         }
     });
 
-    router.post('/api/import-openapi', registerLimiter, upload.single('specFile'), async (req, res) => {
+    router.post('/api/import-openapi', registerLimiter, optionalUpload, async (req, res) => {
         // Parse body — multer with multipart puts fields in req.body as strings
         let body = req.body;
         // If multipart, parse numeric/JSON fields
