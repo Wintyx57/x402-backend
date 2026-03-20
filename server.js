@@ -41,6 +41,7 @@ const createReviewsRouter = require('./routes/reviews');
 const createProxyRouter = require('./routes/proxy');
 const createProviderRouter = require('./routes/provider');
 const createAgentReportsRouter = require('./routes/agent-reports');
+const createPaymentLinksRouter = require('./routes/payment-links');
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
@@ -280,6 +281,7 @@ app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
+app.use(createPaymentLinksRouter(supabase, logActivity, registerLimiter, paymentSystem));
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
 app.post('/api/admin/quality-audit/run', adminAuth, (req, res) => {

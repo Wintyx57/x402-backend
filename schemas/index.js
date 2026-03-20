@@ -275,6 +275,25 @@ const OpenAPIImportSchema = z.object({
   baseUrl: z.string().url().max(500).optional(),
 });
 
+// ─── Payment Link Schema ──────────────────────────────────────────────
+/**
+ * Schema for POST /api/payment-links
+ * Validates creation of a shareable paywall link
+ */
+const PaymentLinkSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(200),
+  description: z.string().trim().max(1000).optional().default(''),
+  targetUrl: z.string().url('Must be a valid HTTP(S) URL').max(2000),
+  priceUsdc: z.number().min(0.001, 'Price must be at least 0.001 USDC').max(10000, 'Price must be at most 10000 USDC'),
+  ownerAddress: z.string().regex(
+    /^0x[a-fA-F0-9]{40}$/,
+    'Owner address must be a valid Ethereum address (0x followed by 40 hex characters)'
+  ),
+  signature: z.string().min(1, 'Signature is required'),
+  timestamp: z.number().int().positive(),
+  redirectAfterPayment: z.boolean().optional().default(true),
+});
+
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
@@ -288,4 +307,5 @@ module.exports = {
   ServiceUpdateSchema,
   BatchRegisterSchema,
   OpenAPIImportSchema,
+  PaymentLinkSchema,
 };
