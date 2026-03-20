@@ -1671,6 +1671,101 @@ server.tool(
     }
 );
 
+// --- Tool: import_openapi (FREE) ---
+server.tool(
+    'import_openapi',
+    'Import all endpoints from an OpenAPI spec URL into x402 Bazaar. Each endpoint becomes a paid API service. Free — no payment needed. Provider keeps 95% of revenue.',
+    {
+        spec_url: z.string().url().describe('URL to the OpenAPI spec (JSON or YAML). Must be publicly accessible.'),
+        default_price: z.number().min(0.001).max(1000).describe('Default price per call in USDC for all imported endpoints'),
+        exclude_paths: z.array(z.string()).optional().describe('Optional: paths to exclude from import (e.g. ["/health", "/status"])'),
+    },
+    async ({ spec_url, default_price, exclude_paths }) => {
+        if (!account) {
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        error: 'No wallet configured. Run setup_wallet first.',
+                    }),
+                }],
+            };
+        }
+
+        try {
+            const timestamp = Date.now();
+            const message = `import-openapi:${account.address}:${timestamp}`;
+            const signature = await account.signMessage({ message });
+
+            const payload = {
+                specUrl: spec_url,
+                ownerAddress: account.address,
+                defaultPrice: default_price,
+                signature,
+                timestamp,
+            };
+            if (exclude_paths && exclude_paths.length > 0) {
+                payload.excludePaths = exclude_paths;
+            }
+
+            const res = await fetch(`${SERVER_URL}/api/import-openapi`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: AbortSignal.timeout(60000), // 60s timeout for large specs
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                return {
+                    content: [{
+                        type: 'text',
+                        text: JSON.stringify({
+                            error: data.error || 'Import failed',
+                            message: data.message || '',
+                            details: data.details || data.skipped_details || [],
+                            status: res.status,
+                        }, null, 2),
+                    }],
+                };
+            }
+
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        success: true,
+                        spec_title: data.spec_title,
+                        total_found: data.total_found,
+                        imported: data.imported,
+                        skipped: data.skipped,
+                        skipped_details: data.skipped_details,
+                        services: (data.services || []).map(s => ({
+                            id: s.id,
+                            name: s.name,
+                            url: s.url,
+                            price_usdc: s.price_usdc,
+                            service_page: `https://x402bazaar.org/services/${s.id}`,
+                        })),
+                        message: `Successfully imported ${data.imported} endpoints from "${data.spec_title}". Each is now a paid API on x402 Bazaar.`,
+                    }, null, 2),
+                }],
+            };
+        } catch (err) {
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        error: 'Import failed',
+                        message: err.message,
+                    }),
+                }],
+            };
+        }
+    }
+);
+
 // --- Tool: get_budget_status (FREE) ---
 server.tool(
     'get_budget_status',

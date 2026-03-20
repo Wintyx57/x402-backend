@@ -255,6 +255,26 @@ const BatchRegisterSchema = z.object({
   timestamp: z.number(),
 });
 
+// ─── OpenAPI Import Schema ────────────────────────────────────────────
+/**
+ * Schema for POST /api/import-openapi
+ * Validates bulk service import from an OpenAPI/Swagger specification
+ */
+const OpenAPIImportSchema = z.object({
+  specUrl: z.string().url().max(2000).optional(),
+  ownerAddress: z.string().regex(
+    /^0x[a-fA-F0-9]{40}$/,
+    'Owner address must be a valid Ethereum address'
+  ),
+  defaultPrice: z.number().min(0.001, 'Price must be at least 0.001 USDC').max(1000, 'Price must be at most 1000 USDC'),
+  signature: z.string(),
+  timestamp: z.number(),
+  priceOverrides: z.record(z.string(), z.number().min(0.001).max(1000)).optional(),
+  excludePaths: z.array(z.string()).max(100).optional(),
+  defaultTags: z.array(z.string().max(50)).max(10).optional(),
+  baseUrl: z.string().url().max(500).optional(),
+});
+
 // ─── Export all schemas ──────────────────────────────────────────────
 module.exports = {
   ServiceRegistrationSchema,
@@ -267,4 +287,5 @@ module.exports = {
   CodeExecutionSchema,
   ServiceUpdateSchema,
   BatchRegisterSchema,
+  OpenAPIImportSchema,
 };
