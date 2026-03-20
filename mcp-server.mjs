@@ -1766,6 +1766,159 @@ server.tool(
     }
 );
 
+// --- Tool: create_payment_link (FREE) ---
+server.tool(
+    'create_payment_link',
+    'Create a shareable payment link (paywall) for any URL. When someone visits the link, they must pay USDC to access the content. Free to create — you earn 95% of each payment.',
+    {
+        title: z.string().min(1).max(200).describe('Title shown on the paywall page'),
+        target_url: z.string().url().describe('The URL to protect behind the paywall (PDF, article, API, etc.)'),
+        price_usdc: z.number().min(0.001).max(10000).describe('Price in USDC to access the content'),
+        description: z.string().max(1000).optional().describe('Optional description shown on the paywall'),
+    },
+    async ({ title, target_url, price_usdc, description }) => {
+        if (!account) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No wallet configured. Run setup_wallet first.' }) }] };
+        }
+        try {
+            const timestamp = Date.now();
+            const message = `create-payment-link:${account.address}:${timestamp}`;
+            const signature = await account.signMessage({ message });
+
+            const res = await fetch(`${SERVER_URL}/api/payment-links`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title,
+                    targetUrl: target_url,
+                    priceUsdc: price_usdc,
+                    description: description || '',
+                    ownerAddress: account.address,
+                    signature,
+                    timestamp,
+                }),
+                signal: AbortSignal.timeout(15000),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: data.error || 'Creation failed', details: data.details || data.message }) }] };
+            }
+
+            const link = data.payment_link;
+            return {
+                content: [{
+                    type: 'text',
+                    text: JSON.stringify({
+                        success: true,
+                        id: link.id,
+                        title: link.title,
+                        price_usdc: link.price_usdc,
+                        paywall_url: link.paywall_url,
+                        message: `Payment link created! Share this URL: ${link.paywall_url} — anyone who pays ${price_usdc} USDC gets access to the content.`,
+                    }, null, 2),
+                }],
+            };
+        } catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'Creation failed', message: err.message }) }] };
+        }
+    }
+);
+
+// --- Tool: access_payment_link (PAID — requires USDC payment) ---
+server.tool(
+    'access_payment_link',
+    'Pay and access a payment link (paywall). Sends USDC on-chain to the link creator, then retrieves the protected content URL. Costs the price set by the creator.',
+    {
+        link_id: z.string().uuid().describe('The payment link ID (UUID from the paywall URL)'),
+        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Chain for payment. Default: auto (picks cheapest)'),
+    },
+    async ({ link_id, chain }) => {
+        if (!account) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'No wallet configured. Run setup_wallet first.' }) }] };
+        }
+        try {
+            // 1. Get link info (returns 402 with payment requirements)
+            const infoRes = await fetch(`${SERVER_URL}/api/payment-links/${link_id}`, {
+                signal: AbortSignal.timeout(10000),
+            });
+            const infoData = await infoRes.json();
+
+            if (infoRes.status !== 402) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: infoData.error || 'Link not found or inactive' }) }] };
+            }
+
+            const price = parseFloat(infoData.price_usdc);
+            const ownerWallet = infoData.owner_address;
+
+            // Budget check
+            if (sessionSpending + price > MAX_BUDGET) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: `Budget exceeded. Cost: ${price} USDC, remaining: ${(MAX_BUDGET - sessionSpending).toFixed(4)} USDC` }) }] };
+            }
+
+            // 2. Select chain
+            const chainKey = (!chain || chain === 'auto') ? (await selectBestChain(price)).chain : chain;
+            if (!chainKey) {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: 'Insufficient USDC balance on all chains', balances: { base: balanceCache.base, skale: balanceCache.skale, polygon: balanceCache.polygon } }) }] };
+            }
+            const cfg = CHAINS[chainKey];
+            const { wallet: walletClient, public: publicClient } = getClients(chainKey);
+
+            // 3. Send USDC to the link creator
+            const rawAmount = usdcToRaw(price, chainKey);
+            const txHash = await walletClient.writeContract({
+                address: cfg.usdc,
+                abi: USDC_ABI,
+                functionName: 'transfer',
+                args: [ownerWallet, rawAmount],
+                ...(chainKey === 'skale' ? { type: 'legacy' } : {}),
+            });
+
+            // 4. Wait for confirmation
+            await publicClient.waitForTransactionReceipt({ hash: txHash, confirmations: 2, timeout: 30000 });
+
+            // 5. Access the link with payment proof
+            const accessRes = await fetch(`${SERVER_URL}/api/payment-links/${link_id}/access`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Payment-TxHash': txHash,
+                    'X-Payment-Chain': cfg.paymentHeader,
+                    'X-Agent-Wallet': account.address,
+                },
+                signal: AbortSignal.timeout(15000),
+            });
+
+            const accessData = await accessRes.json();
+
+            // Track spending
+            sessionSpending += price;
+            sessionPayments.push({ service: `paylink:${link_id}`, cost: price, chain: chainKey, txHash, timestamp: Date.now() });
+
+            if (accessData.success && accessData.target_url) {
+                return {
+                    content: [{
+                        type: 'text',
+                        text: JSON.stringify({
+                            success: true,
+                            title: accessData.title || infoData.title,
+                            target_url: accessData.target_url,
+                            price_paid: price,
+                            chain: chainKey,
+                            tx_hash: txHash,
+                            message: `Content unlocked! Access it at: ${accessData.target_url}`,
+                        }, null, 2),
+                    }],
+                };
+            } else {
+                return { content: [{ type: 'text', text: JSON.stringify({ error: 'Payment verified but access denied', details: accessData }) }] };
+            }
+        } catch (err) {
+            return { content: [{ type: 'text', text: JSON.stringify({ error: 'Access failed', message: err.message }) }] };
+        }
+    }
+);
+
 // --- Tool: get_budget_status (FREE) ---
 server.tool(
     'get_budget_status',
