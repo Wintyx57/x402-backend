@@ -138,6 +138,158 @@ function createProviderRouter(supabase, logActivity, rateLimiter) {
     });
 
     // ──────────────────────────────────────────────────────────────────────
+    // GET /api/provider/:address/analytics
+    // Public — no auth required (revenue data is already on-chain).
+    // Combined endpoint: services + revenue + daily chart + recent earnings + payouts.
+    // ──────────────────────────────────────────────────────────────────────
+    router.get('/api/provider/:address/analytics', async (req, res) => {
+        const { address } = req.params;
+
+        if (!WALLET_REGEX.test(address)) {
+            return res.status(400).json({ error: 'Invalid wallet address format' });
+        }
+
+        try {
+            // Parallel queries for speed
+            const [servicesResult, payoutsResult] = await Promise.all([
+                supabase
+                    .from('services')
+                    .select(SERVICE_COLUMNS)
+                    .ilike('owner_address', address)
+                    .neq('status', 'pending_validation')
+                    .order('created_at', { ascending: false }),
+                supabase
+                    .from('pending_payouts')
+                    .select('id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at')
+                    .ilike('provider_wallet', address)
+                    .order('created_at', { ascending: false })
+                    .limit(10000),
+            ]);
+
+            if (servicesResult.error) {
+                logger.error('Provider', `analytics services error: ${servicesResult.error.message}`);
+                return res.status(500).json({ error: 'Failed to fetch services' });
+            }
+            if (payoutsResult.error) {
+                logger.error('Provider', `analytics payouts error: ${payoutsResult.error.message}`);
+                return res.status(500).json({ error: 'Failed to fetch payouts' });
+            }
+
+            const services = servicesResult.data || [];
+            const payouts = payoutsResult.data || [];
+
+            // --- Aggregate revenue ---
+            let total_earned = 0;
+            const byServiceMap = {};
+            const by_chain = {};
+            const dailyMap = {};
+
+            for (const row of payouts) {
+                const amount = Number(row.provider_amount) || 0;
+                total_earned += amount;
+
+                // By service
+                const sid = row.service_id;
+                if (!byServiceMap[sid]) {
+                    byServiceMap[sid] = { service_id: sid, service_name: row.service_name || sid, earned: 0, calls: 0 };
+                }
+                byServiceMap[sid].earned += amount;
+                byServiceMap[sid].calls += 1;
+
+                // By chain
+                const chain = row.chain || 'base';
+                by_chain[chain] = (by_chain[chain] || 0) + amount;
+
+                // Daily (last 30 days)
+                const date = row.created_at?.slice(0, 10);
+                if (date) {
+                    if (!dailyMap[date]) dailyMap[date] = { date, amount: 0, count: 0 };
+                    dailyMap[date].amount += amount;
+                    dailyMap[date].count += 1;
+                }
+            }
+
+            // Round float drift
+            total_earned = Math.round(total_earned * 1e6) / 1e6;
+            for (const chain of Object.keys(by_chain)) {
+                by_chain[chain] = Math.round(by_chain[chain] * 1e6) / 1e6;
+            }
+
+            // Build daily_revenue (last 30 days, fill gaps with zeros)
+            const daily_revenue = [];
+            const now = new Date();
+            for (let i = 29; i >= 0; i--) {
+                const d = new Date(now);
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toISOString().slice(0, 10);
+                const entry = dailyMap[dateStr];
+                daily_revenue.push({
+                    date: dateStr,
+                    amount: entry ? Math.round(entry.amount * 1e6) / 1e6 : 0,
+                    count: entry ? entry.count : 0,
+                });
+            }
+
+            // By service with service metadata (status, uptime, price)
+            const serviceMap = new Map(services.map(s => [s.id, s]));
+            const by_service = Object.values(byServiceMap).map(s => {
+                const svc = serviceMap.get(s.service_id);
+                return {
+                    ...s,
+                    earned: Math.round(s.earned * 1e6) / 1e6,
+                    price_usdc: svc?.price_usdc,
+                    status: svc?.status || 'unknown',
+                    trust_score: svc?.trust_score,
+                };
+            }).sort((a, b) => b.earned - a.earned);
+
+            // Recent earnings (last 20 paid calls)
+            const recent_earnings = payouts.slice(0, 20).map(p => ({
+                service_name: p.service_name,
+                amount: Number(p.provider_amount),
+                chain: p.chain || 'base',
+                created_at: p.created_at,
+            }));
+
+            // Payouts summary
+            let pending_total = 0;
+            let paid_total = 0;
+            let pending_count = 0;
+            let paid_count = 0;
+            for (const p of payouts) {
+                const amt = Number(p.provider_amount) || 0;
+                if (p.status === 'pending') { pending_total += amt; pending_count++; }
+                if (p.status === 'paid') { paid_total += amt; paid_count++; }
+            }
+
+            // Avg uptime from services
+            const uptimes = services.filter(s => s.trust_score != null).map(s => Number(s.trust_score));
+            const avg_uptime = uptimes.length > 0 ? Math.round(uptimes.reduce((a, b) => a + b, 0) / uptimes.length * 10) / 10 : null;
+
+            return res.json({
+                total_earned,
+                total_calls: payouts.length,
+                active_services: services.length,
+                avg_uptime,
+                by_service,
+                by_chain,
+                daily_revenue,
+                recent_earnings,
+                payouts_summary: {
+                    pending_total: Math.round(pending_total * 1e6) / 1e6,
+                    paid_total: Math.round(paid_total * 1e6) / 1e6,
+                    pending_count,
+                    paid_count,
+                },
+                services,
+            });
+        } catch (err) {
+            logger.error('Provider', `GET /api/provider/:address/analytics unexpected: ${err.message}`);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    });
+
+    // ──────────────────────────────────────────────────────────────────────
     // PATCH /api/services/:id
     // Requires wallet signature. Wallet must own the service.
     // Only allows updating: name, description, price_usdc, tags, required_parameters.
