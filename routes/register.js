@@ -5,7 +5,8 @@ const multer = require('multer');
 const { recoverMessageAddress } = require('viem');
 const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
-const { ServiceRegistrationSchema, QuickRegisterSchema, BatchRegisterSchema, OpenAPIImportSchema } = require('../schemas');
+const { ServiceRegistrationSchema, QuickRegisterSchema, BatchRegisterSchema, OpenAPIImportSchema, ServiceCredentialsSchema } = require('../schemas');
+const { encryptCredentials } = require('../lib/credentials');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
@@ -97,6 +98,43 @@ async function checkDuplicateUrl(supabase, url) {
         return data[0];
     }
     return null;
+}
+
+/**
+ * Validate, encrypt and store credentials for a registered service.
+ * Called fire-and-forget after insert — credentials are stored in a
+ * separate UPDATE so they never leak through the initial INSERT response.
+ *
+ * @param {object} supabase
+ * @param {string} serviceId
+ * @param {object|undefined} rawCredentials - untrusted input from req.body
+ * @returns {Promise<void>}
+ */
+async function attachCredentials(supabase, serviceId, rawCredentials) {
+    if (!rawCredentials) return;
+
+    // Validate credentials structure with Zod
+    const result = ServiceCredentialsSchema.safeParse(rawCredentials);
+    if (!result.success) {
+        logger.warn('Credentials', `Invalid credentials for service ${serviceId.slice(0, 8)}: ${result.error.message}`);
+        return;
+    }
+
+    const encrypted = encryptCredentials(result.data);
+
+    const { error } = await supabase
+        .from('services')
+        .update({
+            encrypted_credentials: encrypted,
+            credential_type: result.data.type,
+        })
+        .eq('id', serviceId);
+
+    if (error) {
+        logger.error('Credentials', `Failed to store credentials for service ${serviceId.slice(0, 8)}: ${error.message}`);
+    } else {
+        logger.info('Credentials', `Credentials (type: ${result.data.type}) stored for service ${serviceId.slice(0, 8)}`);
+    }
 }
 
 function createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter) {
@@ -213,6 +251,11 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         logger.info('Bazaar', `Quick registered: "${derivedName}" (${service.id})`);
         logActivity('register', `Quick: "${derivedName}" (${service.id.slice(0, 8)})`);
 
+        // Store credentials separately (fire-and-forget — never in initial INSERT response)
+        attachCredentials(supabase, service.id, req.body.credentials).catch(err => {
+            logger.error('Credentials', `attachCredentials failed for "${derivedName}": ${err.message}`);
+        });
+
         // Auto-test (fire-and-forget)
         autoTestService(service, supabase).catch(err => {
             logger.error('AutoTest', `Auto-test failed for "${derivedName}": ${err.message}`);
@@ -300,6 +343,11 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
         logger.info('Bazaar', `New service registered: "${validatedData.name}" (${data[0].id})`);
         logActivity('register', `New service: "${validatedData.name}" (${data[0].id.slice(0, 8)})`);
+
+        // Store credentials separately (fire-and-forget — never in initial INSERT response)
+        attachCredentials(supabase, data[0].id, req.body.credentials).catch(err => {
+            logger.error('Credentials', `attachCredentials failed for "${validatedData.name}": ${err.message}`);
+        });
 
         // Auto-test: ping the registered URL (fire-and-forget)
         autoTestService(data[0], supabase).catch(err => {
@@ -420,6 +468,18 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
         logger.info('Bazaar', `Batch registered ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);
         logActivity('batch_register', `${data.length} services by ${validatedData.ownerAddress.slice(0, 8)}`);
+
+        // Store credentials per service (fire-and-forget)
+        // Match inserted rows back to input services by URL
+        const inputServicesByUrl = new Map(validatedData.services.map(s => [s.url, s]));
+        for (const svc of data) {
+            const input = inputServicesByUrl.get(svc.url);
+            if (input && input.credentials) {
+                attachCredentials(supabase, svc.id, input.credentials).catch(err => {
+                    logger.error('Credentials', `attachCredentials batch failed for "${svc.name}": ${err.message}`);
+                });
+            }
+        }
 
         // Auto-test in batches of 5 (fire-and-forget)
         const BATCH_SIZE = 5;
@@ -638,6 +698,16 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
             logger.info('Bazaar', `OpenAPI import: ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);
             logActivity('openapi_import', `${data.length} services from "${spec.info?.title || 'spec'}" by ${validatedData.ownerAddress.slice(0, 8)}`);
+
+            // Store shared credentials for all imported services (concurrent, fire-and-forget)
+            const importCredentials = req.body.credentials || null;
+            if (importCredentials) {
+                Promise.allSettled(data.map(svc =>
+                    attachCredentials(supabase, svc.id, importCredentials)
+                )).catch(err => {
+                    logger.error('Credentials', `attachCredentials import batch failed: ${err.message}`);
+                });
+            }
 
             // Auto-test in batches of 5 (fire-and-forget)
             const BATCH_SIZE = 5;

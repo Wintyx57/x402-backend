@@ -75,3 +75,8 @@ services:
       # Remove from Render once confirmed that AGENT_PRIVATE_KEY works for distribute()
       - key: FEE_SPLITTER_OPERATOR_KEY
         sync: false
+      # --- Encrypted credential passthrough (AES-256-GCM key, 32 bytes hex = 64 chars) ---
+      # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      # WARNING: rotating this key invalidates all stored provider credentials.
+      - key: CREDENTIALS_ENCRYPTION_KEY
+        sync: false

@@ -15,7 +15,11 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
     const router = express.Router();
 
     // Colonnes explicites pour éviter SELECT * (performance + surface d'exposition réduite)
-    const BASE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at, erc8004_agent_id, erc8004_registered_at';
+    // NOTE: encrypted_credentials is fetched here but STRIPPED by sanitizeService() before
+    //       any response leaves this module — it must NEVER be sent to clients.
+    //       credential_type is safe to expose (just says "bearer", "header", etc.)
+    //       has_credentials is derived server-side from !!encrypted_credentials.
+    const BASE_COLUMNS = 'id, name, url, price_usdc, description, owner_address, tags, verified_status, verified_at, created_at, required_parameters, status, last_checked_at, trust_score, trust_score_updated_at, erc8004_agent_id, erc8004_registered_at, credential_type, encrypted_credentials';
     let SERVICE_COLUMNS = BASE_COLUMNS;
 
     // Detect logo_url column availability (migration 016 may not have run yet)
@@ -26,14 +30,26 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         }
     }).catch(() => {});
 
+    /**
+     * Strip encrypted_credentials from a service object and replace with
+     * a safe boolean `has_credentials`. This MUST be called before any
+     * service data leaves this module.
+     */
+    function sanitizeService(s) {
+        if (!s) return s;
+        const { encrypted_credentials, ...rest } = s;
+        return { ...rest, has_credentials: !!encrypted_credentials };
+    }
+
     // Enrich services with required_parameters from discoveryMap when not set in DB
     function enrichWithParams(services) {
         if (!Array.isArray(services)) return services;
         return services.map(s => {
-            if (s.required_parameters) return s;
+            const sanitized = sanitizeService(s);
+            if (sanitized.required_parameters) return sanitized;
             const schema = getInputSchemaForUrl(s.url);
-            if (schema) return { ...s, required_parameters: schema };
-            return s;
+            if (schema) return { ...sanitized, required_parameters: schema };
+            return sanitized;
         });
     }
 
@@ -255,15 +271,14 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
                 return res.status(404).json({ error: 'Service not found' });
             }
 
+            // Strip encrypted_credentials and add has_credentials flag
+            const sanitized = sanitizeService(data);
             // Enrich with inputSchema from discoveryMap for internal wrappers
-            const enriched = { ...data };
-            if (!enriched.required_parameters) {
+            if (!sanitized.required_parameters) {
                 const schema = getInputSchemaForUrl(data.url);
-                if (schema) {
-                    enriched.required_parameters = schema;
-                }
+                if (schema) sanitized.required_parameters = schema;
             }
-            res.json(enriched);
+            res.json(sanitized);
         } catch (err) {
             logger.error('Supabase', `/api/services/:id error: ${err.message}`);
             res.status(500).json({ error: 'Internal server error' });

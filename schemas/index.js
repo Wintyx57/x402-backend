@@ -275,6 +275,27 @@ const OpenAPIImportSchema = z.object({
   baseUrl: z.string().url().max(500).optional(),
 });
 
+// ─── Service Credentials Schemas ─────────────────────────────────────
+/**
+ * Schema for a single credential item.
+ * location overrides creds.type when injecting (e.g. a bearer auth that also
+ * needs a custom header alongside it).
+ */
+const CredentialItemSchema = z.object({
+  key: z.string().max(200),
+  value: z.string().max(5000),
+  location: z.enum(['header', 'bearer', 'basic', 'query']).optional(),
+});
+
+/**
+ * Schema for the credentials block accepted at registration time.
+ * Encrypted at rest — never returned in API responses.
+ */
+const ServiceCredentialsSchema = z.object({
+  type: z.enum(['header', 'bearer', 'basic', 'query']),
+  credentials: z.array(CredentialItemSchema).min(1).max(10),
+});
+
 // ─── Payment Link Schema ──────────────────────────────────────────────
 /**
  * Schema for POST /api/payment-links
@@ -308,4 +329,6 @@ module.exports = {
   BatchRegisterSchema,
   OpenAPIImportSchema,
   PaymentLinkSchema,
+  CredentialItemSchema,
+  ServiceCredentialsSchema,
 };

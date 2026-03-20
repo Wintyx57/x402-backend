@@ -9,6 +9,7 @@ const { getInputSchemaForUrl, getMethodForUrl } = require('../lib/bazaar-discove
 const { DEFAULT_CHAIN_KEY, getChainConfig } = require('../lib/chains');
 const { getExpectedFieldsForUrl, validateResponseSchema, scoreContentQuality, buildValidationMeta } = require('../lib/response-validator');
 const feeSplitter = require('../lib/fee-splitter');
+const { decryptCredentials, injectCredentials } = require('../lib/credentials');
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -45,7 +46,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
         // 2. Fetch service from DB
         const { data: service, error: fetchErr } = await supabase
             .from('services')
-            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters')
+            .select('id, name, url, price_usdc, owner_address, tags, description, required_parameters, encrypted_credentials')
             .eq('id', serviceId)
             .single();
 
@@ -667,6 +668,17 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                     proxyHeaders['X-Internal-Proxy'] = createInternalBypassToken();
                 }
             } catch { /* invalid URL — safeUrl already checked */ }
+
+            // Inject provider credentials (header, bearer, basic, or query param)
+            if (service.encrypted_credentials) {
+                const decrypted = decryptCredentials(service.encrypted_credentials);
+                if (decrypted) {
+                    // injectCredentials mutates proxyHeaders in-place; only the URL may change
+                    targetUrl = injectCredentials(proxyHeaders, targetUrl, decrypted).url;
+                } else {
+                    logger.warn('Proxy', `Failed to decrypt credentials for service "${service.name}" (${service.id.slice(0, 8)}) — proceeding without auth`);
+                }
+            }
 
             const proxyRes = await fetch(targetUrl, {
                 method: upstreamMethod,
