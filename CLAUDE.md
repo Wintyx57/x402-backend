@@ -332,7 +332,8 @@ HACKATHON/
    - Dashboard protege par ADMIN_TOKEN (X-Admin-Token header)
    - timingSafeCompare avec pad-to-maxLen (previent timing leak sur longueur)
    - X-Agent-Wallet validation regex `/^0x[a-fA-F0-9]{40}$/`
-   - SSRF centralise dans `lib/safe-url.js` (utilise par ai.js, intelligence.js, web.js, service-verifier.js)
+   - SSRF centralise dans `lib/safe-url.js` (utilise par ai.js, intelligence.js, web.js, service-verifier.js, credentialValidator.js)
+   - Credential validation at registration: `lib/credentialValidator.js` — pre-ping upstream with provider credentials (HEAD, fallback GET on 405, redirect:manual, 10s timeout). 401/403 blocks registration. 5xx/timeout accepts with warning. SSRF check on post-injection URL. Race condition mitigated via `status: 'pending_validation'` (filtered from public queries in services.js + smart-search.js). 23 tests.
    - Parameter Gatekeeper : validation des params requis AVANT paiement (400 + `_payment_status: not_charged`)
    - 3-level required_parameters : (1) internal wrappers via `_inputSchemaMap` (62 endpoints), (2) external provider-submitted via Register, (3) auto-detected from 402 body via `extractInputSchema()`
    - Auto-Faucet CREDITS SERVER-SIDE : `POST /api/faucet/claim` dans routes/health.js (rate limit 3/hr/IP). MCP appelle le backend via HTTP — plus besoin de `FAUCET_PRIVATE_KEY` en local. Faucet wallet `0x73FE2Cb37A60Eda8d7F0d73326B9f3770fDCA30a`. SKALE recommande dans tous les outils MCP payes.
