@@ -62,6 +62,7 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         const { data, count, error } = await supabase
             .from('services')
             .select(SERVICE_COLUMNS, { count: 'exact' })
+            .neq('status', 'pending_validation')
             .order('created_at', { ascending: true })
             .range(offset, offset + limit - 1);
 
@@ -141,7 +142,8 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
 
         let query = supabase
             .from('services')
-            .select(SERVICE_COLUMNS, { count: 'exact' });
+            .select(SERVICE_COLUMNS, { count: 'exact' })
+            .neq('status', 'pending_validation');
 
         if (rawSearch) {
             const safe = sanitize(rawSearch);

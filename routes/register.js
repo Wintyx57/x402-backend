@@ -7,6 +7,7 @@ const logger = require('../lib/logger');
 const { notifyAdmin } = require('../lib/telegram-bot');
 const { ServiceRegistrationSchema, QuickRegisterSchema, BatchRegisterSchema, OpenAPIImportSchema, ServiceCredentialsSchema } = require('../schemas');
 const { encryptCredentials } = require('../lib/credentials');
+const { validateCredentials } = require('../lib/credentialValidator');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
@@ -101,24 +102,67 @@ async function checkDuplicateUrl(supabase, url) {
 }
 
 /**
- * Validate, encrypt and store credentials for a registered service.
- * Called fire-and-forget after insert — credentials are stored in a
- * separate UPDATE so they never leak through the initial INSERT response.
+ * Validate credentials against the upstream service, then encrypt and store.
+ * No longer fire-and-forget — callers must await and handle validation failures.
  *
  * @param {object} supabase
  * @param {string} serviceId
+ * @param {string} serviceUrl - the upstream URL to validate against
  * @param {object|undefined} rawCredentials - untrusted input from req.body
- * @returns {Promise<void>}
+ * @returns {Promise<{ attached: boolean, validation?: { status: string, message?: string }, error?: string }>}
  */
-async function attachCredentials(supabase, serviceId, rawCredentials) {
-    if (!rawCredentials) return;
+async function attachCredentials(supabase, serviceId, serviceUrl, rawCredentials) {
+    if (!rawCredentials) return { attached: false };
 
     // Validate credentials structure with Zod
     const result = ServiceCredentialsSchema.safeParse(rawCredentials);
     if (!result.success) {
-        logger.warn('Credentials', `Invalid credentials for service ${serviceId.slice(0, 8)}: ${result.error.message}`);
-        return;
+        const msg = (result.error?.issues || result.error?.errors || []).map(e => e.message).join(', ');
+        logger.warn('Credentials', `Invalid credentials for service ${serviceId.slice(0, 8)}: ${msg}`);
+        return { attached: false, error: `Invalid credentials format: ${msg}`, validation: { status: 'invalid', message: `Invalid credentials format: ${msg}` } };
     }
+
+    // Pre-validate credentials against the upstream service
+    const validation = await validateCredentials(serviceUrl, result.data);
+
+    if (!validation.valid) {
+        logger.warn('Credentials', `Credential validation failed for service ${serviceId.slice(0, 8)}: ${validation.error}`);
+        return { attached: false, error: validation.error, validation: { status: 'invalid', message: validation.error } };
+    }
+
+    // Credentials accepted (possibly with a warning) — encrypt and store
+    const encrypted = encryptCredentials(result.data);
+
+    const { error } = await supabase
+        .from('services')
+        .update({
+            encrypted_credentials: encrypted,
+            credential_type: result.data.type,
+        })
+        .eq('id', serviceId);
+
+    if (error) {
+        logger.error('Credentials', `Failed to store credentials for service ${serviceId.slice(0, 8)}: ${error.message}`);
+        return { attached: false, error: 'Failed to store credentials' };
+    }
+
+    logger.info('Credentials', `Credentials (type: ${result.data.type}) stored for service ${serviceId.slice(0, 8)}`);
+
+    if (validation.warning) {
+        return { attached: true, validation: { status: 'warning', message: validation.warning } };
+    }
+    return { attached: true, validation: { status: 'valid' } };
+}
+
+/**
+ * Store already-validated credentials for a service (skip upstream validation).
+ * Used for batch/import flows where validation was already done once.
+ */
+async function storeCredentialsOnly(supabase, serviceId, rawCredentials) {
+    if (!rawCredentials) return;
+
+    const result = ServiceCredentialsSchema.safeParse(rawCredentials);
+    if (!result.success) return;
 
     const encrypted = encryptCredentials(result.data);
 
@@ -132,8 +176,6 @@ async function attachCredentials(supabase, serviceId, rawCredentials) {
 
     if (error) {
         logger.error('Credentials', `Failed to store credentials for service ${serviceId.slice(0, 8)}: ${error.message}`);
-    } else {
-        logger.info('Credentials', `Credentials (type: ${result.data.type}) stored for service ${serviceId.slice(0, 8)}`);
     }
 }
 
@@ -234,6 +276,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             quick_registered: true,
         };
         if (validatedData.logo_url) insertData.logo_url = validatedData.logo_url;
+        // If credentials are provided, mark as pending_validation to hide from public queries
+        // during the validation window (prevents race condition)
+        if (req.body.credentials) insertData.status = 'pending_validation';
 
         const { data, error } = await supabase
             .from('services')
@@ -251,10 +296,23 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         logger.info('Bazaar', `Quick registered: "${derivedName}" (${service.id})`);
         logActivity('register', `Quick: "${derivedName}" (${service.id.slice(0, 8)})`);
 
-        // Store credentials separately (fire-and-forget — never in initial INSERT response)
-        attachCredentials(supabase, service.id, req.body.credentials).catch(err => {
-            logger.error('Credentials', `attachCredentials failed for "${derivedName}": ${err.message}`);
-        });
+        // Validate and store credentials (blocking — reject if upstream returns 401/403)
+        let credentialValidation;
+        if (req.body.credentials) {
+            const credResult = await attachCredentials(supabase, service.id, validatedData.url, req.body.credentials);
+            if (credResult.error && credResult.validation?.status === 'invalid') {
+                // Credentials rejected — delete the service and return error
+                await supabase.from('services').delete().eq('id', service.id);
+                logger.warn('QuickRegister', `Credential validation failed for "${derivedName}": ${credResult.error}`);
+                return res.status(400).json({
+                    error: 'Credential validation failed',
+                    message: credResult.error,
+                });
+            }
+            credentialValidation = credResult.validation;
+            // Validation passed — make service publicly visible
+            await supabase.from('services').update({ status: 'unknown' }).eq('id', service.id);
+        }
 
         // Auto-test (fire-and-forget)
         autoTestService(service, supabase).catch(err => {
@@ -264,7 +322,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         // Notify admin
         notifyAdmin(`⚡ *Quick Register*\n*Name:* ${derivedName}\n*URL:* \`${validatedData.url}\`\n*Price:* ${validatedData.price} USDC\n*Owner:* \`${validatedData.ownerAddress.slice(0, 10)}...\`\n*ID:* \`${service.id.slice(0, 8)}...\``).catch(() => {});
 
-        res.status(201).json({
+        const response = {
             success: true,
             message: `Service "${derivedName}" registered! No payment required.`,
             data: service,
@@ -275,7 +333,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 javascript: `const res = await fetch("${proxyUrl}", {\n  method: "POST",\n  headers: {\n    "Content-Type": "application/json",\n    "X-Payment-TxHash": txHash,\n    "X-Payment-Chain": "skale"\n  }\n});\nconst data = await res.json();`,
                 python: `import requests\n\nres = requests.post(\n    "${proxyUrl}",\n    headers={\n        "X-Payment-TxHash": tx_hash,\n        "X-Payment-Chain": "skale"\n    }\n)\nprint(res.json())`,
             },
-        });
+        };
+        if (credentialValidation) response.credential_validation = credentialValidation;
+        res.status(201).json(response);
     });
 
     router.post('/register', registerLimiter, paymentMiddleware(1000000, 1, "Register Service"), async (req, res) => {
@@ -330,6 +390,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             insertData.required_parameters = validatedData.required_parameters;
         }
         if (validatedData.logo_url) insertData.logo_url = validatedData.logo_url;
+        if (req.body.credentials) insertData.status = 'pending_validation';
 
         const { data, error } = await supabase
             .from('services')
@@ -344,10 +405,21 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         logger.info('Bazaar', `New service registered: "${validatedData.name}" (${data[0].id})`);
         logActivity('register', `New service: "${validatedData.name}" (${data[0].id.slice(0, 8)})`);
 
-        // Store credentials separately (fire-and-forget — never in initial INSERT response)
-        attachCredentials(supabase, data[0].id, req.body.credentials).catch(err => {
-            logger.error('Credentials', `attachCredentials failed for "${validatedData.name}": ${err.message}`);
-        });
+        // Validate and store credentials (blocking — reject if upstream returns 401/403)
+        let credentialValidation;
+        if (req.body.credentials) {
+            const credResult = await attachCredentials(supabase, data[0].id, validatedData.url, req.body.credentials);
+            if (credResult.error && credResult.validation?.status === 'invalid') {
+                await supabase.from('services').delete().eq('id', data[0].id);
+                logger.warn('Register', `Credential validation failed for "${validatedData.name}": ${credResult.error}`);
+                return res.status(400).json({
+                    error: 'Credential validation failed',
+                    message: credResult.error,
+                });
+            }
+            credentialValidation = credResult.validation;
+            await supabase.from('services').update({ status: 'unknown' }).eq('id', data[0].id);
+        }
 
         // Auto-test: ping the registered URL (fire-and-forget)
         autoTestService(data[0], supabase).catch(err => {
@@ -364,11 +436,13 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             logger.error('ERC8004', `On-chain registration failed for "${validatedData.name}": ${err.message}`);
         });
 
-        res.status(201).json({
+        const response = {
             success: true,
             message: `Service "${validatedData.name}" registered successfully!`,
-            data: data[0]
-        });
+            data: data[0],
+        };
+        if (credentialValidation) response.credential_validation = credentialValidation;
+        res.status(201).json(response);
     });
 
     router.post('/batch-register', registerLimiter, async (req, res) => {
@@ -469,30 +543,47 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
         logger.info('Bazaar', `Batch registered ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);
         logActivity('batch_register', `${data.length} services by ${validatedData.ownerAddress.slice(0, 8)}`);
 
-        // Store credentials per service (fire-and-forget)
-        // Match inserted rows back to input services by URL
+        // Validate and store credentials per service (blocking per service)
         const inputServicesByUrl = new Map(validatedData.services.map(s => [s.url, s]));
+        const credentialErrors = [];
+        const credentialWarnings = [];
+        const failedServiceIds = new Set();
         for (const svc of data) {
             const input = inputServicesByUrl.get(svc.url);
             if (input && input.credentials) {
-                attachCredentials(supabase, svc.id, input.credentials).catch(err => {
-                    logger.error('Credentials', `attachCredentials batch failed for "${svc.name}": ${err.message}`);
-                });
+                const credResult = await attachCredentials(supabase, svc.id, svc.url, input.credentials);
+                if (credResult.error && credResult.validation?.status === 'invalid') {
+                    // Delete this service and record the error
+                    await supabase.from('services').delete().eq('id', svc.id);
+                    failedServiceIds.add(svc.id);
+                    credentialErrors.push({ id: svc.id, name: svc.name, url: svc.url, error: credResult.error });
+                } else if (credResult.validation?.status === 'warning') {
+                    credentialWarnings.push({ name: svc.name, warning: credResult.validation.message });
+                }
             }
         }
 
-        // Auto-test in batches of 5 (fire-and-forget)
+        // Filter by ID (not URL) to avoid string-matching issues after DB round-trip
+        const successfulServices = data.filter(svc => !failedServiceIds.has(svc.id));
+        if (successfulServices.length === 0 && credentialErrors.length > 0) {
+            return res.status(400).json({
+                error: 'All services failed credential validation',
+                credential_errors: credentialErrors,
+            });
+        }
+
+        // Auto-test in batches of 5 (fire-and-forget) — only successful services
         const BATCH_SIZE = 5;
-        for (let i = 0; i < data.length; i += BATCH_SIZE) {
-            const batch = data.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < successfulServices.length; i += BATCH_SIZE) {
+            const batch = successfulServices.slice(i, i + BATCH_SIZE);
             Promise.all(batch.map(svc => autoTestService(svc, supabase))).catch(err => {
                 logger.error('AutoTest', `Batch auto-test error: ${err.message}`);
             });
         }
 
-        // ERC-8004 registration sequential (fire-and-forget)
+        // ERC-8004 registration sequential (fire-and-forget) — only successful services
         (async () => {
-            for (const svc of data) {
+            for (const svc of successfulServices) {
                 try {
                     await registerOnChain(svc, supabase);
                 } catch (err) {
@@ -507,11 +598,19 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             `📦 *Batch Register*\n*Owner:* \`${validatedData.ownerAddress.slice(0, 10)}...\`\n*Services (${data.length}):*\n${serviceList}`
         ).catch(() => {});
 
-        res.status(201).json({
+        const batchResponse = {
             success: true,
-            message: `${data.length} services registered successfully!`,
-            data,
-        });
+            message: `${successfulServices.length} services registered successfully!`,
+            data: successfulServices,
+        };
+        if (credentialErrors.length > 0) {
+            batchResponse.credential_errors = credentialErrors;
+            batchResponse.message = `${successfulServices.length}/${data.length} services registered (${credentialErrors.length} failed credential validation)`;
+        }
+        if (credentialWarnings.length > 0) {
+            batchResponse.credential_warnings = credentialWarnings;
+        }
+        res.status(201).json(batchResponse);
     });
 
     router.post('/api/import-openapi/preview', registerLimiter, optionalUpload, async (req, res) => {
@@ -699,14 +798,34 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             logger.info('Bazaar', `OpenAPI import: ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);
             logActivity('openapi_import', `${data.length} services from "${spec.info?.title || 'spec'}" by ${validatedData.ownerAddress.slice(0, 8)}`);
 
-            // Store shared credentials for all imported services (concurrent, fire-and-forget)
+            // Validate shared credentials ONCE against the first service URL, then store for all
+            let importCredentialValidation;
             const importCredentials = req.body.credentials || null;
-            if (importCredentials) {
-                Promise.allSettled(data.map(svc =>
-                    attachCredentials(supabase, svc.id, importCredentials)
-                )).catch(err => {
-                    logger.error('Credentials', `attachCredentials import batch failed: ${err.message}`);
-                });
+            if (importCredentials && data.length > 0) {
+                // Validate against the first imported endpoint
+                const testUrl = data[0].url;
+                const firstResult = await attachCredentials(supabase, data[0].id, testUrl, importCredentials);
+
+                if (firstResult.error && firstResult.validation?.status === 'invalid') {
+                    // Credentials rejected — delete ALL imported services
+                    const ids = data.map(s => s.id);
+                    await supabase.from('services').delete().in('id', ids);
+                    logger.warn('ImportOpenAPI', `Credential validation failed: ${firstResult.error}`);
+                    return res.status(400).json({
+                        error: 'Credential validation failed',
+                        message: firstResult.error,
+                        spec_title: spec.info?.title || 'Untitled',
+                    });
+                }
+
+                importCredentialValidation = firstResult.validation;
+
+                // Store credentials for remaining services (skip validation — already validated once)
+                if (data.length > 1) {
+                    await Promise.allSettled(data.slice(1).map(svc =>
+                        storeCredentialsOnly(supabase, svc.id, importCredentials)
+                    ));
+                }
             }
 
             // Auto-test in batches of 5 (fire-and-forget)
@@ -739,7 +858,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 `📦 *OpenAPI Import*\n*Spec:* ${spec.info?.title || 'Untitled'}\n*Owner:* \`${validatedData.ownerAddress.slice(0, 10)}...\`\n*Imported:* ${data.length}\n*Skipped:* ${skipped.length}`
             ).catch(() => {});
 
-            res.status(201).json({
+            const importResponse = {
                 success: true,
                 spec_title: spec.info?.title || 'Untitled',
                 total_found: endpoints.length,
@@ -747,7 +866,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 skipped: skipped.length,
                 skipped_details: skipped,
                 services: data,
-            });
+            };
+            if (importCredentialValidation) importResponse.credential_validation = importCredentialValidation;
+            res.status(201).json(importResponse);
         } catch (err) {
             logger.error('ImportOpenAPI', err.message);
             res.status(400).json({ error: 'Import failed', message: err.message });
