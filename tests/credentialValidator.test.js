@@ -424,3 +424,34 @@ describe('validateCredentials injects credentials correctly', () => {
         assert.ok(receivedUrl.includes('token=abc123'), `Expected token param in URL, got: ${receivedUrl}`);
     });
 });
+
+// ─── 402 Protocol Detection Tests ───────────────────────────────────────────
+
+describe('validateCredentials 402 protocol detection', () => {
+
+    afterEach(async () => {
+        await stopServer();
+    });
+
+    it('should detect 402 and return detectedProtocol', async () => {
+        await startServer((req, res) => {
+            res.writeHead(402, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                x402Version: 1,
+                accepts: [{ maxAmountRequired: '1000', payTo: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' }],
+            }));
+        });
+
+        const { validateCredentials } = require('../lib/credentialValidator');
+        const result = await validateCredentials(
+            `http://127.0.0.1:${testPort}/api/test`,
+            { type: 'bearer', credentials: [{ key: 'Authorization', value: 'test-token' }] },
+            { skipSsrf: true }
+        );
+        assert.equal(result.valid, true);
+        assert.ok(result.warning.includes('402'));
+        assert.equal(result.detectedProtocol, 'x402-v1');
+
+        await stopServer();
+    });
+});

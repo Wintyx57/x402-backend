@@ -149,9 +149,9 @@ async function attachCredentials(supabase, serviceId, serviceUrl, rawCredentials
     logger.info('Credentials', `Credentials (type: ${result.data.type}) stored for service ${serviceId.slice(0, 8)}`);
 
     if (validation.warning) {
-        return { attached: true, validation: { status: 'warning', message: validation.warning } };
+        return { attached: true, validation: { status: 'warning', message: validation.warning }, detectedProtocol: validation.detectedProtocol || null };
     }
-    return { attached: true, validation: { status: 'valid' } };
+    return { attached: true, validation: { status: 'valid' }, detectedProtocol: validation.detectedProtocol || null };
 }
 
 /**
@@ -311,7 +311,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             }
             credentialValidation = credResult.validation;
             // Validation passed — make service publicly visible
-            await supabase.from('services').update({ status: 'unknown' }).eq('id', service.id);
+            const updateData = { status: 'unknown' };
+            if (credResult?.detectedProtocol) updateData.payment_protocol = credResult.detectedProtocol;
+            await supabase.from('services').update(updateData).eq('id', service.id);
         }
 
         // Auto-test (fire-and-forget)
@@ -418,7 +420,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 });
             }
             credentialValidation = credResult.validation;
-            await supabase.from('services').update({ status: 'unknown' }).eq('id', data[0].id);
+            const updateData = { status: 'unknown' };
+            if (credResult?.detectedProtocol) updateData.payment_protocol = credResult.detectedProtocol;
+            await supabase.from('services').update(updateData).eq('id', data[0].id);
         }
 
         // Auto-test: ping the registered URL (fire-and-forget)
