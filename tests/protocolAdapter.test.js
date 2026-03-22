@@ -4,7 +4,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normalize402 } = require('../lib/protocolAdapter');
+const { normalize402, buildProofHeaders } = require('../lib/protocolAdapter');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -313,6 +313,90 @@ describe('normalize402', () => {
     assert.equal(result.format, 'x402-v2');
     assert.equal(result.amount, '999');
     assert.equal(result.recipient, '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF');
+  });
+
+});
+
+// ─── buildProofHeaders ──────────────────────────────────────────────────────
+
+describe('buildProofHeaders', () => {
+
+  const TX = '0xabc123def456';
+  const WALLET = '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+  it('17. x402-bazaar: returns X-Payment-TxHash, X-Payment-Chain, X-Agent-Wallet', () => {
+    const normalized = { format: 'x402-bazaar' };
+    const result = buildProofHeaders(normalized, TX, 'base', WALLET);
+    assert.equal(result.supported, true);
+    assert.equal(result.message, null);
+    assert.equal(result.headers['X-Payment-TxHash'], TX);
+    assert.equal(result.headers['X-Payment-Chain'], 'base');
+    assert.equal(result.headers['X-Agent-Wallet'], WALLET);
+  });
+
+  it('18. x402-v1: returns X-PAYMENT base64 JSON with x402Version:1 and payload.txHash', () => {
+    const normalized = { format: 'x402-v1', scheme: 'exact', chain: 'base' };
+    const result = buildProofHeaders(normalized, TX, 'base', WALLET);
+    assert.equal(result.supported, true);
+    assert.equal(result.message, null);
+    assert.ok(result.headers['X-PAYMENT']);
+    const decoded = JSON.parse(Buffer.from(result.headers['X-PAYMENT'], 'base64').toString('utf-8'));
+    assert.equal(decoded.x402Version, 1);
+    assert.equal(decoded.payload.txHash, TX);
+    assert.equal(decoded.scheme, 'exact');
+  });
+
+  it('19. x402-v2: returns PAYMENT-SIGNATURE header', () => {
+    const normalized = { format: 'x402-v2' };
+    const result = buildProofHeaders(normalized, TX, 'skale', WALLET);
+    assert.equal(result.supported, true);
+    assert.ok(result.headers['PAYMENT-SIGNATURE']);
+    const decoded = JSON.parse(Buffer.from(result.headers['PAYMENT-SIGNATURE'], 'base64').toString('utf-8'));
+    assert.equal(decoded.txHash, TX);
+    assert.equal(decoded.chain, 'skale');
+    assert.equal(decoded.payer, WALLET);
+  });
+
+  it('20. flat: same headers as x402-bazaar (fallback)', () => {
+    const normalized = { format: 'flat' };
+    const result = buildProofHeaders(normalized, TX, 'polygon', WALLET);
+    assert.equal(result.supported, true);
+    assert.equal(result.headers['X-Payment-TxHash'], TX);
+    assert.equal(result.headers['X-Payment-Chain'], 'polygon');
+    assert.equal(result.headers['X-Agent-Wallet'], WALLET);
+  });
+
+  it('21. mpp: supported=false, message includes "MPP"', () => {
+    const normalized = { format: 'mpp', mppMethod: 'usdc' };
+    const result = buildProofHeaders(normalized, TX, 'base', WALLET);
+    assert.equal(result.supported, false);
+    assert.equal(result.headers, null);
+    assert.ok(result.message.includes('MPP'));
+    assert.ok(result.message.includes('usdc'));
+  });
+
+  it('22. l402: supported=false, message includes invoice string', () => {
+    const normalized = { format: 'l402', l402Invoice: 'lnbc1pvjluezpp5qqqsyq' };
+    const result = buildProofHeaders(normalized, TX, 'base', WALLET);
+    assert.equal(result.supported, false);
+    assert.equal(result.headers, null);
+    assert.ok(result.message.includes('L402'));
+    assert.ok(result.message.includes('lnbc1pvjluezpp5qqqsyq'));
+  });
+
+  it('23. unknown: supported=false', () => {
+    const normalized = { format: 'unknown' };
+    const result = buildProofHeaders(normalized, TX, 'base', WALLET);
+    assert.equal(result.supported, false);
+    assert.equal(result.headers, null);
+  });
+
+  it('24. null txHash: supported=false, message includes "txHash"', () => {
+    const normalized = { format: 'x402-bazaar' };
+    const result = buildProofHeaders(normalized, null, 'base', WALLET);
+    assert.equal(result.supported, false);
+    assert.equal(result.headers, null);
+    assert.ok(result.message.includes('txHash'));
   });
 
 });
