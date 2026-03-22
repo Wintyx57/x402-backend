@@ -421,7 +421,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
-const { normalize402, buildProofHeaders } = require('./lib/protocolAdapter');
+const { normalize402, buildProofHeaders, buildUniversalProofHeaders } = require('./lib/protocolAdapter');
 
 // ─── Error sanitization: remove sensitive paths, IPs, and addresses from errors ─
 function sanitizeError(msg) {
@@ -819,15 +819,31 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             endpoint: url.replace(SERVER_URL, ''),
         });
 
-        // Build proof headers in provider's native format
-        const proof = buildProofHeaders(normalized, txHashProvider, resolvedChainKey, account.address);
+        // Build UNIVERSAL proof headers — sends ALL known formats simultaneously
+        // for maximum compatibility with any 402 provider implementation
+        const proof = buildUniversalProofHeaders(normalized, txHashProvider, resolvedChainKey, account.address);
         if (!proof.supported) {
             throw new Error(proof.message);
         }
 
-        // Retry with proof
+        // Progressive retry with exponential backoff
+        // External providers verify on-chain — may need time for TX confirmation
+        const RETRY_DELAYS = [2000, 5000, 8000]; // total max ~15s
         const extRetryHeaders = { ...fetchOptions.headers, ...proof.headers };
-        const extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
+        let extRetryRes;
+        let retryAttempt = 0;
+
+        for (const delay of RETRY_DELAYS) {
+            await new Promise(r => setTimeout(r, delay));
+            retryAttempt++;
+            extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
+
+            if (extRetryRes.status !== 402) {
+                console.log(`[split_platform] Retry ${retryAttempt} succeeded (HTTP ${extRetryRes.status})`);
+                break;
+            }
+            console.log(`[split_platform] Retry ${retryAttempt}/${RETRY_DELAYS.length} still 402 — waiting longer...`);
+        }
 
         // Parse retry response
         let extResult;
@@ -842,7 +858,8 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             extResult = await extRetryRes.json();
         }
 
-        // Enrich result with payment info
+        // Enrich result with payment info + diagnostic
+        const retryStatus = extRetryRes.status;
         extResult._payment = {
             amount: cost.toString(),
             platformFee: (totalCost - cost).toFixed(4),
@@ -853,7 +870,16 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             explorer: `${cfg.explorer}/tx/${txHashProvider}`,
             session_spent: sessionSpending.toFixed(2),
             session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+            retry_status: retryStatus,
+            retry_attempts: retryAttempt,
+            proof_format: normalized.format,
+            proof_headers_sent: Object.keys(proof.headers),
         };
+        if (retryStatus === 402) {
+            extResult._payment.warning = 'Payment sent on-chain but provider still returned 402 after 3 retries (~15s). ' +
+                'The provider may use EIP-712 permit verification via facilitator instead of direct transfer verification. ' +
+                'Your USDC was sent — contact the provider with the txHash for manual resolution.';
+        }
         if (autoChainWarning) extResult._payment.auto_chain_warning = autoChainWarning;
         if (chainKey === 'auto') extResult._payment.auto_selected_chain = resolvedChainKey;
         return extResult;

@@ -4,7 +4,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const { normalize402, buildProofHeaders } = require('../lib/protocolAdapter');
+const { normalize402, buildProofHeaders, buildUniversalProofHeaders } = require('../lib/protocolAdapter');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -441,6 +441,76 @@ describe('buildProofHeaders', () => {
     assert.equal(result.supported, false);
     assert.equal(result.headers, null);
     assert.ok(result.message.includes('txHash'));
+  });
+
+});
+
+// ─── buildUniversalProofHeaders ─────────────────────────────────────────────
+
+describe('buildUniversalProofHeaders', () => {
+
+  const TX = '0xabc123def456';
+  const WALLET = '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+
+  it('25. returns all 8 header formats simultaneously', () => {
+    const normalized = { format: 'x402-v1', scheme: 'exact', chain: 'polygon' };
+    const result = buildUniversalProofHeaders(normalized, TX, 'polygon', WALLET);
+    assert.equal(result.supported, true);
+    assert.equal(result.message, null);
+    const h = result.headers;
+    // Coinbase x402 v1
+    assert.ok(h['X-PAYMENT'], 'missing X-PAYMENT');
+    const v1 = JSON.parse(Buffer.from(h['X-PAYMENT'], 'base64').toString());
+    assert.equal(v1.x402Version, 1);
+    assert.equal(v1.scheme, 'exact');
+    assert.equal(v1.network, 'polygon');
+    assert.equal(v1.payload.txHash, TX);
+    // x402 v2
+    assert.ok(h['PAYMENT-SIGNATURE'], 'missing PAYMENT-SIGNATURE');
+    const v2 = JSON.parse(Buffer.from(h['PAYMENT-SIGNATURE'], 'base64').toString());
+    assert.equal(v2.txHash, TX);
+    assert.equal(v2.chain, 'polygon');
+    assert.equal(v2.payer, WALLET);
+    // Simple direct headers
+    assert.equal(h['X-Payment-TxHash'], TX);
+    assert.equal(h['X-Payment-Chain'], 'polygon');
+    assert.equal(h['X-Payment'], TX);
+    assert.equal(h['X-Payment-Proof'], TX);
+    // Payer identification
+    assert.equal(h['X-Agent-Wallet'], WALLET);
+    assert.equal(h['X-Payer-Address'], WALLET);
+  });
+
+  it('26. null txHash returns supported=false', () => {
+    const normalized = { format: 'x402-v1' };
+    const result = buildUniversalProofHeaders(normalized, null, 'base', WALLET);
+    assert.equal(result.supported, false);
+    assert.equal(result.headers, null);
+    assert.ok(result.message.includes('txHash'));
+  });
+
+  it('27. uses normalized.chain when available, falls back to chainKey', () => {
+    // With normalized.chain
+    const r1 = buildUniversalProofHeaders({ chain: 'polygon' }, TX, 'base', WALLET);
+    const v1 = JSON.parse(Buffer.from(r1.headers['X-PAYMENT'], 'base64').toString());
+    assert.equal(v1.network, 'polygon');
+    assert.equal(r1.headers['X-Payment-Chain'], 'base'); // chainKey for direct headers
+
+    // Without normalized.chain — falls back to chainKey
+    const r2 = buildUniversalProofHeaders({}, TX, 'skale', WALLET);
+    const v2 = JSON.parse(Buffer.from(r2.headers['X-PAYMENT'], 'base64').toString());
+    assert.equal(v2.network, 'skale');
+  });
+
+  it('28. defaults scheme to "exact" when not in normalized', () => {
+    const result = buildUniversalProofHeaders({}, TX, 'base', WALLET);
+    const v1 = JSON.parse(Buffer.from(result.headers['X-PAYMENT'], 'base64').toString());
+    assert.equal(v1.scheme, 'exact');
+  });
+
+  it('29. exactly 8 headers are returned', () => {
+    const result = buildUniversalProofHeaders({ format: 'x402-v1' }, TX, 'base', WALLET);
+    assert.equal(Object.keys(result.headers).length, 8);
   });
 
 });
