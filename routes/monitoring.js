@@ -196,7 +196,7 @@ function createMonitoringRouter(supabase, statsLimiter) {
     const responseObj = {
       success: true,
       services: servicesCount,
-      nativeEndpoints: 95,
+      nativeEndpoints: 101,
       apiCalls: totalApiCalls,
       totalPayments,
       recentCallCount24h,
@@ -211,8 +211,8 @@ function createMonitoringRouter(supabase, statsLimiter) {
         overall: status?.overall || 'unknown',
         lastCheck: status?.lastCheck || null,
       },
-      integrations: 8,
-      tests: 505,
+      integrations: 13,
+      tests: 2072,
     };
 
     // Mettre en cache

@@ -13,11 +13,6 @@ function createCatalogRouter(supabase, dashboardApiLimiter) {
     const router = express.Router();
 
     router.get('/api/catalog', dashboardApiLimiter, async (req, res) => {
-        // CORS open for partner frontends
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(200, Math.max(1, parseInt(req.query.limit) || 100));
         const offset = (page - 1) * limit;
@@ -90,14 +85,6 @@ function createCatalogRouter(supabase, dashboardApiLimiter) {
                 docs: 'https://x402bazaar.org/docs',
             },
         });
-    });
-
-    // Handle CORS preflight for partner frontends
-    router.options('/api/catalog', (req, res) => {
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.sendStatus(204);
     });
 
     return router;

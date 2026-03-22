@@ -222,43 +222,9 @@ function createReviewsRouter(supabase) {
         return res.status(201).json({ success: true, verified: signatureVerified, data });
     });
 
-    // GET /api/reviews/:serviceId — Get reviews for a service
-    router.get('/api/reviews/:serviceId', readLimiter, async (req, res) => {
-        const { serviceId } = req.params;
-
-        if (!UUID_REGEX.test(serviceId)) {
-            return res.status(400).json({ error: 'Invalid serviceId — must be a UUID' });
-        }
-
-        const rawPage = parseInt(req.query.page, 10);
-        const rawLimit = parseInt(req.query.limit, 10);
-        const page = Math.max(1, isNaN(rawPage) || rawPage < 1 ? 1 : rawPage);
-        const limit = Math.min(50, isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit);
-        const offset = (page - 1) * limit;
-
-        const { data, error, count } = await supabase
-            .from('reviews')
-            .select('id, wallet_address, rating, comment, created_at', { count: 'exact' })
-            .eq('service_id', serviceId)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1);
-
-        if (error) {
-            logger.error('Reviews', `GET /api/reviews/${serviceId} error: ${error.message}`);
-            return res.status(500).json({ error: 'Failed to fetch reviews' });
-        }
-
-        return res.json({
-            success: true,
-            count: count || 0,
-            page,
-            limit,
-            data: data || []
-        });
-    });
-
     // GET /api/reviews/stats/batch — Aggregate stats for multiple services in one query
     // Usage: GET /api/reviews/stats/batch?ids=uuid1,uuid2,...  (max 100 IDs)
+    // IMPORTANT: must be declared BEFORE /:serviceId to avoid "stats" being captured as a param
     router.get('/api/reviews/stats/batch', readLimiter, async (req, res) => {
         const raw = (req.query.ids || '').trim();
         if (!raw) {
@@ -319,6 +285,41 @@ function createReviewsRouter(supabase) {
         }
 
         return res.json(result);
+    });
+
+    // GET /api/reviews/:serviceId — Get reviews for a service
+    router.get('/api/reviews/:serviceId', readLimiter, async (req, res) => {
+        const { serviceId } = req.params;
+
+        if (!UUID_REGEX.test(serviceId)) {
+            return res.status(400).json({ error: 'Invalid serviceId — must be a UUID' });
+        }
+
+        const rawPage = parseInt(req.query.page, 10);
+        const rawLimit = parseInt(req.query.limit, 10);
+        const page = Math.max(1, isNaN(rawPage) || rawPage < 1 ? 1 : rawPage);
+        const limit = Math.min(50, isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit);
+        const offset = (page - 1) * limit;
+
+        const { data, error, count } = await supabase
+            .from('reviews')
+            .select('id, wallet_address, rating, comment, created_at', { count: 'exact' })
+            .eq('service_id', serviceId)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
+
+        if (error) {
+            logger.error('Reviews', `GET /api/reviews/${serviceId} error: ${error.message}`);
+            return res.status(500).json({ error: 'Failed to fetch reviews' });
+        }
+
+        return res.json({
+            success: true,
+            count: count || 0,
+            page,
+            limit,
+            data: data || []
+        });
     });
 
     // GET /api/reviews/:serviceId/stats — Aggregate stats

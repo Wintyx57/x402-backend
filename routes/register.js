@@ -796,7 +796,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
 
             if (error) {
                 logger.error('Supabase', '/import-openapi error:', error.message);
-                return res.status(500).json({ error: 'Import failed', message: error.message });
+                return res.status(500).json({ error: 'Import failed', message: 'Internal server error' });
             }
 
             logger.info('Bazaar', `OpenAPI import: ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`);

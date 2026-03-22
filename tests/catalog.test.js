@@ -170,14 +170,14 @@ describe('GET /api/catalog — no sensitive fields', () => {
 // ─── Suite 3: CORS headers ──────────────────────────────────────────────────
 
 describe('GET /api/catalog — CORS', () => {
-    it('sets Access-Control-Allow-Origin to *', async () => {
+    it('does not set manual Access-Control-Allow-Origin (handled by global CORS middleware)', async () => {
         const supabase = createMockSupabase();
         const handler = getCatalogHandler(supabase);
         const req = mockReq();
         const res = mockRes();
         await handler(req, res);
 
-        assert.equal(res._headers['Access-Control-Allow-Origin'], '*');
+        assert.equal(res._headers['Access-Control-Allow-Origin'], undefined);
     });
 });
 

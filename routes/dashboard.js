@@ -63,7 +63,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
     router.get('/api/stats', dashboardApiLimiter, adminAuthLimiter, adminAuth, async (req, res) => {
         let count = 0;
         try {
-            const result = await supabase.from('services').select('*', { count: 'exact', head: true });
+            const result = await supabase.from('services').select('id', { count: 'exact', head: true });
             count = result.count || 0;
         } catch (err) {
             logger.error('Stats', 'Supabase count error:', err.message);
@@ -138,7 +138,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 // 2. API calls pour top services
                 supabase.from('activity').select('detail, created_at').eq('type', 'api_call').order('created_at', { ascending: false }).limit(1000),
                 // 3. Total services count
-                supabase.from('services').select('*', { count: 'exact', head: true }),
+                supabase.from('services').select('id', { count: 'exact', head: true }),
                 // 4. Recent activity (last 10) — admin-only, full tx_hash
                 supabase.from('activity').select('type, detail, amount, created_at, tx_hash, chain').order('created_at', { ascending: false }).limit(10),
                 // 5. Average price of paid services
@@ -438,21 +438,6 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
         }
     });
 
-    // --- ADMIN: Force recalculate all TrustScores ---
-    router.post('/api/admin/trust-score/recalculate', adminRateLimit, adminAuth, async (req, res) => {
-        try {
-            // Fire-and-forget — don't block the response
-            recalculateAllScores(supabase).catch(err =>
-                logger.error('TrustScore', `Manual recalc failed: ${err.message}`)
-            );
-            logActivity('admin', 'Triggered manual TrustScore recalculation');
-            res.json({ success: true, message: 'Recalculation started' });
-        } catch (err) {
-            logger.error('TrustScore', `Recalc trigger error: ${err.message}`);
-            res.status(500).json({ error: 'Failed to trigger recalculation' });
-        }
-    });
-
     // --- ADMIN: TrustScore leaderboard (all services sorted by score) ---
     router.get('/api/admin/trust-score', adminRateLimit, adminAuth, async (req, res) => {
         try {
@@ -675,7 +660,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             });
         } catch (err) {
             logger.error('TrustScore', `Force recalculate error: ${err.message}`);
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 
@@ -711,7 +696,8 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
                 cutoff_date: cutoff,
             });
         } catch (err) {
-            res.status(500).json({ error: err.message });
+            logger.error('TrustScore', `Diagnostic error: ${err.message}`);
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 
@@ -723,7 +709,7 @@ function createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAu
             res.json(result);
         } catch (err) {
             logger.error('ERC8004', `Force push error: ${err.message}`);
-            res.status(500).json({ error: err.message });
+            res.status(500).json({ error: 'Internal server error' });
         }
     });
 

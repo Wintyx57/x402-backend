@@ -7,6 +7,7 @@
 const express = require('express');
 const http = require('http');
 const https = require('https');
+const logger = require('../lib/logger');
 
 const AGENT_URL = process.env.COMMUNITY_AGENT_URL || 'http://localhost:3500';
 const AGENT_TIMEOUT_MS = parseInt(process.env.COMMUNITY_AGENT_TIMEOUT_MS || '8000', 10);
@@ -87,7 +88,8 @@ function forwardRequest(req, res, agentFullUrl, body) {
     if (err.code === 'ECONNREFUSED') {
       return res.status(503).json({ error: 'community_agent_unavailable', message: 'Community agent is not running' });
     }
-    res.status(502).json({ error: 'community_agent_error', message: err.message });
+    logger.error('CommunityAgent', `Proxy error: ${err.message}`);
+    res.status(502).json({ error: 'community_agent_error', message: 'Internal server error' });
   });
 
   if (body && body.length > 0) {

@@ -97,7 +97,7 @@ function createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce) {
             res.json({ triggered: true, result });
         } catch (err) {
             logger.error('AgentReports', `Manual run: ${err.message}`);
-            res.status(500).json({ error: 'Agent run failed', message: err.message });
+            res.status(500).json({ error: 'Agent run failed', message: 'Internal server error' });
         }
     });
 

@@ -487,9 +487,9 @@ function createHealthRouter(supabase, adminAuth) {
                     retry_after_hours: remainingHours,
                 });
             }
-        } catch (rateCheckErr) {
-            // Non-blocking: if DB check fails, continue (fail open for faucet availability)
-            logger.warn('Faucet', `Wallet rate-limit DB check failed: ${rateCheckErr.message}`);
+        } catch (walletCheckErr) {
+            logger.warn('Faucet', `Wallet rate-limit check failed: ${walletCheckErr.message}`);
+            return res.status(503).json({ funded: false, reason: 'faucet_temporarily_unavailable' });
         }
 
         // 3. Check wallet key — unified AGENT_PRIVATE_KEY (or legacy FAUCET_PRIVATE_KEY)

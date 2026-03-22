@@ -134,7 +134,7 @@ function createPaymentLinksRouter(supabase, logActivity, createLinkLimiter, paym
         try {
             await safeUrl(targetUrl);
         } catch (err) {
-            return res.status(400).json({ error: 'Invalid target URL', message: err.message });
+            return res.status(400).json({ error: 'Invalid target URL', message: 'URL must point to a publicly reachable address' });
         }
 
         // 4. Insert into Supabase
