@@ -528,6 +528,35 @@ function createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndp
         });
     }
 
+    // ── Auto-Discovery: POST /api/discovered-apis (from MCP agents) ──────
+    router.post('/api/discovered-apis', async (req, res) => {
+        try {
+            const { url, format, amount, currency, recipient, chain, agent_address, raw_response } = req.body;
+            if (!url || typeof url !== 'string') {
+                return res.status(400).json({ error: 'url is required' });
+            }
+            // Upsert into discovered_apis (table from migration 024)
+            const { error } = await supabase.from('discovered_apis').upsert({
+                url: url.slice(0, 2048),
+                format: (format || 'unknown').slice(0, 50),
+                amount: amount ? String(amount).slice(0, 50) : null,
+                currency: currency ? String(currency).slice(0, 20) : null,
+                recipient: recipient ? String(recipient).slice(0, 100) : null,
+                chain: chain ? String(chain).slice(0, 50) : null,
+                agent_address: agent_address ? String(agent_address).slice(0, 100) : null,
+                raw_response: raw_response || null,
+            }, { onConflict: 'url' });
+            if (error) {
+                logger.error('discovered-apis upsert failed:', error.message);
+                return res.status(500).json({ error: 'insert failed' });
+            }
+            res.json({ ok: true });
+        } catch (err) {
+            logger.error('discovered-apis error:', err.message);
+            res.status(500).json({ error: 'internal error' });
+        }
+    });
+
     return router;
 }
 

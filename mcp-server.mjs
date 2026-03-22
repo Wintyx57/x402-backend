@@ -155,6 +155,10 @@ const sessionPayments = [];
 const reusableHashes = []; // { txHash, amount, chain, headers, timestamp, txHashPlatform? }
 const REUSABLE_HASH_TTL = 10 * 60 * 1000; // 10 minutes
 
+// ─── Auto-Discovery (Layer 4) ────────────────────────────────────────
+const discoveryThrottle = new Map();
+const DISCOVERY_THROTTLE_MS = 60 * 60 * 1000; // 1 hour
+
 /**
  * Find a reusable tx hash from a previous not_charged response.
  * Only reuses legacy hashes (single transfer to WALLET_ADDRESS).
@@ -417,6 +421,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 function await_import_ed2curve() { return require('ed2curve'); }
 function await_import_hdkey() { return require('@scure/bip32'); }
+const { normalize402, buildProofHeaders } = require('./lib/protocolAdapter');
 
 // ─── Error sanitization: remove sensitive paths, IPs, and addresses from errors ─
 function sanitizeError(msg) {
@@ -668,7 +673,8 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         if (probeRes.status === 402) {
             let probeBody;
             try { probeBody = await probeRes.json(); } catch { probeBody = {}; }
-            const cost = parseFloat(probeBody?.payment_details?.amount || '0.01');
+            const probeNormalized = normalize402(probeRes.status, Object.fromEntries(probeRes.headers), probeBody);
+            const cost = parseFloat(probeNormalized.amount || '0.01');
             const selection = await selectBestChain(cost);
             if (selection.error) {
                 throw new Error(selection.error);
@@ -713,20 +719,49 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
     // ── HTTP 402 — Payment Required ───────────────────────────────────
     let body;
-    try {
-        body = await res.json();
-    } catch {
-        throw new Error('API returned 402 Payment Required but response is not valid JSON');
+    try { body = await res.json(); } catch { body = {}; }
+
+    const normalized = normalize402(res.status, Object.fromEntries(res.headers), body);
+
+    // Layer 4: Auto-Discovery — log unregistered 402 APIs (fire-and-forget)
+    const discoveryUrl = url;
+    const lastDisc = discoveryThrottle.get(discoveryUrl);
+    if (!lastDisc || Date.now() - lastDisc > DISCOVERY_THROTTLE_MS) {
+        discoveryThrottle.set(discoveryUrl, Date.now());
+        const rawStr = JSON.stringify(normalized.raw);
+        const truncRaw = rawStr.length > 10240 ? null : normalized.raw;
+        fetch(`${SERVER_URL}/api/discovered-apis`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                url: discoveryUrl, format: normalized.format,
+                amount: normalized.amount, currency: normalized.currency,
+                recipient: normalized.recipient, chain: normalized.chain,
+                agent_address: account?.address || null, raw_response: truncRaw,
+            }),
+            signal: AbortSignal.timeout(5000),
+        }).catch(err => console.error('discovery insert failed:', err.message));
     }
 
-    const details = body.payment_details;
-    if (!details || !details.amount || !details.recipient) {
-        throw new Error(
-            `Non-standard 402 response (missing payment_details): ${JSON.stringify(body)}`
-        );
+    if (!normalized.payable) {
+        throw new Error(JSON.stringify({
+            error: '402 detected but payment not supported',
+            format: normalized.format,
+            message: `Protocol "${normalized.format}" detected but automatic USDC payment is not available.`,
+            details: {
+                amount: normalized.amount, currency: normalized.currency, recipient: normalized.recipient,
+                ...(normalized.l402Invoice && { invoice: normalized.l402Invoice }),
+                ...(normalized.mppMethod && { method: normalized.mppMethod }),
+            },
+            detectionPath: normalized.detectionPath,
+        }));
+    }
+    if (!normalized.amount || !normalized.recipient) {
+        throw new Error(`402 "${normalized.format}" missing amount or recipient: ${JSON.stringify(body)}`);
     }
 
-    const cost = parseFloat(details.amount);
+    const cost = parseFloat(normalized.amount);
+    const details = body.payment_details || {}; // backward compat for split_native + facilitator
 
     // Budget check
     if (sessionSpending + cost > MAX_BUDGET) {
@@ -738,10 +773,80 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     }
 
     // cfg already resolved above (before initial fetch)
-    const isSplitMode = !!details.provider_wallet && details.payment_mode === 'split_native';
+    const isSplitMode = normalized.paymentMode === 'split_native' || normalized.paymentMode === 'split_platform';
+    const isExternalSplit = normalized.paymentMode === 'split_platform';
     let retryHeaders;
 
-    if (isSplitMode) {
+    if (isExternalSplit) {
+        // ── External split: 100% to provider + platform fee ──────────────
+        const providerRaw = usdcToRaw(cost, resolvedChainKey);
+        const platformFeeRaw = providerRaw * 5n / 95n;
+        const totalCostRaw = providerRaw + platformFeeRaw;
+        const totalCost = Number(totalCostRaw) / 1e6;
+
+        if (sessionSpending + totalCost > MAX_BUDGET) {
+            throw new Error(`Budget exceeded. Cost: ${totalCost.toFixed(4)} USDC (${cost} + ${(totalCost - cost).toFixed(4)} fee), remaining: ${(MAX_BUDGET - sessionSpending).toFixed(4)} USDC`);
+        }
+
+        // TX1: 100% to provider (blocking — need hash for proof)
+        const txHashProvider = await sendUsdcTransfer(resolvedChainKey, normalized.providerWallet, providerRaw);
+
+        // TX2: platform fee (fire-and-forget, parallel with retry)
+        if (platformFeeRaw >= 100n) {
+            sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
+                .catch(err => console.error('split_platform TX2 failed:', err.message));
+        }
+
+        sessionSpending += totalCost;
+        if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - totalCost);
+        sessionPayments.push({
+            amount: totalCost,
+            txHash: txHashProvider,
+            chain: resolvedChainKey,
+            splitMode: 'split_platform',
+            timestamp: new Date().toISOString(),
+            endpoint: url.replace(SERVER_URL, ''),
+        });
+
+        // Build proof headers in provider's native format
+        const proof = buildProofHeaders(normalized, txHashProvider, resolvedChainKey, account.address);
+        if (!proof.supported) {
+            throw new Error(proof.message);
+        }
+
+        // Retry with proof
+        const extRetryHeaders = { ...fetchOptions.headers, ...proof.headers };
+        const extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
+
+        // Parse retry response
+        let extResult;
+        if (textFallback) {
+            const retryText = await extRetryRes.text();
+            try {
+                extResult = JSON.parse(retryText);
+            } catch {
+                extResult = { response: retryText.slice(0, 5000) };
+            }
+        } else {
+            extResult = await extRetryRes.json();
+        }
+
+        // Enrich result with payment info
+        extResult._payment = {
+            amount: cost.toString(),
+            platformFee: (totalCost - cost).toFixed(4),
+            currency: 'USDC',
+            txHash: txHashProvider,
+            splitMode: 'split_platform',
+            chain: cfg.label,
+            explorer: `${cfg.explorer}/tx/${txHashProvider}`,
+            session_spent: sessionSpending.toFixed(2),
+            session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+        };
+        if (autoChainWarning) extResult._payment.auto_chain_warning = autoChainWarning;
+        if (chainKey === 'auto') extResult._payment.auto_selected_chain = resolvedChainKey;
+        return extResult;
+    } else if (isSplitMode) {
         // ── Standard split: two sendUsdcTransfer calls (Base / SKALE) ──
         const totalRaw = usdcToRaw(cost, resolvedChainKey);
         const providerRaw = details.split
@@ -899,12 +1004,9 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 endpoint: url.replace(SERVER_URL, ''),
             });
 
-            retryHeaders = {
-                ...fetchOptions.headers,
-                'X-Payment-TxHash': txHash,
-                'X-Payment-Chain': cfg.paymentHeader,
-                'X-Agent-Wallet': account.address,
-            };
+            retryHeaders = { ...fetchOptions.headers };
+            const proof = buildProofHeaders(normalized, txHash, resolvedChainKey, account.address);
+            Object.assign(retryHeaders, proof.headers);
         }
     }
 
@@ -924,73 +1026,76 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         result = await retryRes.json();
     }
 
-    // Consumer protection: handle refunded responses (auto-refund engine)
+    // Consumer protection: only for Bazaar-native APIs (not external split_platform)
     const lastPayment = sessionPayments[sessionPayments.length - 1];
-    if (result && result._payment_status === 'refunded') {
-        if (lastPayment && !lastPayment.reused) {
-            // USDC returned on-chain — reverse budget tracking
-            sessionSpending = Math.max(0, sessionSpending - cost);
-            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
-            lastPayment.status = 'refunded';
-            lastPayment.refundTxHash = result._x402?.refund_tx_hash || null;
-            // DO NOT add to reusableHashes — tx consumed, USDC returned on-chain
-            console.error(`[Payment] Response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
-        }
-        // Blacklist service (still delivered garbage)
-        // Extract serviceId from proxy URL (e.g., /api/call/uuid)
-        const refundServiceMatch = url.match(/\/api\/call\/([0-9a-f-]{36})/i);
-        if (refundServiceMatch) addToBlacklist(refundServiceMatch[1], 'refunded_bad_response');
-
-        result._payment = {
-            amount: details.amount, currency: 'USDC', status: 'refunded',
-            refund_tx_hash: result._x402?.refund_tx_hash,
-            refund_wallet: result._x402?.refund_wallet,
-            chain: cfg.label,
-            session_spent: sessionSpending.toFixed(2),
-            session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
-        };
-        if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
-        if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
-        return result;
-    }
-
-    // Consumer protection: handle not_charged responses (session 79)
-    if (result && result._payment_status === 'not_charged') {
-        if (lastPayment && !lastPayment.reused) {
-            // Refund the budget — this payment wasn't consumed
-            sessionSpending = Math.max(0, sessionSpending - cost);
-            // Restore balance cache (USDC is on-chain but tx hash is reusable)
-            if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
-            lastPayment.status = 'not_charged';
-            lastPayment.reusable = true;
-
-            // Store for reuse (legacy mode only — split has specific recipients)
-            if (!lastPayment.splitMode) {
-                reusableHashes.push({
-                    txHash: lastPayment.txHash,
-                    amount: lastPayment.amount,
-                    chain: lastPayment.chain,
-                    headers: retryHeaders,
-                    timestamp: Date.now(),
-                });
-                console.error(`[Payment] Response not_charged — tx hash stored for reuse (pool: ${reusableHashes.length})`);
+    if (!isExternalSplit) {
+        // Consumer protection: handle refunded responses (auto-refund engine)
+        if (result && result._payment_status === 'refunded') {
+            if (lastPayment && !lastPayment.reused) {
+                // USDC returned on-chain — reverse budget tracking
+                sessionSpending = Math.max(0, sessionSpending - cost);
+                if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+                lastPayment.status = 'refunded';
+                lastPayment.refundTxHash = result._x402?.refund_tx_hash || null;
+                // DO NOT add to reusableHashes — tx consumed, USDC returned on-chain
+                console.error(`[Payment] Response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
             }
+            // Blacklist service (still delivered garbage)
+            // Extract serviceId from proxy URL (e.g., /api/call/uuid)
+            const refundServiceMatch = url.match(/\/api\/call\/([0-9a-f-]{36})/i);
+            if (refundServiceMatch) addToBlacklist(refundServiceMatch[1], 'refunded_bad_response');
+
+            result._payment = {
+                amount: details.amount, currency: 'USDC', status: 'refunded',
+                refund_tx_hash: result._x402?.refund_tx_hash,
+                refund_wallet: result._x402?.refund_wallet,
+                chain: cfg.label,
+                session_spent: sessionSpending.toFixed(2),
+                session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+            };
+            if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+            if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+            return result;
         }
 
-        // Enrich response with reuse info
-        result._payment = {
-            amount: details.amount,
-            currency: 'USDC',
-            status: 'not_charged',
-            reusable_tx_hash: true,
-            txHash: lastPayment.txHash,
-            chain: cfg.label,
-            session_spent: sessionSpending.toFixed(2),
-            session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
-        };
-        if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
-        if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
-        return result;
+        // Consumer protection: handle not_charged responses (session 79)
+        if (result && result._payment_status === 'not_charged') {
+            if (lastPayment && !lastPayment.reused) {
+                // Refund the budget — this payment wasn't consumed
+                sessionSpending = Math.max(0, sessionSpending - cost);
+                // Restore balance cache (USDC is on-chain but tx hash is reusable)
+                if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
+                lastPayment.status = 'not_charged';
+                lastPayment.reusable = true;
+
+                // Store for reuse (legacy mode only — split has specific recipients)
+                if (!lastPayment.splitMode) {
+                    reusableHashes.push({
+                        txHash: lastPayment.txHash,
+                        amount: lastPayment.amount,
+                        chain: lastPayment.chain,
+                        headers: retryHeaders,
+                        timestamp: Date.now(),
+                    });
+                    console.error(`[Payment] Response not_charged — tx hash stored for reuse (pool: ${reusableHashes.length})`);
+                }
+            }
+
+            // Enrich response with reuse info
+            result._payment = {
+                amount: details.amount,
+                currency: 'USDC',
+                status: 'not_charged',
+                reusable_tx_hash: true,
+                txHash: lastPayment.txHash,
+                chain: cfg.label,
+                session_spent: sessionSpending.toFixed(2),
+                session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
+            };
+            if (autoChainWarning) result._payment.auto_chain_warning = autoChainWarning;
+            if (chainKey === 'auto') result._payment.auto_selected_chain = resolvedChainKey;
+            return result;
+        }
     }
 
     // Handle reused hash that succeeded — count spending now
@@ -1850,7 +1955,8 @@ server.tool(
 
             const price = parseFloat(infoData.price_usdc);
             // Pay the platform (WALLET_ADDRESS) — backend handles 95/5 split to creator
-            const recipient = infoData.payment_details?.recipient || process.env.WALLET_ADDRESS || infoData.owner_address;
+            const linkNormalized = normalize402(infoRes.status, Object.fromEntries(infoRes.headers), infoData);
+            const recipient = linkNormalized.recipient || infoData.payment_details?.recipient || process.env.WALLET_ADDRESS || infoData.owner_address;
 
             // Budget check
             if (sessionSpending + price > MAX_BUDGET) {
