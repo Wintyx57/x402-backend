@@ -514,3 +514,110 @@ describe('buildUniversalProofHeaders', () => {
   });
 
 });
+
+// ─── protocolType detection ─────────────────────────────────────────────────
+
+describe('protocolType detection', () => {
+
+  // Test 30: x402 v1 standard body → protocolType "x402-standard"
+  it('30. normalize402 detects x402-standard protocolType from v1 body with asset', () => {
+    const body = {
+      x402Version: 1,
+      error: 'X-PAYMENT header is required',
+      accepts: [{
+        scheme: 'exact',
+        network: 'base-sepolia',
+        maxAmountRequired: '10000',
+        asset: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        payTo: '0x209693Bc6afc0C5328bA36FaF03C514EF312287C',
+        resource: 'https://api.example.com/data',
+        maxTimeoutSeconds: 60,
+        extra: { name: 'USDC', version: '2' },
+      }],
+    };
+    const result = normalize402(402, {}, body);
+    assert.strictEqual(result.protocolType, 'x402-standard');
+    assert.strictEqual(result.asset, '0x036CbD53842c5426634e7929541eC2318f3dCF7e');
+    assert.strictEqual(result.payTo, '0x209693Bc6afc0C5328bA36FaF03C514EF312287C');
+    assert.strictEqual(result.maxAmountRequired, '10000');
+    assert.strictEqual(result.maxTimeoutSeconds, 60);
+    assert.deepStrictEqual(result.extra, { name: 'USDC', version: '2' });
+    assert.strictEqual(result.resource, 'https://api.example.com/data');
+  });
+
+  // Test 31: x402 v2 standard header → protocolType "x402-standard"
+  it('31. normalize402 detects x402-standard protocolType from v2 header with asset', () => {
+    const paymentRequired = {
+      x402Version: 2,
+      accepts: [{
+        scheme: 'exact',
+        network: 'eip155:137',
+        maxAmountRequired: '5000',
+        asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+        payTo: '0xBc9fC65a0cB11F1AB5d1c4963DC6E09448f14939',
+        resource: 'https://api.ozark.com/data',
+        maxTimeoutSeconds: 30,
+        extra: { name: 'USD Coin', version: '2' },
+      }],
+    };
+    const headers = {
+      'payment-required': Buffer.from(JSON.stringify(paymentRequired)).toString('base64'),
+    };
+    const result = normalize402(402, headers, {});
+    assert.strictEqual(result.protocolType, 'x402-standard');
+    assert.strictEqual(result.format, 'x402-v2');
+    assert.strictEqual(result.asset, '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359');
+    assert.strictEqual(result.maxAmountRequired, '5000');
+    assert.strictEqual(result.chain, 'polygon');
+  });
+
+  // Test 32: Ozark-style body (no asset) → protocolType "direct"
+  it('32. normalize402 returns protocolType direct for Ozark-style without asset', () => {
+    const body = {
+      accepts: [{
+        address: '0xBc9fC65a0cB11F1AB5d1c4963DC6E09448f14939',
+        amount: '0.005',
+        currency: 'USDC',
+        network: 'polygon',
+        scheme: 'exact',
+      }],
+      error: 'Payment required',
+      x402: true,
+    };
+    const result = normalize402(402, {}, body);
+    assert.strictEqual(result.protocolType, 'direct');
+  });
+
+  // Test 33: Our bazaar format → protocolType "direct"
+  it('33. normalize402 returns protocolType direct for x402-bazaar format', () => {
+    const body = {
+      payment_required: true,
+      payment_details: {
+        amount: '0.01',
+        currency: 'USDC',
+        recipient: '0xfb1c478BD5567BdcD39782E0D6D23418bFda2430',
+        chain: 'skale',
+      },
+    };
+    const result = normalize402(402, {}, body);
+    assert.strictEqual(result.protocolType, 'direct');
+  });
+
+  // Test 34: CAIP-2 network mapping
+  it('34. normalize402 maps CAIP-2 network eip155:137 to polygon', () => {
+    const body = {
+      x402Version: 1,
+      accepts: [{
+        scheme: 'exact',
+        network: 'eip155:137',
+        maxAmountRequired: '5000',
+        asset: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+        payTo: '0xBc9fC65a0cB11F1AB5d1c4963DC6E09448f14939',
+      }],
+    };
+    const result = normalize402(402, {}, body);
+    assert.strictEqual(result.chain, 'polygon');
+    assert.strictEqual(result.protocolType, 'x402-standard');
+  });
+
+});
