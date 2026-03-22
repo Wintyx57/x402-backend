@@ -779,6 +779,17 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
     if (isExternalSplit) {
         // ── External split: 100% to provider + platform fee ──────────────
+
+        // If the provider specifies a chain, we MUST pay on that chain.
+        // Paying on a different chain = provider can't verify = money lost.
+        const externalChain = normalized.chain;
+        if (externalChain && CHAINS[externalChain] && externalChain !== resolvedChainKey) {
+            console.log(`[split_platform] Provider requires chain "${externalChain}", overriding agent choice "${resolvedChainKey}"`);
+            resolvedChainKey = externalChain;
+        } else if (externalChain && !CHAINS[externalChain]) {
+            throw new Error(`Provider requires payment on chain "${externalChain}" which is not supported. Supported: ${Object.keys(CHAINS).join(', ')}`);
+        }
+
         const providerRaw = usdcToRaw(cost, resolvedChainKey);
         const platformFeeRaw = providerRaw * 5n / 95n;
         const totalCostRaw = providerRaw + platformFeeRaw;
