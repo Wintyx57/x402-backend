@@ -11,7 +11,7 @@ const { validateCredentials } = require('../lib/credentialValidator');
 const { verifyService } = require('../lib/service-verifier');
 const { safeUrl } = require('../lib/safe-url');
 const { registerAgent } = require('../lib/erc8004-registry');
-const { parseSpec, extractEndpoints, resolveBaseUrl } = require('../lib/openapi-parser');
+const { parseSpec, extractEndpoints, resolveBaseUrl, detectRapidAPI } = require('../lib/openapi-parser');
 
 // Max allowed age for the signed timestamp (5 minutes)
 const SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000;
@@ -653,6 +653,8 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 already_registered: existingUrls.has(e.fullUrl),
             }));
 
+            const rapidapi = detectRapidAPI(spec);
+
             res.json({
                 spec_title: spec.info?.title || 'Untitled',
                 spec_version: spec.openapi || spec.swagger || 'unknown',
@@ -660,6 +662,7 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
                 endpoints: enriched,
                 total: enriched.length,
                 already_registered_count: enriched.filter(e => e.already_registered).length,
+                rapidapi,
             });
         } catch (err) {
             logger.error('ImportPreview', err.message);

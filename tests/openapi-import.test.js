@@ -47,6 +47,7 @@ const {
   resolveBaseUrl,
   categorizeFromTags,
   generateServiceName,
+  detectRapidAPI,
   MAX_ENDPOINTS,
 } = require('../lib/openapi-parser');
 
@@ -813,5 +814,66 @@ describe('openapi-parser — extractEndpoints method and description', () => {
     const [endpoint] = extractEndpoints(spec);
     // Assert
     assert.strictEqual(endpoint.description, 'Get a single item');
+  });
+});
+
+// ─── Suite 10 : lib/openapi-parser.js — detectRapidAPI ────────────────────────
+
+describe('openapi-parser — detectRapidAPI', () => {
+  it('should detect RapidAPI spec with x-rapidapi-info', () => {
+    const spec = {
+      'x-rapidapi-info': { apiId: 'abc', apiVersionId: 'v1' },
+      servers: [{ url: 'https://weather.p.rapidapi.com' }],
+    };
+    const result = detectRapidAPI(spec);
+    assert.ok(result);
+    assert.strictEqual(result.isRapidAPI, true);
+    assert.strictEqual(result.host, 'weather.p.rapidapi.com');
+    assert.strictEqual(result.apiId, 'abc');
+  });
+
+  it('should detect RapidAPI by server URL pattern', () => {
+    const spec = {
+      servers: [{ url: 'https://moviedb.p.rapidapi.com/v1' }],
+    };
+    const result = detectRapidAPI(spec);
+    assert.ok(result);
+    assert.strictEqual(result.host, 'moviedb.p.rapidapi.com');
+  });
+
+  it('should detect RapidAPI Swagger 2.0 spec', () => {
+    const spec = {
+      swagger: '2.0',
+      host: 'weather.p.rapidapi.com',
+      basePath: '/v1',
+      schemes: ['https'],
+      'x-rapidapi-info': { apiId: 'xyz' },
+    };
+    const result = detectRapidAPI(spec);
+    assert.ok(result);
+    assert.strictEqual(result.host, 'weather.p.rapidapi.com');
+    assert.strictEqual(result.serverUrl, 'https://weather.p.rapidapi.com/v1');
+  });
+
+  it('should return null for non-RapidAPI spec', () => {
+    const spec = {
+      servers: [{ url: 'https://api.example.com/v1' }],
+    };
+    const result = detectRapidAPI(spec);
+    assert.strictEqual(result, null);
+  });
+
+  it('should return null when host cannot be extracted', () => {
+    const spec = {
+      'x-rapidapi-info': { apiId: 'abc' },
+      // no servers, no host
+    };
+    const result = detectRapidAPI(spec);
+    assert.strictEqual(result, null);
+  });
+
+  it('should return null for null/undefined spec', () => {
+    assert.strictEqual(detectRapidAPI(null), null);
+    assert.strictEqual(detectRapidAPI(undefined), null);
   });
 });
