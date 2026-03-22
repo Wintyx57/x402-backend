@@ -65,6 +65,24 @@ const CHAINS = {
     },
 };
 
+// EIP-3009 domain separators per chain (for transferWithAuthorization signing)
+// Only chains where USDC supports EIP-3009 are listed
+const EIP3009_DOMAINS = {
+    polygon: {
+        name: 'USD Coin',
+        version: '2',
+        chainId: 137,
+        verifyingContract: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    },
+    base: {
+        name: 'USD Coin',
+        version: '2',
+        chainId: 8453,
+        verifyingContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    },
+    // SKALE: custom USDC without EIP-3009 — uses direct transfer fallback
+};
+
 // ─── Helper: convert a USDC float amount to on-chain raw units ───────
 // Uses the chain's USDC decimals (6 for all chains: Base, SKALE, Polygon).
 function usdcToRaw(amount, chainKey) {
@@ -476,16 +494,13 @@ async function sendUsdcTransfer(chainKey, toAddress, amountRaw) {
 }
 
 // ─── EIP-3009 TransferWithAuthorization (Polygon facilitator — off-chain, no gas) ──
-async function signEIP3009Auth(walletClient, amount, to, validAfter, validBefore) {
-    // Generate random bytes32 nonce (EIP-3009 uses random nonces, not sequential)
-    const nonce = '0x' + crypto.randomBytes(32).toString('hex');
+async function signEIP3009Auth(walletClient, amount, to, validAfter, validBefore, chainKey = 'polygon') {
+    const domain = EIP3009_DOMAINS[chainKey];
+    if (!domain) {
+        throw new Error(`EIP-3009 not supported on chain "${chainKey}". Supported: ${Object.keys(EIP3009_DOMAINS).join(', ')}`);
+    }
 
-    const domain = {
-        name: 'USD Coin',
-        version: '2',
-        chainId: 137,
-        verifyingContract: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
-    };
+    const nonce = '0x' + crypto.randomBytes(32).toString('hex');
 
     const types = {
         TransferWithAuthorization: [
@@ -522,6 +537,18 @@ async function signEIP3009Auth(walletClient, amount, to, validAfter, validBefore
             nonce,
         },
     };
+}
+
+function buildX402StandardPayload(signature, authorization, chainKey, normalized) {
+    // Use resolved chainKey as authoritative network (already mapped from CAIP-2)
+    const network = chainKey;
+    const payload = {
+        x402Version: 1,
+        scheme: 'exact',
+        network,
+        payload: { signature, authorization },
+    };
+    return Buffer.from(JSON.stringify(payload)).toString('base64');
 }
 
 // ─── fetchWithTimeout: wraps fetch with an AbortController timeout ───
@@ -572,6 +599,7 @@ async function sendViaFacilitator(walletClient, apiUrl, fetchOptions, details, c
         recipient,
         validAfter,
         validBefore,
+        'polygon',
     );
 
     // Step 2: Build x402 paymentPayload (Version 1, exact scheme, EVM)
@@ -781,7 +809,6 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // ── External split: 100% to provider + platform fee ──────────────
 
         // If the provider specifies a chain, we MUST pay on that chain.
-        // Paying on a different chain = provider can't verify = money lost.
         const externalChain = normalized.chain;
         if (externalChain && CHAINS[externalChain] && externalChain !== resolvedChainKey) {
             console.log(`[split_platform] Provider requires chain "${externalChain}", overriding agent choice "${resolvedChainKey}"`);
@@ -799,15 +826,102 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             throw new Error(`Budget exceeded. Cost: ${totalCost.toFixed(4)} USDC (${cost} + ${(totalCost - cost).toFixed(4)} fee), remaining: ${(MAX_BUDGET - sessionSpending).toFixed(4)} USDC`);
         }
 
-        // TX1: 100% to provider (blocking — need hash for proof)
-        const txHashProvider = await sendUsdcTransfer(resolvedChainKey, normalized.providerWallet, providerRaw);
+        // ── Route based on protocol type ──────────────────────────────────
+        const isX402Standard = normalized.protocolType === 'x402-standard' && EIP3009_DOMAINS[resolvedChainKey];
+        if (normalized.protocolType === 'x402-standard' && !EIP3009_DOMAINS[resolvedChainKey]) {
+            console.log(`[split_platform] x402-standard detected but chain "${resolvedChainKey}" has no EIP-3009 support — falling back to direct transfer`);
+        }
+        let extResult;
+        let txHashProvider;
+        let retryAttempt = 0;
+        let retryStatus;
 
-        // TX2: platform fee (fire-and-forget, parallel with retry)
-        if (platformFeeRaw >= 100n) {
-            sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
-                .catch(err => console.error('split_platform TX2 failed:', err.message));
+        if (isX402Standard) {
+            // ═══ x402 STANDARD PATH: EIP-3009 signature ═══
+            console.log(`[split_platform:x402-standard] Signing EIP-3009 for ${cost} USDC on ${resolvedChainKey}`);
+
+            // Amount: prefer maxAmountRequired (atomic), fallback to parsed amount
+            const amountAtomic = normalized.maxAmountRequired
+                ? BigInt(normalized.maxAmountRequired)
+                : providerRaw;
+            const recipient = normalized.payTo || normalized.providerWallet;
+            const validAfter = 0;
+            const validBefore = Math.floor(Date.now() / 1000) + Math.max(normalized.maxTimeoutSeconds || 60, 60);
+
+            const { wallet: walClient } = getClients(resolvedChainKey);
+            const { signature, authorization } = await signEIP3009Auth(
+                walClient, amountAtomic.toString(), recipient, validAfter, validBefore, resolvedChainKey
+            );
+
+            // Build X-PAYMENT header (x402 v1 standard format)
+            const xPayment = buildX402StandardPayload(signature, authorization, resolvedChainKey, normalized);
+
+            // Send request with X-PAYMENT header
+            const x402Headers = {
+                ...fetchOptions.headers,
+                'X-PAYMENT': xPayment,
+                'X-Agent-Wallet': account.address,
+            };
+
+            const x402Res = await fetchWithTimeout(url, { ...fetchOptions, headers: x402Headers }, 30_000);
+            retryStatus = x402Res.status;
+            retryAttempt = 1;
+            txHashProvider = `eip3009:${signature.slice(0, 18)}`;
+
+            // Parse response
+            if (textFallback) {
+                const text = await x402Res.text();
+                try { extResult = JSON.parse(text); } catch { extResult = { response: text.slice(0, 5000) }; }
+            } else {
+                extResult = await x402Res.json();
+            }
+
+            // TX2: platform fee (fire-and-forget)
+            if (platformFeeRaw >= 100n) {
+                sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
+                    .catch(err => console.error('split_platform:x402-standard TX2 fee failed:', err.message));
+            }
+
+        } else {
+            // ═══ DIRECT PATH: transfer + universal proof headers ═══
+            txHashProvider = await sendUsdcTransfer(resolvedChainKey, normalized.providerWallet, providerRaw);
+
+            // TX2: platform fee (fire-and-forget)
+            if (platformFeeRaw >= 100n) {
+                sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
+                    .catch(err => console.error('split_platform TX2 failed:', err.message));
+            }
+
+            // Build UNIVERSAL proof headers
+            const proof = buildUniversalProofHeaders(normalized, txHashProvider, resolvedChainKey, account.address);
+            if (!proof.supported) throw new Error(proof.message);
+
+            // Progressive retry with exponential backoff
+            const RETRY_DELAYS = [2000, 5000, 8000];
+            const extRetryHeaders = { ...fetchOptions.headers, ...proof.headers };
+            let extRetryRes;
+
+            for (const delay of RETRY_DELAYS) {
+                await new Promise(r => setTimeout(r, delay));
+                retryAttempt++;
+                extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
+                if (extRetryRes.status !== 402) {
+                    console.log(`[split_platform] Retry ${retryAttempt} succeeded (HTTP ${extRetryRes.status})`);
+                    break;
+                }
+                console.log(`[split_platform] Retry ${retryAttempt}/${RETRY_DELAYS.length} still 402 — waiting longer...`);
+            }
+
+            retryStatus = extRetryRes.status;
+            if (textFallback) {
+                const retryText = await extRetryRes.text();
+                try { extResult = JSON.parse(retryText); } catch { extResult = { response: retryText.slice(0, 5000) }; }
+            } else {
+                extResult = await extRetryRes.json();
+            }
         }
 
+        // ── Common: update session + enrich result ────────────────────────
         sessionSpending += totalCost;
         if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] = Math.max(0, balanceCache[resolvedChainKey] - totalCost);
         sessionPayments.push({
@@ -815,71 +929,39 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             txHash: txHashProvider,
             chain: resolvedChainKey,
             splitMode: 'split_platform',
+            protocol: isX402Standard ? 'x402-standard' : 'direct',
             timestamp: new Date().toISOString(),
             endpoint: url.replace(SERVER_URL, ''),
         });
 
-        // Build UNIVERSAL proof headers — sends ALL known formats simultaneously
-        // for maximum compatibility with any 402 provider implementation
-        const proof = buildUniversalProofHeaders(normalized, txHashProvider, resolvedChainKey, account.address);
-        if (!proof.supported) {
-            throw new Error(proof.message);
-        }
-
-        // Progressive retry with exponential backoff
-        // External providers verify on-chain — may need time for TX confirmation
-        const RETRY_DELAYS = [2000, 5000, 8000]; // total max ~15s
-        const extRetryHeaders = { ...fetchOptions.headers, ...proof.headers };
-        let extRetryRes;
-        let retryAttempt = 0;
-
-        for (const delay of RETRY_DELAYS) {
-            await new Promise(r => setTimeout(r, delay));
-            retryAttempt++;
-            extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
-
-            if (extRetryRes.status !== 402) {
-                console.log(`[split_platform] Retry ${retryAttempt} succeeded (HTTP ${extRetryRes.status})`);
-                break;
-            }
-            console.log(`[split_platform] Retry ${retryAttempt}/${RETRY_DELAYS.length} still 402 — waiting longer...`);
-        }
-
-        // Parse retry response
-        let extResult;
-        if (textFallback) {
-            const retryText = await extRetryRes.text();
-            try {
-                extResult = JSON.parse(retryText);
-            } catch {
-                extResult = { response: retryText.slice(0, 5000) };
-            }
-        } else {
-            extResult = await extRetryRes.json();
-        }
-
-        // Enrich result with payment info + diagnostic
-        const retryStatus = extRetryRes.status;
         extResult._payment = {
             amount: cost.toString(),
             platformFee: (totalCost - cost).toFixed(4),
             currency: 'USDC',
             txHash: txHashProvider,
             splitMode: 'split_platform',
+            protocol: isX402Standard ? 'x402-standard' : 'direct',
+            method: isX402Standard ? 'eip3009' : 'direct_transfer',
             chain: cfg.label,
-            explorer: `${cfg.explorer}/tx/${txHashProvider}`,
+            explorer: isX402Standard ? null : `${cfg.explorer}/tx/${txHashProvider}`,
             session_spent: sessionSpending.toFixed(2),
             session_remaining: (MAX_BUDGET - sessionSpending).toFixed(2),
             retry_status: retryStatus,
             retry_attempts: retryAttempt,
             proof_format: normalized.format,
-            proof_headers_sent: Object.keys(proof.headers),
+            signature_sent: isX402Standard ? true : undefined,
+            proof_headers_sent: isX402Standard ? ['X-PAYMENT', 'X-Agent-Wallet'] : undefined,
         };
-        if (retryStatus === 402) {
-            extResult._payment.warning = 'Payment sent on-chain but provider still returned 402 after 3 retries (~15s). ' +
-                'The provider may use EIP-712 permit verification via facilitator instead of direct transfer verification. ' +
+
+        if (retryStatus === 402 && isX402Standard) {
+            extResult._payment.warning = 'EIP-3009 signature was sent via X-PAYMENT header. ' +
+                'If the provider facilitator settled the payment, USDC has left your wallet. ' +
+                'Contact the provider with the signature for resolution.';
+        } else if (retryStatus === 402) {
+            extResult._payment.warning = 'Payment sent on-chain but provider still returned 402 after retries. ' +
                 'Your USDC was sent — contact the provider with the txHash for manual resolution.';
         }
+
         if (autoChainWarning) extResult._payment.auto_chain_warning = autoChainWarning;
         if (chainKey === 'auto') extResult._payment.auto_selected_chain = resolvedChainKey;
         return extResult;
