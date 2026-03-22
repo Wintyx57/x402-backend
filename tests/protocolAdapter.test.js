@@ -370,19 +370,24 @@ describe('buildProofHeaders', () => {
     assert.equal(result.headers['X-Agent-Wallet'], WALLET);
   });
 
-  it('18. x402-v1: returns X-PAYMENT base64 JSON with x402Version:1 and payload.txHash', () => {
+  it('18. x402-v1: returns X-PAYMENT base64 + fallback X-Payment-TxHash headers', () => {
     const normalized = { format: 'x402-v1', scheme: 'exact', chain: 'base' };
     const result = buildProofHeaders(normalized, TX, 'base', WALLET);
     assert.equal(result.supported, true);
     assert.equal(result.message, null);
+    // Coinbase format
     assert.ok(result.headers['X-PAYMENT']);
     const decoded = JSON.parse(Buffer.from(result.headers['X-PAYMENT'], 'base64').toString('utf-8'));
     assert.equal(decoded.x402Version, 1);
     assert.equal(decoded.payload.txHash, TX);
     assert.equal(decoded.scheme, 'exact');
+    // Also sends simple headers for compatibility with non-Coinbase providers
+    assert.equal(result.headers['X-Payment-TxHash'], TX);
+    assert.equal(result.headers['X-Payment-Chain'], 'base');
+    assert.equal(result.headers['X-Agent-Wallet'], WALLET);
   });
 
-  it('19. x402-v2: returns PAYMENT-SIGNATURE header', () => {
+  it('19. x402-v2: returns PAYMENT-SIGNATURE + fallback X-Payment-TxHash headers', () => {
     const normalized = { format: 'x402-v2' };
     const result = buildProofHeaders(normalized, TX, 'skale', WALLET);
     assert.equal(result.supported, true);
@@ -391,6 +396,9 @@ describe('buildProofHeaders', () => {
     assert.equal(decoded.txHash, TX);
     assert.equal(decoded.chain, 'skale');
     assert.equal(decoded.payer, WALLET);
+    // Also sends simple headers
+    assert.equal(result.headers['X-Payment-TxHash'], TX);
+    assert.equal(result.headers['X-Agent-Wallet'], WALLET);
   });
 
   it('20. flat: same headers as x402-bazaar (fallback)', () => {
