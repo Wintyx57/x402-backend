@@ -1990,6 +1990,114 @@ server.tool(
     }
 );
 
+// --- Tool: import_rapidapi (FREE — RapidAPI shortcut) ---
+server.tool(
+    'import_rapidapi',
+    'Import a RapidAPI API into x402 Bazaar. Provide the OpenAPI spec URL (downloaded from RapidAPI) and your X-RapidAPI-Key. Credentials (X-RapidAPI-Key + X-RapidAPI-Host) are auto-configured. Free. Provider keeps 95% of revenue.',
+    {
+        spec_url: z.string().url().describe('URL to the OpenAPI spec file downloaded from RapidAPI (JSON/YAML)'),
+        rapidapi_key: z.string().min(10).describe('Your X-RapidAPI-Key from rapidapi.com/developer/apps'),
+        default_price: z.number().min(0.001).max(1000).describe('Default price per API call in USDC'),
+        exclude_paths: z.array(z.string()).optional().describe('API paths to exclude from import'),
+    },
+    async ({ spec_url, rapidapi_key, default_price, exclude_paths }) => {
+        try {
+            if (!account) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({ error: 'No wallet configured. Run setup_wallet first.' }) }],
+                    isError: true,
+                };
+            }
+
+            // 1. Fetch the spec to detect RapidAPI host
+            const specRes = await fetchWithTimeout(spec_url, {}, 30_000);
+            if (!specRes.ok) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({ error: `Failed to fetch spec: HTTP ${specRes.status}` }, null, 2) }],
+                    isError: true,
+                };
+            }
+            const specText = await specRes.text();
+            let spec;
+            try {
+                spec = JSON.parse(specText);
+            } catch {
+                // Most RapidAPI specs are JSON — YAML not supported here
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({ error: 'Could not parse spec as JSON. Please provide a JSON spec URL.' }, null, 2) }],
+                    isError: true,
+                };
+            }
+
+            // 2. Detect RapidAPI host from spec
+            const serverUrl = spec.servers?.[0]?.url ||
+                (spec.host ? `${(spec.schemes?.[0] || 'https')}://${spec.host}${spec.basePath || ''}` : '');
+            let rapidapiHost = null;
+            try { rapidapiHost = new URL(serverUrl).hostname; } catch {}
+
+            if (!rapidapiHost || !rapidapiHost.includes('.p.rapidapi.com')) {
+                console.error(`[import_rapidapi] Warning: spec host "${rapidapiHost}" does not look like RapidAPI (.p.rapidapi.com)`);
+            }
+
+            // 3. Build credentials (array format matching ServiceCredentialsSchema)
+            const credentials = {
+                type: 'header',
+                credentials: [
+                    { key: 'X-RapidAPI-Key', value: rapidapi_key },
+                    ...(rapidapiHost ? [{ key: 'X-RapidAPI-Host', value: rapidapiHost }] : []),
+                ],
+            };
+
+            // 4. Sign EIP-191
+            const timestamp = Date.now();
+            const message = `import-openapi:${account.address}:${timestamp}`;
+            const signature = await account.signMessage({ message });
+
+            // 5. Call existing import-openapi endpoint
+            const payload = {
+                specUrl: spec_url,
+                ownerAddress: account.address,
+                defaultPrice: default_price,
+                signature,
+                timestamp,
+                ...(exclude_paths?.length ? { excludePaths: exclude_paths } : {}),
+                credentials: JSON.stringify(credentials),
+            };
+
+            const importRes = await fetchWithTimeout(`${SERVER_URL}/api/import-openapi`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            }, 60_000);
+
+            const result = await importRes.json();
+
+            if (!importRes.ok) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({ error: result.error || 'Import failed', details: result }, null, 2) }],
+                    isError: true,
+                };
+            }
+
+            // 6. Enrich result with RapidAPI metadata
+            result.rapidapi = {
+                host: rapidapiHost,
+                credentials_configured: true,
+                headers: ['X-RapidAPI-Key', 'X-RapidAPI-Host'],
+            };
+
+            return {
+                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
 // --- Tool: create_payment_link (FREE) ---
 server.tool(
     'create_payment_link',
