@@ -315,6 +315,42 @@ describe('normalize402', () => {
     assert.equal(result.recipient, '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF');
   });
 
+  // ─── 17. x402-variant: Ozark Capital style (accepts[] without x402Version) ──
+
+  it('17. x402-variant (Ozark): accepts[] with address + amount + x402:true', () => {
+    const body = {
+      accepts: [{
+        address: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        amount: '0.005',
+        currency: 'USDC',
+        description: 'Ozark Capital data: /signal/btc required',
+        x402: true,
+      }],
+    };
+    const result = normalize402(402, {}, body);
+    assert.equal(result.format, 'x402-v1');
+    assert.equal(result.payable, true);
+    assert.equal(result.amount, '0.005');
+    assert.equal(result.recipient, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    assert.equal(result.currency, 'USDC');
+    assert.equal(result.paymentMode, 'split_platform');
+    assert.equal(result.providerWallet, '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
+    assert.equal(result.detectionPath, 'body:accepts[]');
+  });
+
+  it('18. x402-variant: accepts[] with address but no x402 flag still detected', () => {
+    const body = {
+      accepts: [{
+        address: '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+        amount: '0.01',
+      }],
+    };
+    const result = normalize402(402, {}, body);
+    assert.equal(result.format, 'x402-v1');
+    assert.equal(result.payable, true);
+    assert.equal(result.amount, '0.01');
+  });
+
 });
 
 // ─── buildProofHeaders ──────────────────────────────────────────────────────
