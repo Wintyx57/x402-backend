@@ -686,6 +686,9 @@ function createRegisterRouter(supabase, logActivity, paymentMiddleware, register
             if (body.defaultTags && typeof body.defaultTags === 'string') {
                 try { body.defaultTags = JSON.parse(body.defaultTags); } catch { /* ignore */ }
             }
+            if (body.credentials && typeof body.credentials === 'string') {
+                try { body.credentials = JSON.parse(body.credentials); } catch { /* ignore */ }
+            }
         }
 
         // Validate
