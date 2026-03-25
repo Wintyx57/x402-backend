@@ -208,7 +208,7 @@ function addToBlacklist(serviceId, reason) {
         reason,
         until: Date.now() + SERVICE_BLACKLIST_TTL,
     });
-    console.error(`[Validation] Service ${serviceId} blacklisted for ${reason} (10 min)`);
+    mcpLog.warn('MCP', `Service ${serviceId} blacklisted for ${reason} (10 min)`);
 }
 
 function isBlacklisted(serviceId) {
@@ -768,7 +768,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 agent_address: account?.address || null, raw_response: truncRaw,
             }),
             signal: AbortSignal.timeout(5000),
-        }).catch(err => console.error('discovery insert failed:', err.message));
+        }).catch(err => mcpLog.warn('MCP', `Discovery insert failed: ${err.message}`));
     }
 
     if (!normalized.payable) {
@@ -811,7 +811,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // If the provider specifies a chain, we MUST pay on that chain.
         const externalChain = normalized.chain;
         if (externalChain && CHAINS[externalChain] && externalChain !== resolvedChainKey) {
-            console.log(`[split_platform] Provider requires chain "${externalChain}", overriding agent choice "${resolvedChainKey}"`);
+            mcpLog.info('MCP', `split_platform: provider requires chain "${externalChain}", overriding agent choice "${resolvedChainKey}"`);
             resolvedChainKey = externalChain;
         } else if (externalChain && !CHAINS[externalChain]) {
             throw new Error(`Provider requires payment on chain "${externalChain}" which is not supported. Supported: ${Object.keys(CHAINS).join(', ')}`);
@@ -829,7 +829,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // ── Route based on protocol type ──────────────────────────────────
         const isX402Standard = normalized.protocolType === 'x402-standard' && EIP3009_DOMAINS[resolvedChainKey];
         if (normalized.protocolType === 'x402-standard' && !EIP3009_DOMAINS[resolvedChainKey]) {
-            console.log(`[split_platform] x402-standard detected but chain "${resolvedChainKey}" has no EIP-3009 support — falling back to direct transfer`);
+            mcpLog.info('MCP', `split_platform: x402-standard detected but chain "${resolvedChainKey}" has no EIP-3009 — falling back to direct transfer`);
         }
         let extResult;
         let txHashProvider;
@@ -838,7 +838,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
 
         if (isX402Standard) {
             // ═══ x402 STANDARD PATH: EIP-3009 signature ═══
-            console.log(`[split_platform:x402-standard] Signing EIP-3009 for ${cost} USDC on ${resolvedChainKey}`);
+            mcpLog.info('MCP', `split_platform:x402-standard: signing EIP-3009 for ${cost} USDC on ${resolvedChainKey}`);
 
             // Amount: prefer maxAmountRequired (atomic), fallback to parsed amount
             const amountAtomic = normalized.maxAmountRequired
@@ -879,7 +879,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             // TX2: platform fee (fire-and-forget)
             if (platformFeeRaw >= 100n) {
                 sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
-                    .catch(err => console.error('split_platform:x402-standard TX2 fee failed:', err.message));
+                    .catch(err => mcpLog.warn('MCP', `split_platform:x402-standard TX2 fee failed: ${err.message}`));
             }
 
         } else {
@@ -889,7 +889,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             // TX2: platform fee (fire-and-forget)
             if (platformFeeRaw >= 100n) {
                 sendUsdcTransfer(resolvedChainKey, process.env.WALLET_ADDRESS, platformFeeRaw)
-                    .catch(err => console.error('split_platform TX2 failed:', err.message));
+                    .catch(err => mcpLog.warn('MCP', `split_platform TX2 fee failed: ${err.message}`));
             }
 
             // Build UNIVERSAL proof headers
@@ -906,10 +906,10 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 retryAttempt++;
                 extRetryRes = await fetchWithTimeout(url, { ...fetchOptions, headers: extRetryHeaders }, 15_000);
                 if (extRetryRes.status !== 402) {
-                    console.log(`[split_platform] Retry ${retryAttempt} succeeded (HTTP ${extRetryRes.status})`);
+                    mcpLog.info('MCP', `split_platform: retry ${retryAttempt} succeeded (HTTP ${extRetryRes.status})`);
                     break;
                 }
-                console.log(`[split_platform] Retry ${retryAttempt}/${RETRY_DELAYS.length} still 402 — waiting longer...`);
+                mcpLog.info('MCP', `split_platform: retry ${retryAttempt}/${RETRY_DELAYS.length} still 402 — waiting longer...`);
             }
 
             retryStatus = extRetryRes.status;
@@ -981,7 +981,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         try {
             txHashPlatform = await sendUsdcTransfer(resolvedChainKey, details.recipient, platformRaw);
         } catch (err) {
-            console.error(`[Split] Platform payment failed (fallback to pending payout): ${err.message}`);
+            mcpLog.warn('MCP', `Split: platform payment failed (fallback to pending payout): ${err.message}`);
         }
 
         // Track spending
@@ -1042,7 +1042,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
                 facPayment.status = 'refunded';
                 facPayment.refundTxHash = result._x402?.refund_tx_hash || null;
-                console.error(`[Payment] Facilitator response refunded — ${cost} USDC returned on-chain`);
+                mcpLog.info('MCP', `Payment: facilitator response refunded — ${cost} USDC returned on-chain`);
                 const facRefundMatch = url.match(/\/api\/call\/([0-9a-f-]{36})/i);
                 if (facRefundMatch) addToBlacklist(facRefundMatch[1], 'refunded_bad_response');
                 result._payment = {
@@ -1065,7 +1065,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 sessionSpending = Math.max(0, sessionSpending - cost);
                 if (balanceCache.updatedAt > 0) balanceCache[resolvedChainKey] += cost;
                 facPayment.status = 'not_charged';
-                console.error(`[Payment] Facilitator response not_charged — budget refunded`);
+                mcpLog.info('MCP', `Payment: facilitator response not_charged — budget refunded`);
                 result._payment = {
                     amount: details.amount, currency: 'USDC', status: 'not_charged',
                     paymentMode: 'facilitator', chain: cfg.label,
@@ -1096,7 +1096,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
         // Check for reusable tx hash from a previous not_charged response
         const reusable = findReusableHash(resolvedChainKey, cost);
         if (reusable) {
-            console.error(`[Payment] Reusing tx hash from previous not_charged response (${reusable.amount} USDC on ${resolvedChainKey})`);
+            mcpLog.info('MCP', `Payment: reusing tx hash from previous not_charged response (${reusable.amount} USDC on ${resolvedChainKey})`);
             retryHeaders = reusable.headers;
             sessionPayments.push({
                 amount: cost,
@@ -1157,7 +1157,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 lastPayment.status = 'refunded';
                 lastPayment.refundTxHash = result._x402?.refund_tx_hash || null;
                 // DO NOT add to reusableHashes — tx consumed, USDC returned on-chain
-                console.error(`[Payment] Response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
+                mcpLog.info('MCP', `Payment: response refunded — ${cost} USDC returned on-chain (tx: ${lastPayment.refundTxHash?.slice(0, 18) || 'n/a'})`);
             }
             // Blacklist service (still delivered garbage)
             // Extract serviceId from proxy URL (e.g., /api/call/uuid)
@@ -1196,7 +1196,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                         headers: retryHeaders,
                         timestamp: Date.now(),
                     });
-                    console.error(`[Payment] Response not_charged — tx hash stored for reuse (pool: ${reusableHashes.length})`);
+                    mcpLog.info('MCP', `Payment: response not_charged — tx hash stored for reuse (pool: ${reusableHashes.length})`);
                 }
             }
 
@@ -1241,6 +1241,18 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
     return result;
 }
 
+// ─── MCP Logger (stderr JSON — stdout reserved for MCP protocol) ────
+const mcpLog = {
+    _write(level, ctx, msg, extra = {}) {
+        const entry = JSON.stringify({ ts: new Date().toISOString(), level, ctx, msg, ...extra });
+        process.stderr.write(entry + '\n');
+    },
+    debug(ctx, msg, extra) { mcpLog._write('debug', ctx, msg, extra); },
+    info(ctx, msg, extra)  { mcpLog._write('info', ctx, msg, extra); },
+    warn(ctx, msg, extra)  { mcpLog._write('warn', ctx, msg, extra); },
+    error(ctx, msg, extra) { mcpLog._write('error', ctx, msg, extra); },
+};
+
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
@@ -1277,6 +1289,7 @@ server.tool(
         chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
     async ({ query, chain: chainKey }) => {
+        mcpLog.info('MCP', `tool:search_services query="${query}" chain=${chainKey || 'auto'}`);
         try {
             const result = await payAndRequest(
                 `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
@@ -1398,6 +1411,7 @@ server.tool(
     },
     async ({ service_id, body: requestBody, chain: chainKey }) => {
         const selectedChain = chainKey || 'auto';
+        mcpLog.info('MCP', `tool:call_service id=${service_id} chain=${selectedChain}`, { hasBody: !!requestBody });
         try {
             // --- BLACKLIST CHECK: block temporarily blacklisted services ---
             const blacklisted = isBlacklisted(service_id);
@@ -1458,7 +1472,7 @@ server.tool(
                 }
             } catch (err) {
                 // Non-blocking: proceed without validation if service info fetch fails
-                console.error(`[Gatekeeper] Could not fetch service details: ${err.message}`);
+                mcpLog.warn('MCP', `Gatekeeper: could not fetch service details: ${err.message}`);
             }
 
             const proxyUrl = `${SERVER_URL}/api/call/${service_id}`;
@@ -1528,6 +1542,7 @@ server.tool(
     },
     async ({ url, chain: chainKey }) => {
         const selectedChain = chainKey || 'auto';
+        mcpLog.info('MCP', `tool:call_api url=${url} chain=${selectedChain}`);
         try {
             await validateUrlForSSRF(url);
 
@@ -1547,7 +1562,7 @@ server.tool(
                     });
 
                     if (matchingService) {
-                        console.error(`[Split] Redirected Bazaar URL to proxy for split enforcement: ${url} → /api/call/${matchingService.id}`);
+                        mcpLog.info('MCP', `Split: redirected Bazaar URL to proxy: ${url} → /api/call/${matchingService.id}`);
                         const proxyUrl = `${SERVER_URL}/api/call/${matchingService.id}`;
                         // Preserve query params from original URL as body so proxy forwards them
                         const originalParams = Object.fromEntries(parsedUrl.searchParams.entries());
@@ -1563,7 +1578,7 @@ server.tool(
                         };
                     }
                 } catch (err) {
-                    console.error(`[Split] Service lookup failed, proceeding with direct call: ${err.message}`);
+                    mcpLog.warn('MCP', `Split: service lookup failed, proceeding with direct call: ${err.message}`);
                     // Fall through to direct call if lookup fails
                 }
             }
@@ -1661,11 +1676,11 @@ async function autoFundCredits(targetAddress) {
         });
         const data = await res.json();
         if (data.funded) {
-            console.error(`[Faucet] Server funded 0.01 CREDITS to ${targetAddress} — tx: ${data.tx_hash}`);
+            mcpLog.info('MCP', `Faucet: server funded CREDITS to ${targetAddress} — tx: ${data.tx_hash}`);
         }
         return data;
     } catch (err) {
-        console.error(`[Faucet] Backend faucet request failed: ${err.message}`);
+        mcpLog.warn('MCP', `Faucet: backend request failed: ${err.message}`);
         return { funded: false, reason: 'error', error: err.message };
     }
 }
@@ -2036,7 +2051,7 @@ server.tool(
             try { rapidapiHost = new URL(serverUrl).hostname; } catch {}
 
             if (!rapidapiHost || !rapidapiHost.includes('.p.rapidapi.com')) {
-                console.error(`[import_rapidapi] Warning: spec host "${rapidapiHost}" does not look like RapidAPI (.p.rapidapi.com)`);
+                mcpLog.warn('MCP', `import_rapidapi: spec host "${rapidapiHost}" does not look like RapidAPI (.p.rapidapi.com)`);
             }
 
             // 3. Build credentials (array format matching ServiceCredentialsSchema)

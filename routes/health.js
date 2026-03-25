@@ -461,6 +461,7 @@ function createHealthRouter(supabase, adminAuth) {
 
         // 1. Validate address format
         if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+            logger.warn('Faucet', `Invalid address format: ${String(address).slice(0, 20)}`);
             return res.status(400).json({ funded: false, reason: 'invalid_address' });
         }
 
@@ -480,6 +481,7 @@ function createHealthRouter(supabase, adminAuth) {
                 const nextClaimAt = lastClaimAt + 24 * 60 * 60 * 1000;
                 const remainingMs = Math.max(0, nextClaimAt - Date.now());
                 const remainingHours = Math.ceil(remainingMs / (60 * 60 * 1000));
+                logger.info('Faucet', `Wallet rate-limited: ${address.slice(0, 10)}... (retry in ${remainingHours}h)`);
                 return res.status(429).json({
                     funded: false,
                     reason: 'wallet_rate_limited',
@@ -495,6 +497,7 @@ function createHealthRouter(supabase, adminAuth) {
         // 3. Check wallet key — unified AGENT_PRIVATE_KEY (or legacy FAUCET_PRIVATE_KEY)
         const faucetKey = process.env.AGENT_PRIVATE_KEY || process.env.FAUCET_PRIVATE_KEY;
         if (!faucetKey) {
+            logger.warn('Faucet', 'Faucet not configured (no AGENT_PRIVATE_KEY)');
             return res.status(503).json({ funded: false, reason: 'faucet_not_configured' });
         }
 
@@ -505,6 +508,7 @@ function createHealthRouter(supabase, adminAuth) {
 
             // If already has CREDITS (> 0.001), skip
             if (balance > 1_000_000_000_000_000n) {
+                logger.info('Faucet', `Already has credits: ${address.slice(0, 10)}... (${(Number(balance) / 1e18).toFixed(4)} CREDITS)`);
                 return res.json({
                     funded: false,
                     reason: 'already_has_credits',
@@ -546,7 +550,10 @@ function createHealthRouter(supabase, adminAuth) {
                 type: 'faucet_claim',
                 detail: address.toLowerCase(),
                 amount: 0,
-            }]).then(null, (err) => logger.warn('Faucet', `Failed to log activity: ${err.message}`));
+            }]).then(
+                ({ error }) => { if (error) logger.warn('Faucet', `Failed to log activity: ${error.message}`); },
+                (err) => logger.warn('Faucet', `Failed to log activity: ${err.message}`)
+            );
 
             res.json({
                 funded: true,

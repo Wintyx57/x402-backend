@@ -132,10 +132,24 @@ describe('createActivityLogger', () => {
         };
 
         const logActivity = createActivityLogger(fakeSupabase);
-        // Should not throw — error is caught by .then(null, handler)
+        // Should not throw — error is caught by .then() rejection handler
         assert.doesNotThrow(() => {
             logActivity('test', 'should not throw');
         });
         await tick(); // Let the rejection handler run
+    });
+
+    it('should handle Supabase error response (not exception) gracefully', async () => {
+        const fakeSupabase = {
+            from: () => ({
+                insert: () => Promise.resolve({ error: { message: 'permission denied' } })
+            })
+        };
+
+        const logActivity = createActivityLogger(fakeSupabase);
+        assert.doesNotThrow(() => {
+            logActivity('test', 'should handle error response');
+        });
+        await tick();
     });
 });

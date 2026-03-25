@@ -51,6 +51,7 @@ function createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpoin
             .single();
 
         if (fetchErr || !service) {
+            logger.warn('Proxy', `Service not found: ${serviceId}`, { correlationId: req.correlationId });
             return res.status(404).json({ error: 'Service not found' });
         }
 
@@ -576,11 +577,17 @@ function shouldChargeForResponse(httpStatus, responseData, serviceUrl) {
 }
 
 async function executeProxyCall(req, res, { service, price, txHash, chain, payoutManager, logActivity, splitMode, splitMeta, onSuccess, supabase }) {
+    const cid = req.correlationId || '-';
+    const hasCredentials = !!service.encrypted_credentials;
+    logger.info('Proxy', `→ ${service.name} (${price} USDC, ${splitMode}, chain:${chain})`, {
+        correlationId: cid, serviceId: service.id, hasCredentials,
+    });
+
     // SSRF check on service URL
     try {
         await safeUrl(service.url);
     } catch (err) {
-        logger.error('Proxy', `SSRF blocked for service "${service.name}": ${err.message}`);
+        logger.error('Proxy', `SSRF blocked for service "${service.name}": ${err.message}`, { correlationId: cid });
         return res.status(403).json({ error: 'Service URL is not allowed' });
     }
 
@@ -649,10 +656,11 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         if (attempt > 0) {
-            logger.info('Proxy', `Retry ${attempt}/${MAX_RETRIES - 1} for "${service.name}" after ${RETRY_BACKOFF_MS[attempt]}ms`);
+            logger.info('Proxy', `Retry ${attempt}/${MAX_RETRIES - 1} for "${service.name}" after ${RETRY_BACKOFF_MS[attempt]}ms`, { correlationId: cid });
             await new Promise(r => setTimeout(r, RETRY_BACKOFF_MS[attempt]));
         }
 
+        const start = Date.now();
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 30000);
@@ -673,10 +681,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             if (service.encrypted_credentials) {
                 const decrypted = decryptCredentials(service.encrypted_credentials);
                 if (decrypted) {
-                    // injectCredentials mutates proxyHeaders in-place; only the URL may change
                     targetUrl = injectCredentials(proxyHeaders, targetUrl, decrypted).url;
+                    logger.debug('Proxy', `Credentials injected (type:${decrypted.type}) for "${service.name}"`, { correlationId: cid });
                 } else {
-                    logger.warn('Proxy', `Failed to decrypt credentials for service "${service.name}" (${service.id.slice(0, 8)}) — proceeding without auth`);
+                    logger.warn('Proxy', `Failed to decrypt credentials for service "${service.name}" (${service.id.slice(0, 8)}) — proceeding without auth`, { correlationId: cid });
                 }
             }
 
@@ -705,6 +713,11 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                 responseData = { raw: await proxyRes.text() };
             }
 
+            const upstreamLatency = Date.now() - (start || Date.now());
+            logger.info('Proxy', `← ${service.name} upstream ${proxyRes.status} in ${upstreamLatency}ms`, {
+                correlationId: cid, httpStatus: proxyRes.status, latencyMs: upstreamLatency,
+            });
+
             // --- CONSUMER PROTECTION: Response Quality Gate (Layers 0+1+2) ---
             const chargeDecision = shouldChargeForResponse(proxyRes.status, responseData, service.url);
 
@@ -712,6 +725,7 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             recordCircuitSuccess(service.url);
 
             if (!chargeDecision.shouldCharge) {
+                logger.info('Proxy', `Consumer protection: NOT charging for "${service.name}" (${chargeDecision.reason})`, { correlationId: cid, reason: chargeDecision.reason });
                 const refundEngine = require('../lib/refund');
                 const rawAgentWallet = req.headers['x-agent-wallet'];
                 const agentWallet = /^0x[a-fA-F0-9]{40}$/.test(rawAgentWallet) ? rawAgentWallet : null;
@@ -747,9 +761,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                                 refundSkipReason = refundResult.reason;
                                 if (supabase) {
                                     const replayKey = `${chain}:${splitMode === 'split' ? 'split_provider:' : ''}${txHash}`;
-                                    supabase.from('used_transactions').update({ status: 'rolled_back' }).eq('tx_hash', replayKey).then(null, (err) => {
-                                        logger.error('Proxy:refund-rollback', `Failed to mark tx ${replayKey} as rolled_back: ${err?.message}`);
-                                    });
+                                    supabase.from('used_transactions').update({ status: 'rolled_back' }).eq('tx_hash', replayKey).then(
+                                        ({ error }) => { if (error) logger.error('Proxy:refund-rollback', `Failed to mark tx ${replayKey} as rolled_back: ${error.message}`); },
+                                        (err) => logger.error('Proxy:refund-rollback', `Exception marking tx ${replayKey} as rolled_back: ${err?.message}`)
+                                    );
                                 }
                                 txClaimed = false;
                             }
@@ -776,7 +791,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
                         refund_wallet: refundMeta?.refund_wallet || null,
                         reason: chargeDecision.reason,
                         failure_reason: refundSkipReason || null,
-                    }]).then(null, () => {});
+                    }]).then(
+                        ({ error }) => { if (error) logger.warn('Proxy', `Failed to persist refund record: ${error.message}`); },
+                        (err) => logger.warn('Proxy', `Exception persisting refund record: ${err?.message}`)
+                    );
                 }
 
                 return res.status(proxyRes.status).json({
@@ -845,6 +863,10 @@ async function executeProxyCall(req, res, { service, price, txHash, chain, payou
             if (splitMode === 'legacy') {
                 logActivity('proxy_call', `Proxied call to "${service.name}" (${price} USDC)`, price, txHash);
             }
+
+            logger.info('Proxy', `✓ ${service.name} — ${price} USDC charged (${splitMode})`, {
+                correlationId: cid, serviceId: service.id, price, splitMode, chain, txHash: txHash?.slice(0, 18),
+            });
 
             // Build _x402 metadata
             const _x402Chain = getChainConfig(chain);
