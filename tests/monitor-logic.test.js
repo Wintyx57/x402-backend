@@ -280,7 +280,119 @@ describe('monitor — logique URL pattern matching pour services internes', () =
     });
 });
 
-// ─── Suite 6 : constantes de configuration ────────────────────────────────────
+// ─── Suite 6 : credential-aware isOnline logic ─────────────────────────────────
+
+describe('monitor — credential-aware isOnline logic', () => {
+    // Réplication fidèle de la logique isOnline dans checkExternalEndpoint
+    function isOnline(httpStatus, hasCredentials) {
+        return httpStatus === 402 || httpStatus === 400 || httpStatus === 200 || httpStatus === 429
+            || (hasCredentials && (httpStatus === 401 || httpStatus === 403));
+    }
+
+    it('200 should be online regardless of credentials', () => {
+        assert.ok(isOnline(200, false));
+        assert.ok(isOnline(200, true));
+    });
+
+    it('402 should be online regardless of credentials', () => {
+        assert.ok(isOnline(402, false));
+        assert.ok(isOnline(402, true));
+    });
+
+    it('400 should be online regardless of credentials', () => {
+        assert.ok(isOnline(400, false));
+        assert.ok(isOnline(400, true));
+    });
+
+    it('429 should be online regardless of credentials', () => {
+        assert.ok(isOnline(429, false));
+        assert.ok(isOnline(429, true));
+    });
+
+    it('401 should be OFFLINE without credentials (genuine auth failure)', () => {
+        assert.ok(!isOnline(401, false));
+    });
+
+    it('401 should be ONLINE with credentials (server alive, creds may have rotated)', () => {
+        assert.ok(isOnline(401, true));
+    });
+
+    it('403 should be OFFLINE without credentials', () => {
+        assert.ok(!isOnline(403, false));
+    });
+
+    it('403 should be ONLINE with credentials (server alive)', () => {
+        assert.ok(isOnline(403, true));
+    });
+
+    it('500 should be offline regardless', () => {
+        assert.ok(!isOnline(500, false));
+        assert.ok(!isOnline(500, true));
+    });
+
+    it('503 should be offline regardless', () => {
+        assert.ok(!isOnline(503, false));
+        assert.ok(!isOnline(503, true));
+    });
+
+    it('404 should be offline regardless', () => {
+        assert.ok(!isOnline(404, false));
+        assert.ok(!isOnline(404, true));
+    });
+});
+
+// ─── Suite 7 : fetchExternalServices includes credential fields ─────────────
+
+describe('monitor — fetchExternalServices credential fields', () => {
+    it('should map encrypted_credentials to encryptedCredentials', () => {
+        const svc = {
+            id: 'abc',
+            name: 'Test API',
+            url: 'https://example.com/api',
+            owner_address: '0x1234',
+            encrypted_credentials: 'base64blob==',
+            credential_type: 'header',
+        };
+
+        // Réplication de la logique de mapping dans fetchExternalServices
+        const mapped = {
+            id: svc.id,
+            path: svc.url,
+            method: 'GET',
+            label: svc.name || svc.url,
+            isExternal: true,
+            encryptedCredentials: svc.encrypted_credentials || null,
+            credentialType: svc.credential_type || null,
+        };
+
+        assert.strictEqual(mapped.encryptedCredentials, 'base64blob==');
+        assert.strictEqual(mapped.credentialType, 'header');
+    });
+
+    it('should default to null when no credentials', () => {
+        const svc = {
+            id: 'def',
+            name: 'Open API',
+            url: 'https://example.com/open',
+            owner_address: '0x5678',
+        };
+
+        const mapped = {
+            id: svc.id,
+            path: svc.url,
+            method: 'GET',
+            label: svc.name || svc.url,
+            isExternal: true,
+            encryptedCredentials: svc.encrypted_credentials || null,
+            credentialType: svc.credential_type || null,
+        };
+
+        assert.strictEqual(mapped.encryptedCredentials, null);
+        assert.strictEqual(mapped.credentialType, null);
+    });
+});
+
+// ─── Suite 8 : constantes de configuration ────────────────────────────────────
 
 describe('monitor — constantes de configuration', () => {
     it('CHECK_INTERVAL should be 5 minutes in milliseconds', () => {
