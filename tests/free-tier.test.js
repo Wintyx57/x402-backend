@@ -6,13 +6,21 @@ const assert = require("node:assert/strict");
 
 // ─── Helper: load the module fresh (cache reset) ─────────────────────────────
 
+const PLATFORM_WALLET = "0xfb1c478BD5567BdcD39782E0D6D23418bFda2430";
+
 function loadFreeTier(env = {}) {
   // Save original env
   const saved = {};
-  for (const key of ["FREE_TIER_LIMIT", "FREE_TIER_MAX_PRICE"]) {
+  for (const key of [
+    "FREE_TIER_LIMIT",
+    "FREE_TIER_MAX_PRICE",
+    "WALLET_ADDRESS",
+  ]) {
     saved[key] = process.env[key];
     if (env[key] !== undefined) {
       process.env[key] = env[key];
+    } else if (key === "WALLET_ADDRESS") {
+      process.env[key] = PLATFORM_WALLET;
     } else {
       delete process.env[key];
     }
@@ -28,7 +36,11 @@ function loadFreeTier(env = {}) {
   const mod = require("../lib/free-tier");
 
   // Restore env
-  for (const key of ["FREE_TIER_LIMIT", "FREE_TIER_MAX_PRICE"]) {
+  for (const key of [
+    "FREE_TIER_LIMIT",
+    "FREE_TIER_MAX_PRICE",
+    "WALLET_ADDRESS",
+  ]) {
     if (saved[key] === undefined) {
       delete process.env[key];
     } else {
@@ -69,13 +81,33 @@ describe("hashIp", () => {
 describe("isFreeTierEligible", () => {
   const { isFreeTierEligible, FREE_TIER_MAX_PRICE } = loadFreeTier();
 
+  // Ensure WALLET_ADDRESS is set for the duration of these tests
+  const savedWallet = process.env.WALLET_ADDRESS;
+  process.env.WALLET_ADDRESS = PLATFORM_WALLET;
+
   it("returns true for a native low-price service (no owner_address, price <= max)", () => {
     const service = { price_usdc: 0.005, owner_address: null };
     assert.strictEqual(isFreeTierEligible(service), true);
   });
 
-  it("returns false when the service has an owner_address (external provider)", () => {
-    const service = { price_usdc: 0.005, owner_address: "0xAbc123" };
+  it("returns true when owner_address is the platform wallet (native service)", () => {
+    const service = { price_usdc: 0.005, owner_address: PLATFORM_WALLET };
+    assert.strictEqual(isFreeTierEligible(service), true);
+  });
+
+  it("returns true when owner_address is platform wallet in different case", () => {
+    const service = {
+      price_usdc: 0.005,
+      owner_address: PLATFORM_WALLET.toLowerCase(),
+    };
+    assert.strictEqual(isFreeTierEligible(service), true);
+  });
+
+  it("returns false when the service has an external owner_address", () => {
+    const service = {
+      price_usdc: 0.005,
+      owner_address: "0xAbc123ExternalProvider",
+    };
     assert.strictEqual(isFreeTierEligible(service), false);
   });
 
