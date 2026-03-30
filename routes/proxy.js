@@ -25,7 +25,16 @@ const {
 const feeSplitter = require("../lib/fee-splitter");
 const { decryptCredentials, injectCredentials } = require("../lib/credentials");
 const { hashIp, checkFreeTier, recordFreeUsage } = require("../lib/free-tier");
-const { normalize402 } = require("../lib/protocolAdapter");
+const {
+  normalize402,
+  buildUniversalProofHeaders,
+} = require("../lib/protocolAdapter");
+const {
+  isRelayConfigured,
+  canPayUpstream,
+  payUpstream,
+  getRelayAddress,
+} = require("../lib/upstreamPayer");
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -124,13 +133,23 @@ function createProxyRouter(
       }
     }
 
-    // --- PROTOCOL SNIFFER: block unpayable upstream protocols BEFORE payment ---
-    const UNPAYABLE_PROTOCOLS = new Set([
+    // --- PROTOCOL SNIFFER: handle upstream payment protocols BEFORE payment ---
+    const UNPAYABLE_PROTOCOLS = new Set(["l402", "l402-protocol", "stripe402"]);
+    const RELAY_PAYABLE_PROTOCOLS = new Set([
+      "x402-v2",
+      "x402-v1",
+      "x402-bazaar",
+      "x402-variant",
+      "flat",
+      "header-based",
       "mpp",
-      "l402",
-      "l402-protocol",
-      "stripe402",
     ]);
+    const isRelayEligible =
+      service.payment_protocol &&
+      RELAY_PAYABLE_PROTOCOLS.has(service.payment_protocol) &&
+      isRelayConfigured();
+
+    // Block truly unpayable protocols
     if (
       service.payment_protocol &&
       UNPAYABLE_PROTOCOLS.has(service.payment_protocol)
@@ -143,6 +162,20 @@ function createProxyRouter(
       return res.status(502).json({
         error: "UPSTREAM_PROTOCOL_UNSUPPORTED",
         message: `Service "${service.name}" uses the ${service.payment_protocol} payment protocol upstream, which x402 Bazaar cannot pay automatically. Contact the provider to resolve this.`,
+        upstream_protocol: service.payment_protocol,
+        _payment_status: "not_charged",
+      });
+    }
+
+    // Block relay-payable protocols when relay is not configured
+    if (
+      service.payment_protocol &&
+      RELAY_PAYABLE_PROTOCOLS.has(service.payment_protocol) &&
+      !isRelayConfigured()
+    ) {
+      return res.status(502).json({
+        error: "UPSTREAM_PAYMENT_REQUIRED",
+        message: `Service "${service.name}" requires upstream payment (${service.payment_protocol}), but the payment relay is not configured.`,
         upstream_protocol: service.payment_protocol,
         _payment_status: "not_charged",
       });
@@ -266,7 +299,12 @@ function createProxyRouter(
             _chainCfg.feeSplitterContract
           );
 
-          if (_isFacilitator) {
+          // Relay-eligible: force legacy mode (no provider_wallet)
+          if (isRelayEligible) {
+            body.payment_details.payment_mode = "relay_upstream";
+            body.payment_details.note =
+              "Upstream payment relay active. Provider receives net payout after upstream cost deduction.";
+          } else if (_isFacilitator) {
             // Phase 2 Polygon facilitator: the FeeSplitter contract handles the 95/5 split
             // on-chain automatically. We expose fee_splitter info but NOT provider_wallet
             // to prevent the client from attempting a manual double transfer.
@@ -988,7 +1026,7 @@ async function executeProxyCall(
           continue;
         }
 
-        // --- PROTOCOL SNIFFER: detect 402 upstream (self-healing) ---
+        // --- UPSTREAM PAYMENT RELAY: detect 402, pay upstream, retry ---
         if (proxyRes.status === 402) {
           let headers402 = {};
           try {
@@ -1005,9 +1043,9 @@ async function executeProxyCall(
           }
 
           const normalized = normalize402(402, headers402, body402);
-          logger.warn(
+          logger.info(
             "Proxy",
-            `Upstream 402 for "${service.name}" — detected protocol: ${normalized.format}`,
+            `Upstream 402 for "${service.name}" — protocol: ${normalized.format}, payable: ${normalized.payable}`,
             {
               correlationId: cid,
               protocol: normalized.format,
@@ -1015,24 +1053,167 @@ async function executeProxyCall(
             },
           );
 
-          // Update payment_protocol in DB (fire-and-forget) if not already set
+          // Update payment_protocol in DB (fire-and-forget)
           if (normalized.format !== "unknown" && supabase) {
             supabase
               .from("services")
               .update({ payment_protocol: normalized.format })
               .eq("id", service.id)
               .then(null, () => {
-                /* intentionally silent */
+                /* silent */
               });
           }
 
-          // Release inflight key before returning
-          if (inflightKey) _proxyInFlight.delete(inflightKey);
+          // Attempt upstream payment relay
+          if (isRelayConfigured() && canPayUpstream(normalized)) {
+            const upstreamCostUsdc = Number(normalized.amount) / 1e6;
 
-          // Return structured error to caller with protocol info
+            // Price guard
+            if (price < upstreamCostUsdc) {
+              logger.warn(
+                "Proxy",
+                `Price guard: ${price} < upstream ${upstreamCostUsdc} for "${service.name}"`,
+              );
+              if (inflightKey) _proxyInFlight.delete(inflightKey);
+              return res.status(502).json({
+                error: "UPSTREAM_PRICE_EXCEEDS_SERVICE",
+                message: `Service price ($${price}) is less than upstream cost ($${upstreamCostUsdc}). Provider must increase the price.`,
+                upstream_cost: upstreamCostUsdc,
+                service_price: price,
+                _payment_status: "not_charged",
+              });
+            }
+
+            logger.info(
+              "Proxy",
+              `Paying upstream ${upstreamCostUsdc} USDC for "${service.name}" on ${normalized.chain}`,
+              { correlationId: cid },
+            );
+            const payResult = await payUpstream(normalized);
+
+            if (payResult.success) {
+              const proofResult = buildUniversalProofHeaders(
+                normalized,
+                payResult.txHash,
+                payResult.chain,
+                getRelayAddress(),
+              );
+
+              if (proofResult.supported && proofResult.headers) {
+                const retryHeaders = {
+                  ...proxyHeaders,
+                  ...proofResult.headers,
+                };
+                logger.info(
+                  "Proxy",
+                  `Retrying upstream with proof headers for "${service.name}"`,
+                  { correlationId: cid },
+                );
+
+                try {
+                  const retryController = new AbortController();
+                  const retryTimeout = setTimeout(
+                    () => retryController.abort(),
+                    30000,
+                  );
+                  const retryRes = await fetch(targetUrl, {
+                    method: upstreamMethod,
+                    headers: retryHeaders,
+                    body: fetchBody,
+                    signal: retryController.signal,
+                  });
+                  clearTimeout(retryTimeout);
+
+                  if (retryRes.status >= 200 && retryRes.status < 400) {
+                    const retryContentType =
+                      retryRes.headers.get("content-type") || "";
+                    let retryData;
+                    if (retryContentType.includes("application/json")) {
+                      retryData = await retryRes.json();
+                    } else {
+                      retryData = { raw: await retryRes.text() };
+                    }
+
+                    logger.info(
+                      "Proxy",
+                      `Upstream relay SUCCESS for "${service.name}"`,
+                      { correlationId: cid },
+                    );
+
+                    // Record provider payout with upstream cost deducted
+                    if (payoutManager && service.owner_address) {
+                      const platformFee = price * 0.05;
+                      const providerNet =
+                        price - upstreamCostUsdc - platformFee;
+                      if (providerNet > 0) {
+                        payoutManager
+                          .recordPayout({
+                            serviceId: service.id,
+                            serviceName: service.name,
+                            providerWallet: service.owner_address,
+                            grossAmount: providerNet,
+                            txHashIn: txHash,
+                            chain,
+                          })
+                          .catch((err) =>
+                            logger.error(
+                              "Proxy",
+                              `Relay payout error: ${err.message}`,
+                            ),
+                          );
+                      }
+                    }
+
+                    if (onSuccess) await onSuccess();
+                    logActivity(
+                      "proxy_relay",
+                      `Relay: "${service.name}" (${price} USDC, upstream ${upstreamCostUsdc} USDC)`,
+                      price,
+                      txHash,
+                    );
+
+                    if (inflightKey) _proxyInFlight.delete(inflightKey);
+                    return res.status(200).json({
+                      ...retryData,
+                      _x402: {
+                        payment: `${price} USDC`,
+                        upstream_relay: {
+                          paid: `${upstreamCostUsdc} USDC`,
+                          tx_hash: payResult.txHash,
+                          chain: payResult.chain,
+                          protocol: normalized.format,
+                          provider_net: `${Math.max(0, price - upstreamCostUsdc - price * 0.05).toFixed(6)} USDC`,
+                        },
+                      },
+                    });
+                  }
+                  logger.warn(
+                    "Proxy",
+                    `Upstream retry failed for "${service.name}" — status ${retryRes.status}`,
+                    { correlationId: cid },
+                  );
+                } catch (retryErr) {
+                  logger.error(
+                    "Proxy",
+                    `Upstream retry error: ${retryErr.message}`,
+                    { correlationId: cid },
+                  );
+                }
+              }
+            } else {
+              logger.warn(
+                "Proxy",
+                `Upstream payment failed: ${payResult.error}`,
+                { correlationId: cid },
+              );
+            }
+          }
+
+          // Fallback: relay not configured, payment failed, or retry failed
+          if (inflightKey) _proxyInFlight.delete(inflightKey);
           return res.status(502).json({
             error: "UPSTREAM_PAYMENT_REQUIRED",
-            message: `Upstream service "${service.name}" requires its own payment (${normalized.format} protocol). This service is misconfigured — the provider must cover upstream costs or adjust pricing.`,
+            message: `Upstream service "${service.name}" requires its own payment (${normalized.format} protocol).`,
             upstream_protocol: normalized.format,
             upstream_price: normalized.amount || null,
             upstream_recipient: normalized.recipient || null,
