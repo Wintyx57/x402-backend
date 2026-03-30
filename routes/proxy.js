@@ -25,6 +25,7 @@ const {
 const feeSplitter = require("../lib/fee-splitter");
 const { decryptCredentials, injectCredentials } = require("../lib/credentials");
 const { hashIp, checkFreeTier, recordFreeUsage } = require("../lib/free-tier");
+const { normalize402 } = require("../lib/protocolAdapter");
 
 // Hostname of this server — used to detect internal service URLs
 const SELF_HOSTNAME = (() => {
@@ -963,6 +964,64 @@ async function executeProxyCall(
           continue;
         }
 
+        // --- PROTOCOL SNIFFER: detect 402 upstream (self-healing) ---
+        if (proxyRes.status === 402) {
+          let headers402 = {};
+          try {
+            headers402 = Object.fromEntries(proxyRes.headers);
+          } catch {
+            /* empty */
+          }
+          let body402 = {};
+          const rawText = await proxyRes.text().catch(() => "");
+          try {
+            body402 = JSON.parse(rawText);
+          } catch {
+            /* not JSON */
+          }
+
+          const normalized = normalize402(402, headers402, body402);
+          logger.warn(
+            "Proxy",
+            `Upstream 402 for "${service.name}" — detected protocol: ${normalized.format}`,
+            {
+              correlationId: cid,
+              protocol: normalized.format,
+              detectionPath: normalized.detectionPath,
+            },
+          );
+
+          // Update payment_protocol in DB (fire-and-forget) if not already set
+          if (normalized.format !== "unknown" && supabase) {
+            supabase
+              .from("services")
+              .update({ payment_protocol: normalized.format })
+              .eq("id", service.id)
+              .then(null, () => {
+                /* intentionally silent */
+              });
+          }
+
+          // Release inflight key before returning
+          if (inflightKey) _proxyInFlight.delete(inflightKey);
+
+          // Return structured error to caller with protocol info
+          return res.status(502).json({
+            error: "UPSTREAM_PAYMENT_REQUIRED",
+            message: `Upstream service "${service.name}" requires its own payment (${normalized.format} protocol). This service is misconfigured — the provider must cover upstream costs or adjust pricing.`,
+            upstream_protocol: normalized.format,
+            upstream_price: normalized.amount || null,
+            upstream_recipient: normalized.recipient || null,
+            upstream_chain: normalized.chain || null,
+            _payment_status: "not_charged",
+            _x402: {
+              upstream_402: true,
+              protocol: normalized.format,
+              detection_path: normalized.detectionPath,
+            },
+          });
+        }
+
         // 2xx or 4xx → accept response, claim tx
         const contentType = proxyRes.headers.get("content-type") || "";
         let responseData;
@@ -970,6 +1029,24 @@ async function executeProxyCall(
           responseData = await proxyRes.json();
         } else {
           responseData = { raw: await proxyRes.text() };
+        }
+
+        // Detect HTML SPA responses (proxy returning frontend instead of API data)
+        if (responseData.raw && typeof responseData.raw === "string") {
+          const raw = responseData.raw;
+          if (
+            raw.trimStart().startsWith("<!DOCTYPE") ||
+            raw.trimStart().startsWith("<html")
+          ) {
+            logger.warn(
+              "Proxy",
+              `HTML response from "${service.name}" — likely SPA/paywall, not API data`,
+              { correlationId: cid },
+            );
+            responseData._warning = "html_response";
+            responseData._message =
+              "Upstream returned HTML instead of API data. This may indicate a paywall or misconfigured service.";
+          }
         }
 
         const upstreamLatency = Date.now() - (start || Date.now());
