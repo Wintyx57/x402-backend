@@ -78,7 +78,7 @@ function createProxyRouter(
     const { data: service, error: fetchErr } = await supabase
       .from("services")
       .select(
-        "id, name, url, price_usdc, owner_address, tags, description, required_parameters, encrypted_credentials",
+        "id, name, url, price_usdc, owner_address, tags, description, required_parameters, encrypted_credentials, payment_protocol",
       )
       .eq("id", serviceId)
       .single();
@@ -122,6 +122,30 @@ function createProxyRouter(
           _payment_status: "not_charged",
         });
       }
+    }
+
+    // --- PROTOCOL SNIFFER: block unpayable upstream protocols BEFORE payment ---
+    const UNPAYABLE_PROTOCOLS = new Set([
+      "mpp",
+      "l402",
+      "l402-protocol",
+      "stripe402",
+    ]);
+    if (
+      service.payment_protocol &&
+      UNPAYABLE_PROTOCOLS.has(service.payment_protocol)
+    ) {
+      logger.warn(
+        "Proxy",
+        `Blocked call to "${service.name}" — upstream uses unpayable protocol: ${service.payment_protocol}`,
+        { correlationId: req.correlationId },
+      );
+      return res.status(502).json({
+        error: "UPSTREAM_PROTOCOL_UNSUPPORTED",
+        message: `Service "${service.name}" uses the ${service.payment_protocol} payment protocol upstream, which x402 Bazaar cannot pay automatically. Contact the provider to resolve this.`,
+        upstream_protocol: service.payment_protocol,
+        _payment_status: "not_charged",
+      });
     }
 
     // --- FREE TIER CHECK (before payment) ---
@@ -1033,11 +1057,8 @@ async function executeProxyCall(
 
         // Detect HTML SPA responses (proxy returning frontend instead of API data)
         if (responseData.raw && typeof responseData.raw === "string") {
-          const raw = responseData.raw;
-          if (
-            raw.trimStart().startsWith("<!DOCTYPE") ||
-            raw.trimStart().startsWith("<html")
-          ) {
+          const raw = responseData.raw.trimStart().toLowerCase();
+          if (raw.startsWith("<!doctype") || raw.startsWith("<html")) {
             logger.warn(
               "Proxy",
               `HTML response from "${service.name}" — likely SPA/paywall, not API data`,
