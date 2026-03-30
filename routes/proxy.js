@@ -34,6 +34,8 @@ const {
   canPayUpstream,
   payUpstream,
   getRelayAddress,
+  shouldUseEIP3009,
+  signEIP3009ForUpstream,
 } = require("../lib/upstreamPayer");
 
 // Hostname of this server — used to detect internal service URLs
@@ -1089,123 +1091,157 @@ async function executeProxyCall(
               `Paying upstream ${upstreamCostUsdc} USDC for "${service.name}" on ${normalized.chain}`,
               { correlationId: cid },
             );
-            const payResult = await payUpstream(normalized);
 
-            if (payResult.success) {
-              const proofResult = buildUniversalProofHeaders(
-                normalized,
-                payResult.txHash,
-                payResult.chain,
-                getRelayAddress(),
-              );
+            let retryHeaders;
+            let relayTxHash = null;
+            let relayChain = null;
 
-              if (proofResult.supported && proofResult.headers) {
-                const retryHeaders = {
-                  ...proxyHeaders,
-                  ...proofResult.headers,
-                };
-                logger.info(
+            if (shouldUseEIP3009(normalized)) {
+              // x402-standard: sign EIP-3009 off-chain (no gas, no TX, instant)
+              const eip3009Result = await signEIP3009ForUpstream(normalized);
+              if (!eip3009Result.success) {
+                logger.warn(
                   "Proxy",
-                  `Retrying upstream with proof headers for "${service.name}"`,
+                  `EIP-3009 signing failed: ${eip3009Result.error} — falling back to direct transfer`,
                   { correlationId: cid },
                 );
-
-                try {
-                  const retryController = new AbortController();
-                  const retryTimeout = setTimeout(
-                    () => retryController.abort(),
-                    30000,
-                  );
-                  const retryRes = await fetch(targetUrl, {
-                    method: upstreamMethod,
-                    headers: retryHeaders,
-                    body: fetchBody,
-                    signal: retryController.signal,
-                  });
-                  clearTimeout(retryTimeout);
-
-                  if (retryRes.status >= 200 && retryRes.status < 400) {
-                    const retryContentType =
-                      retryRes.headers.get("content-type") || "";
-                    let retryData;
-                    if (retryContentType.includes("application/json")) {
-                      retryData = await retryRes.json();
-                    } else {
-                      retryData = { raw: await retryRes.text() };
-                    }
-
-                    logger.info(
-                      "Proxy",
-                      `Upstream relay SUCCESS for "${service.name}"`,
-                      { correlationId: cid },
-                    );
-
-                    // Record provider payout with upstream cost deducted
-                    if (payoutManager && service.owner_address) {
-                      const platformFee = price * 0.05;
-                      const providerNet =
-                        price - upstreamCostUsdc - platformFee;
-                      if (providerNet > 0) {
-                        payoutManager
-                          .recordPayout({
-                            serviceId: service.id,
-                            serviceName: service.name,
-                            providerWallet: service.owner_address,
-                            grossAmount: providerNet,
-                            txHashIn: txHash,
-                            chain,
-                          })
-                          .catch((err) =>
-                            logger.error(
-                              "Proxy",
-                              `Relay payout error: ${err.message}`,
-                            ),
-                          );
-                      }
-                    }
-
-                    if (onSuccess) await onSuccess();
-                    logActivity(
-                      "proxy_relay",
-                      `Relay: "${service.name}" (${price} USDC, upstream ${upstreamCostUsdc} USDC)`,
-                      price,
-                      txHash,
-                    );
-
-                    if (inflightKey) _proxyInFlight.delete(inflightKey);
-                    return res.status(200).json({
-                      ...retryData,
-                      _x402: {
-                        payment: `${price} USDC`,
-                        upstream_relay: {
-                          paid: `${upstreamCostUsdc} USDC`,
-                          tx_hash: payResult.txHash,
-                          chain: payResult.chain,
-                          protocol: normalized.format,
-                          provider_net: `${Math.max(0, price - upstreamCostUsdc - price * 0.05).toFixed(6)} USDC`,
-                        },
-                      },
-                    });
-                  }
-                  logger.warn(
-                    "Proxy",
-                    `Upstream retry failed for "${service.name}" — status ${retryRes.status}`,
-                    { correlationId: cid },
-                  );
-                } catch (retryErr) {
-                  logger.error(
-                    "Proxy",
-                    `Upstream retry error: ${retryErr.message}`,
-                    { correlationId: cid },
-                  );
-                }
+              } else {
+                retryHeaders = {
+                  ...proxyHeaders,
+                  "X-PAYMENT": eip3009Result.xPaymentHeader,
+                  "X-Agent-Wallet": getRelayAddress(),
+                };
+                relayChain = eip3009Result.chain;
+                logger.info(
+                  "Proxy",
+                  `EIP-3009 signed for "${service.name}" — retrying upstream`,
+                  { correlationId: cid },
+                );
               }
-            } else {
-              logger.warn(
+            }
+
+            if (!retryHeaders) {
+              // Direct transfer path (non-x402-standard protocols or EIP-3009 fallback)
+              const payResult = await payUpstream(normalized);
+              if (payResult.success) {
+                const proofResult = buildUniversalProofHeaders(
+                  normalized,
+                  payResult.txHash,
+                  payResult.chain,
+                  getRelayAddress(),
+                );
+                if (proofResult.supported && proofResult.headers) {
+                  retryHeaders = {
+                    ...proxyHeaders,
+                    ...proofResult.headers,
+                  };
+                  relayTxHash = payResult.txHash;
+                  relayChain = payResult.chain;
+                }
+              } else {
+                logger.warn(
+                  "Proxy",
+                  `Upstream payment failed: ${payResult.error}`,
+                  { correlationId: cid },
+                );
+              }
+            }
+
+            if (retryHeaders) {
+              logger.info(
                 "Proxy",
-                `Upstream payment failed: ${payResult.error}`,
+                `Retrying upstream with proof headers for "${service.name}"`,
                 { correlationId: cid },
               );
+
+              try {
+                const retryController = new AbortController();
+                const retryTimeout = setTimeout(
+                  () => retryController.abort(),
+                  30000,
+                );
+                const retryRes = await fetch(targetUrl, {
+                  method: upstreamMethod,
+                  headers: retryHeaders,
+                  body: fetchBody,
+                  signal: retryController.signal,
+                });
+                clearTimeout(retryTimeout);
+
+                if (retryRes.status >= 200 && retryRes.status < 400) {
+                  const retryContentType =
+                    retryRes.headers.get("content-type") || "";
+                  let retryData;
+                  if (retryContentType.includes("application/json")) {
+                    retryData = await retryRes.json();
+                  } else {
+                    retryData = { raw: await retryRes.text() };
+                  }
+
+                  logger.info(
+                    "Proxy",
+                    `Upstream relay SUCCESS for "${service.name}"`,
+                    { correlationId: cid },
+                  );
+
+                  // Record provider payout with upstream cost deducted
+                  if (payoutManager && service.owner_address) {
+                    const platformFee = price * 0.05;
+                    const providerNet = price - upstreamCostUsdc - platformFee;
+                    if (providerNet > 0) {
+                      payoutManager
+                        .recordPayout({
+                          serviceId: service.id,
+                          serviceName: service.name,
+                          providerWallet: service.owner_address,
+                          grossAmount: providerNet,
+                          txHashIn: txHash,
+                          chain,
+                        })
+                        .catch((err) =>
+                          logger.error(
+                            "Proxy",
+                            `Relay payout error: ${err.message}`,
+                          ),
+                        );
+                    }
+                  }
+
+                  if (onSuccess) await onSuccess();
+                  logActivity(
+                    "proxy_relay",
+                    `Relay: "${service.name}" (${price} USDC, upstream ${upstreamCostUsdc} USDC)`,
+                    price,
+                    txHash,
+                  );
+
+                  if (inflightKey) _proxyInFlight.delete(inflightKey);
+                  return res.status(200).json({
+                    ...retryData,
+                    _x402: {
+                      payment: `${price} USDC`,
+                      upstream_relay: {
+                        paid: `${upstreamCostUsdc} USDC`,
+                        tx_hash: relayTxHash || "eip3009-offchain",
+                        chain: relayChain,
+                        protocol: normalized.format,
+                        provider_net: `${Math.max(0, price - upstreamCostUsdc - price * 0.05).toFixed(6)} USDC`,
+                      },
+                    },
+                  });
+                }
+                logger.warn(
+                  "Proxy",
+                  `Upstream retry failed for "${service.name}" — status ${retryRes.status}`,
+                  { correlationId: cid },
+                );
+              } catch (retryErr) {
+                logger.error(
+                  "Proxy",
+                  `Upstream retry error: ${retryErr.message}`,
+                  { correlationId: cid },
+                );
+              }
             }
           }
 
