@@ -471,6 +471,12 @@ function createRegisterRouter(
     if (credentialValidation)
       response.credential_validation = credentialValidation;
     if (protocolProbe?.is402) {
+      const upstreamCostUsdc = protocolProbe.upstreamPrice
+        ? Number(protocolProbe.upstreamPrice) / 1e6
+        : null;
+      const minRecommended = upstreamCostUsdc
+        ? (upstreamCostUsdc * 1.2).toFixed(4)
+        : null;
       response.protocol_detected = {
         protocol: protocolProbe.protocol,
         upstream_price: protocolProbe.upstreamPrice,
@@ -481,6 +487,9 @@ function createRegisterRouter(
             ? `Upstream uses ${protocolProbe.protocol} payment protocol. Your price must cover upstream cost.`
             : "Upstream requires payment (unknown protocol). Manual configuration may be needed.",
       };
+      if (upstreamCostUsdc && validatedData.price < upstreamCostUsdc) {
+        response.protocol_detected.price_warning = `Upstream costs $${upstreamCostUsdc.toFixed(4)}. Your price $${validatedData.price} may not cover upstream payment. Recommended minimum: $${minRecommended}.`;
+      }
     }
     res.status(201).json(response);
   });
