@@ -236,3 +236,57 @@ describe("probeProtocol", () => {
     assert.equal(result.normalized.format, "x402-v2");
   });
 });
+
+describe("MPP request base64 parsing", () => {
+  it("should mark MPP payable when chainId is supported and currency is USDC", () => {
+    const { normalize402 } = require("../lib/protocolAdapter");
+    const request = Buffer.from(
+      JSON.stringify({
+        amount: "10000",
+        currency: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", // Base USDC
+        methodDetails: { chainId: 8453 },
+        recipient: "0x2BB201f1bb056eb738718BD7A3ad1BEF24b883bb",
+      }),
+    ).toString("base64");
+    const headers = {
+      "www-authenticate": `Payment id="abc", realm="test.com", method="tempo", intent="charge", request="${request}"`,
+    };
+    const result = normalize402(402, headers, {});
+    assert.equal(result.format, "mpp");
+    assert.equal(result.payable, true);
+    assert.equal(result.amount, "10000");
+    assert.equal(
+      result.recipient,
+      "0x2BB201f1bb056eb738718BD7A3ad1BEF24b883bb",
+    );
+    assert.equal(result.chain, "base");
+  });
+
+  it("should keep MPP not payable when chainId is unsupported", () => {
+    const { normalize402 } = require("../lib/protocolAdapter");
+    const request = Buffer.from(
+      JSON.stringify({
+        amount: "10000",
+        currency: "0x20C000000000000000000000b9537d11c60E8b50",
+        methodDetails: { chainId: 4217 },
+        recipient: "0x2BB201f1bb056eb738718BD7A3ad1BEF24b883bb",
+      }),
+    ).toString("base64");
+    const headers = {
+      "www-authenticate": `Payment id="abc", realm="test.com", method="tempo", intent="charge", request="${request}"`,
+    };
+    const result = normalize402(402, headers, {});
+    assert.equal(result.format, "mpp");
+    assert.equal(result.payable, false);
+  });
+
+  it("should keep MPP not payable when no request param", () => {
+    const { normalize402 } = require("../lib/protocolAdapter");
+    const headers = {
+      "www-authenticate": 'Payment id="abc", realm="test.com", method="tempo"',
+    };
+    const result = normalize402(402, headers, {});
+    assert.equal(result.format, "mpp");
+    assert.equal(result.payable, false);
+  });
+});
