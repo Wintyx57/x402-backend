@@ -165,9 +165,43 @@ async function selectBestChain(requiredAmount) {
     return { chain: viable[0] };
 }
 
-// ─── Budget Tracking ─────────────────────────────────────────────────
-let sessionSpending = 0;
-const sessionPayments = [];
+// ─── Budget Tracking (persistent on disk) ────────────────────────────
+const X402_DIR = join(homedir(), '.x402-bazaar');
+const BUDGET_FILE_PATH = join(X402_DIR, 'session-budget.json');
+
+// Ensure the ~/.x402-bazaar dir exists once at startup (wallet code also creates it, but belt+suspenders)
+try { fs.mkdirSync(X402_DIR, { recursive: true }); } catch { /* already exists */ }
+
+function getTodayDate() {
+    return new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+}
+
+function loadBudgetFromDisk() {
+    try {
+        const raw = JSON.parse(fs.readFileSync(BUDGET_FILE_PATH, 'utf-8'));
+        if (raw.date !== getTodayDate()) return { spent: 0, payments: [] }; // new day → reset
+        return { spent: raw.spent || 0, payments: raw.payments || [] };
+    } catch {
+        return { spent: 0, payments: [] };
+    }
+}
+
+function saveBudgetToDisk() {
+    try {
+        fs.writeFileSync(BUDGET_FILE_PATH, JSON.stringify({
+            date: getTodayDate(),
+            spent: sessionSpending,
+            payments: sessionPayments,
+        }, null, 2), { mode: 0o600 });
+    } catch (err) {
+        // Use stderr directly — mcpLog may not be initialized yet at module load time
+        process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), level: 'warn', ctx: 'MCP', msg: `Failed to save budget to disk: ${err.message}` }) + '\n');
+    }
+}
+
+const { spent: _initSpent, payments: _initPayments } = loadBudgetFromDisk();
+let sessionSpending = _initSpent;
+const sessionPayments = _initPayments;
 
 // Pool of reusable tx hashes (from not_charged responses — consumer protection)
 const reusableHashes = []; // { txHash, amount, chain, headers, timestamp, txHashPlatform? }
@@ -281,7 +315,7 @@ function clientSideVerify(result, serviceId) {
 let account = null;
 const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet } }
 
-const AUTO_WALLET_PATH = join(homedir(), '.x402-bazaar', 'wallet.json');
+const AUTO_WALLET_PATH = join(X402_DIR, 'wallet.json');
 
 // ─── Wallet encryption helpers (AES-256-GCM, machine-bound key) ─────
 function getMachineKey() {
@@ -376,10 +410,7 @@ function getPrivateKey() {
     const rawKey = crypto.randomBytes(32);
     const privateKey = `0x${rawKey.toString('hex')}`;
     const generatedAccount = privateKeyToAccount(privateKey);
-    const walletDir = join(homedir(), '.x402-bazaar');
-    if (!fs.existsSync(walletDir)) {
-        fs.mkdirSync(walletDir, { recursive: true });
-    }
+    // X402_DIR is guaranteed to exist (created at module load in budget section)
     const encFields = encryptPrivateKey(privateKey);
     const walletData = {
         encrypted: encFields.encrypted,
@@ -933,6 +964,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             timestamp: new Date().toISOString(),
             endpoint: url.replace(SERVER_URL, ''),
         });
+        saveBudgetToDisk();
 
         extResult._payment = {
             amount: cost.toString(),
@@ -997,6 +1029,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
             timestamp: new Date().toISOString(),
             endpoint: url.replace(SERVER_URL, ''),
         });
+        saveBudgetToDisk();
 
         retryHeaders = {
             ...fetchOptions.headers,
@@ -1034,6 +1067,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 timestamp: new Date().toISOString(),
                 endpoint: url.replace(SERVER_URL, ''),
             });
+            saveBudgetToDisk();
 
             // Consumer protection: handle refunded for facilitator
             if (result && result._payment_status === 'refunded') {
@@ -1122,6 +1156,7 @@ async function payAndRequest(url, options = {}, chainKey = DEFAULT_CHAIN_KEY) {
                 timestamp: new Date().toISOString(),
                 endpoint: url.replace(SERVER_URL, ''),
             });
+            saveBudgetToDisk();
 
             retryHeaders = { ...fetchOptions.headers };
             const proof = buildProofHeaders(normalized, txHash, resolvedChainKey, account.address);
@@ -1253,23 +1288,87 @@ const mcpLog = {
     error(ctx, msg, extra) { mcpLog._write('error', ctx, msg, extra); },
 };
 
+// ─── Service card helper: consistent shape across all discovery tools ─
+/**
+ * Map a raw service record from the backend to a compact card for MCP output.
+ * Used by search_services, list_services, discover_marketplace, find_tool_for_task.
+ */
+function formatServiceCard(s, { includeOwner = false } = {}) {
+    const card = {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        price_usdc: s.price_usdc,
+        tags: s.tags || [],
+        status: s.status || 'unknown',
+    };
+    if (includeOwner) card.owner_address = s.owner_address;
+    return card;
+}
+
 // ─── MCP Server ─────────────────────────────────────────────────────
 const server = new McpServer({
     name: 'x402-bazaar',
-    version: '2.5.0',
+    version: '2.6.0',
 });
 
 // --- Tool: discover_marketplace (FREE) ---
 server.tool(
     'discover_marketplace',
-    'Discover the x402 Bazaar marketplace. Returns available endpoints, total services, and protocol info. Free — no payment needed.',
+    'Discover the x402 Bazaar marketplace. Returns marketplace info, top 10 popular services, and available categories. Free — no payment needed. Start here to understand what APIs are available.',
     {},
     async () => {
         try {
-            const res = await fetchWithTimeout(SERVER_URL, {}, 15_000);
-            const data = await res.json();
+            // Fetch marketplace root info + top services in parallel
+            const [rootRes, topRes] = await Promise.allSettled([
+                fetchWithTimeout(SERVER_URL, {}, 15_000),
+                fetchWithTimeout(`${SERVER_URL}/api/services?limit=10&sort=popular`, {}, 15_000),
+            ]);
+
+            const rootData = rootRes.status === 'fulfilled' ? await rootRes.value.json() : {};
+
+            let topServices = [];
+            let categories = [];
+            if (topRes.status === 'fulfilled') {
+                const topData = await topRes.value.json();
+                const raw = topData.data || topData.services || topData || [];
+                topServices = Array.isArray(raw) ? raw.slice(0, 10).map(s => ({
+                    ...formatServiceCard(s),
+                    action: s.id
+                        ? `call_service("${s.id}") — ${s.price_usdc} USDC`
+                        : `call_api("${s.url}")`,
+                })) : [];
+
+                // Extract unique categories from tags
+                const tagSet = new Set();
+                for (const s of raw) {
+                    if (Array.isArray(s.tags)) s.tags.forEach(t => tagSet.add(t));
+                    else if (s.category) tagSet.add(s.category);
+                }
+                categories = [...tagSet].sort().slice(0, 30);
+            }
+
             return {
-                content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
+                content: [{ type: 'text', text: JSON.stringify({
+                    marketplace: {
+                        name: 'x402 Bazaar',
+                        description: 'Autonomous API marketplace for AI agents — pay per call with USDC, no subscriptions.',
+                        base_url: SERVER_URL,
+                        protocol: 'x402 (HTTP 402 + on-chain USDC payment)',
+                        chains_supported: ['SKALE on Base (ultra-low gas ~$0.0007)', 'Base', 'Polygon'],
+                        split: '95% to API provider / 5% platform fee',
+                        ...rootData,
+                    },
+                    top_10_services: topServices,
+                    available_categories: categories,
+                    quick_start: [
+                        '1. Call search_services("keyword") or list_services() to find APIs — FREE',
+                        '2. Call get_service_schema(id) to see required parameters — FREE',
+                        '3. Call call_service(id, body) to invoke the API — costs price_usdc USDC',
+                        '4. Call get_wallet_balance() to check your USDC balance',
+                        '5. Call setup_wallet() if you need to configure your wallet',
+                    ],
+                }, null, 2) }],
             };
         } catch (err) {
             return {
@@ -1280,120 +1379,191 @@ server.tool(
     }
 );
 
-// --- Tool: search_services (0.05 USDC) ---
+// --- Tool: search_services (FREE) ---
 server.tool(
     'search_services',
-    `Search for API services on x402 Bazaar by keyword. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session. Check get_budget_status before calling if unsure about remaining budget.`,
+    'Search for API services on x402 Bazaar by keyword. Free — no payment required. Use this to explore available APIs before calling them.',
     {
         query: z.string().describe('Search keyword (e.g. "weather", "crypto", "ai")'),
-        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
-    async ({ query, chain: chainKey }) => {
-        mcpLog.info('MCP', `tool:search_services query="${query}" chain=${chainKey || 'auto'}`);
+    async ({ query }) => {
+        mcpLog.info('MCP', `tool:search_services query="${query}"`);
         try {
-            const result = await payAndRequest(
-                `${SERVER_URL}/search?q=${encodeURIComponent(query)}`,
+            const res = await fetchWithTimeout(
+                `${SERVER_URL}/api/services?search=${encodeURIComponent(query)}`,
                 {},
-                chainKey || 'auto',
+                15_000,
             );
-            return {
-                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-            };
-        } catch (err) {
-            return {
-                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
-                isError: true,
-            };
-        }
-    }
-);
-
-// --- Tool: list_services (0.05 USDC) ---
-server.tool(
-    'list_services',
-    `List all API services available on x402 Bazaar. Costs 0.05 USDC (paid automatically). Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
-    {
-        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
-    },
-    async ({ chain: chainKey }) => {
-        try {
-            const result = await payAndRequest(`${SERVER_URL}/services`, {}, chainKey || 'auto');
-            return {
-                content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-            };
-        } catch (err) {
-            return {
-                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
-                isError: true,
-            };
-        }
-    }
-);
-
-// --- Tool: find_tool_for_task (0.05 USDC — smart service lookup) ---
-server.tool(
-    'find_tool_for_task',
-    `Describe what you need in plain English and get the best matching API service ready to call. Returns the single best match with name, URL, price, and usage instructions. Much faster than searching + browsing results manually. Costs 0.05 USDC. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
-    {
-        task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
-        chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
-    },
-    async ({ task, chain: chainKey }) => {
-        try {
-            const result = await payAndRequest(
-                `${SERVER_URL}/search?q=${encodeURIComponent(task)}`,
-                {},
-                chainKey || 'auto',
-            );
-
-            const services = result.data || result.services || [];
-            if (services.length === 0) {
-                return {
-                    content: [{ type: 'text', text: JSON.stringify({
-                        found: false,
-                        query_used: task,
-                        search_method: result.search_method || 'unknown',
-                        message: `No services found matching "${task}". Try rephrasing or use search_services with different keywords.`,
-                        _payment: result._payment,
-                    }, null, 2) }],
-                };
-            }
-
-            const best = services[0];
-            const statusWarning = best.status === 'offline'
-                ? ' WARNING: This service is currently OFFLINE (last check failed). Payment may be wasted.'
-                : best.status === 'degraded'
-                    ? ' This service is DEGRADED (partial responses).'
-                    : '';
-            const polygonFacilitatorHint = CHAINS.polygon.facilitator
-                ? ' Polygon gas-free payments available via x402 facilitator (set chain: "polygon").'
-                : '';
+            const data = await res.json();
+            const services = data.data || data.services || data || [];
             return {
                 content: [{ type: 'text', text: JSON.stringify({
-                    found: true,
-                    query_used: task,
-                    search_method: result.search_method || 'keyword',
-                    keywords_used: result.keywords_used || [],
-                    match_score: best._score || null,
-                    service: {
-                        name: best.name,
-                        description: best.description,
-                        url: best.url,
-                        price_usdc: best.price_usdc,
-                        tags: best.tags,
-                        status: best.status || 'unknown',
-                        last_checked_at: best.last_checked_at || null,
-                    },
-                    action: best.id
-                        ? `Call this service using call_service("${best.id}"). This uses the Bazaar proxy with native 95/5 revenue split. Price: ${best.price_usdc} USDC.${statusWarning}${polygonFacilitatorHint}`
-                        : `Call this API using call_api("${best.url}"). ${Number(best.price_usdc) === 0 ? 'This API is free.' : `This API costs ${best.price_usdc} USDC per call.`}${statusWarning}${polygonFacilitatorHint}`,
-                    alternatives_count: services.length - 1,
-                    _payment: result._payment,
+                    query,
+                    count: Array.isArray(services) ? services.length : 0,
+                    services: Array.isArray(services) ? services.map(s => formatServiceCard(s)) : services,
+                    hint: 'Use call_service(id) to call a service, or get_service_schema(id) to inspect parameters.',
                 }, null, 2) }],
             };
         } catch (err) {
             return {
-                content: [{ type: 'text', text: `Error: ${enrichPaymentError(err.message)}` }],
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
+// --- Tool: list_services (FREE) ---
+server.tool(
+    'list_services',
+    'List all API services available on x402 Bazaar. Free — no payment required. Filter by category or chain to narrow results.',
+    {
+        category: z.string().optional().describe('Optional category filter (e.g. "ai", "weather", "finance", "tools")'),
+        chain: z.enum(['base', 'skale', 'polygon']).optional().describe('Optional chain filter'),
+        limit: z.number().min(1).max(100).optional().describe('Max number of results (default: 50)'),
+    },
+    async ({ category, chain: chainFilter, limit = 50 }) => {
+        try {
+            const params = new URLSearchParams({ limit: String(limit) });
+            if (category) params.set('category', category);
+            if (chainFilter) params.set('chain', chainFilter);
+
+            const res = await fetchWithTimeout(
+                `${SERVER_URL}/api/services?${params.toString()}`,
+                {},
+                15_000,
+            );
+            const data = await res.json();
+            const services = data.data || data.services || data || [];
+            return {
+                content: [{ type: 'text', text: JSON.stringify({
+                    count: Array.isArray(services) ? services.length : 0,
+                    services: Array.isArray(services) ? services.map(s => formatServiceCard(s, { includeOwner: true })) : services,
+                    hint: 'Use call_service(id) to call a service, or get_service_schema(id) to inspect parameters before paying.',
+                }, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
+// --- Tool: get_service_schema (FREE — inspect API parameters before paying) ---
+server.tool(
+    'get_service_schema',
+    'Get the full schema of a Bazaar service: name, description, required parameters, price, tags, and status. Free — no payment required. Use this before call_service to understand what parameters are needed.',
+    {
+        service_id: z.string().uuid().describe('The service UUID (from list_services, search_services, or find_tool_for_task)'),
+    },
+    async ({ service_id }) => {
+        try {
+            const res = await fetchWithTimeout(`${SERVER_URL}/api/services/${service_id}`, {}, 15_000);
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        error: `Service not found (HTTP ${res.status})`,
+                        service_id,
+                        details: errData.error || errData.message || '',
+                    }, null, 2) }],
+                    isError: true,
+                };
+            }
+            const s = await res.json();
+            return {
+                content: [{ type: 'text', text: JSON.stringify({
+                    id: s.id,
+                    name: s.name,
+                    description: s.description,
+                    endpoint_url: s.url,
+                    price_usdc: s.price_usdc,
+                    tags: s.tags || [],
+                    status: s.status || 'unknown',
+                    last_checked_at: s.last_checked_at || null,
+                    payment_protocol: s.payment_protocol || 'x402-bazaar',
+                    required_parameters: s.required_parameters || null,
+                    owner_address: s.owner_address,
+                    hint: s.required_parameters?.required?.length
+                        ? `Pass these required params in call_service body: ${s.required_parameters.required.join(', ')}`
+                        : 'No required parameters — call with empty body or pass optional params.',
+                    action: `call_service("${s.id}", { /* params */ }) — costs ${s.price_usdc} USDC`,
+                }, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
+                isError: true,
+            };
+        }
+    }
+);
+
+// --- Tool: find_tool_for_task (FREE — smart service lookup via free search) ---
+server.tool(
+    'find_tool_for_task',
+    'Describe what you need in plain English and get the top 3 matching API services ready to call. Free — uses the free search endpoint. Much faster than browsing manually.',
+    {
+        task: z.string().describe('What you need, in natural language (e.g. "get current weather for a city", "translate text to French", "get Bitcoin price")'),
+    },
+    async ({ task }) => {
+        try {
+            const res = await fetchWithTimeout(
+                `${SERVER_URL}/api/services?search=${encodeURIComponent(task)}`,
+                {},
+                15_000,
+            );
+            const data = await res.json();
+            const services = data.data || data.services || data || [];
+
+            if (!Array.isArray(services) || services.length === 0) {
+                return {
+                    content: [{ type: 'text', text: JSON.stringify({
+                        found: false,
+                        query_used: task,
+                        message: `No services found matching "${task}". Try rephrasing or use search_services with different keywords.`,
+                    }, null, 2) }],
+                };
+            }
+
+            const polygonFacilitatorHint = CHAINS.polygon.facilitator
+                ? ' Polygon gas-free payments available (set chain: "polygon").'
+                : '';
+
+            const buildResult = (s, role) => {
+                const statusWarning = s.status === 'offline'
+                    ? ' WARNING: This service is currently OFFLINE — payment may be wasted.'
+                    : s.status === 'degraded'
+                        ? ' This service is DEGRADED (partial responses).'
+                        : '';
+                return {
+                    role,
+                    ...formatServiceCard(s),
+                    action: s.id
+                        ? `call_service("${s.id}") — ${s.price_usdc} USDC${statusWarning}${polygonFacilitatorHint}`
+                        : `call_api("${s.url}") — ${Number(s.price_usdc) === 0 ? 'free' : s.price_usdc + ' USDC'}${statusWarning}`,
+                };
+            };
+
+            const top3 = services.slice(0, 3);
+            const results = top3.map((s, i) =>
+                buildResult(s, i === 0 ? 'recommended' : `alternative_${i}`)
+            );
+
+            return {
+                content: [{ type: 'text', text: JSON.stringify({
+                    found: true,
+                    query_used: task,
+                    total_matches: services.length,
+                    results,
+                    hint: 'Use get_service_schema(id) to inspect required parameters before calling. Then use call_service(id, body) to invoke.',
+                }, null, 2) }],
+            };
+        } catch (err) {
+            return {
+                content: [{ type: 'text', text: `Error: ${sanitizeError(err.message)}` }],
                 isError: true,
             };
         }
@@ -1406,10 +1576,15 @@ server.tool(
     `Call a Bazaar service through the platform proxy. This route enables native 95/5 revenue split: 95% goes directly to the API provider on-chain, 5% platform fee. Use this instead of call_api when calling Bazaar services by ID. Budget: ${MAX_BUDGET.toFixed(2)} USDC per session.`,
     {
         service_id: z.string().uuid().describe('The service UUID (from list_services or search_services)'),
-        body: z.string().optional().describe('Optional JSON body string to send with the request (e.g. \'{"query":"hello"}\')'),
+        body: z.union([z.record(z.unknown()), z.string()]).optional().describe('Optional request body — pass a JSON object (preferred) or a JSON string. Example: {"query": "hello"} or \'{"query":"hello"}\''),
         chain: z.enum(['auto', 'base', 'skale', 'polygon']).optional().describe('Payment chain. "auto" (default) picks the cheapest chain with sufficient balance.'),
     },
-    async ({ service_id, body: requestBody, chain: chainKey }) => {
+    async ({ service_id, body: rawBody, chain: chainKey }) => {
+        // Accept object or string; always pass a JSON string to the HTTP layer
+        const requestBody = rawBody == null ? null
+            : typeof rawBody === 'object' ? JSON.stringify(rawBody)
+            : rawBody; // already a string — backward compat
+
         const selectedChain = chainKey || 'auto';
         mcpLog.info('MCP', `tool:call_service id=${service_id} chain=${selectedChain}`, { hasBody: !!requestBody });
         try {
@@ -2229,6 +2404,7 @@ server.tool(
             // Track spending immediately after successful payment
             sessionSpending += price;
             sessionPayments.push({ service: `paylink:${link_id}`, cost: price, chain: chainKey, txHash, timestamp: Date.now() });
+            saveBudgetToDisk();
 
             // 5. Access the link with payment proof
             const accessRes = await fetch(`${SERVER_URL}/api/payment-links/${link_id}/access`, {
@@ -2302,7 +2478,7 @@ server.tool(
 );
 
 // ─── Auto-update check (fire-and-forget) ────────────────────────────
-const LOCAL_VERSION = '2.5.0';
+const LOCAL_VERSION = '2.6.0';
 (async () => {
     try {
         const res = await fetch(
