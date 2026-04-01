@@ -1044,9 +1044,7 @@ function createRegisterRouter(
           .from("services")
           .select("id, url, description, required_parameters, tags")
           .in("url", fullUrls.length > 0 ? fullUrls : ["__none__"]);
-        const existingByUrl = new Map(
-          (existing || []).map((s) => [s.url, s]),
-        );
+        const existingByUrl = new Map((existing || []).map((s) => [s.url, s]));
 
         const isSyncMode = validatedData.mode === "sync";
 
@@ -1091,7 +1089,7 @@ function createRegisterRouter(
                 JSON.stringify(ep.parameters) ||
               JSON.stringify(ex.tags) !== JSON.stringify(newTags);
             if (hasChange) {
-              await supabase
+              const { error: updateErr } = await supabase
                 .from("services")
                 .update({
                   description: ep.description,
@@ -1099,7 +1097,14 @@ function createRegisterRouter(
                   tags: newTags,
                 })
                 .eq("id", ex.id);
-              updatedCount++;
+              if (updateErr) {
+                logger.warn(
+                  "OpenAPISync",
+                  `Failed to update ${ex.id}: ${updateErr.message}`,
+                );
+              } else {
+                updatedCount++;
+              }
             } else {
               unchangedCount++;
             }
@@ -1110,7 +1115,7 @@ function createRegisterRouter(
           const { data: allOwnerServices } = await supabase
             .from("services")
             .select("id, url")
-            .eq("owner_address", validatedData.ownerAddress)
+            .ilike("owner_address", validatedData.ownerAddress)
             .neq("status", "deprecated");
 
           const toDeprecate = (allOwnerServices || []).filter(
@@ -1134,7 +1139,8 @@ function createRegisterRouter(
               url: ep.fullUrl,
               description: ep.description,
               price_usdc:
-                validatedData.priceOverrides?.[key] || validatedData.defaultPrice,
+                validatedData.priceOverrides?.[key] ||
+                validatedData.defaultPrice,
               owner_address: validatedData.ownerAddress,
               tags: [
                 ...new Set([...(validatedData.defaultTags || []), ...ep.tags]),
@@ -1155,20 +1161,36 @@ function createRegisterRouter(
                 "/import-openapi sync create error:",
                 createError.message,
               );
-              return res
-                .status(500)
-                .json({ error: "Sync failed", message: "Internal server error" });
+              return res.status(500).json({
+                error: "Sync failed",
+                message: "Internal server error",
+              });
             }
             createdServices = created || [];
           }
 
           logger.info(
             "Bazaar",
-            "OpenAPI sync: +" + createdServices.length + " ~" + updatedCount + " -" + toDeprecate.length + " for " + validatedData.ownerAddress.slice(0, 10),
+            "OpenAPI sync: +" +
+              createdServices.length +
+              " ~" +
+              updatedCount +
+              " -" +
+              toDeprecate.length +
+              " for " +
+              validatedData.ownerAddress.slice(0, 10),
           );
           logActivity(
             "openapi_sync",
-            (spec.info?.title || "spec") + ": +" + createdServices.length + " ~" + updatedCount + " -" + toDeprecate.length + " by " + validatedData.ownerAddress.slice(0, 8),
+            (spec.info?.title || "spec") +
+              ": +" +
+              createdServices.length +
+              " ~" +
+              updatedCount +
+              " -" +
+              toDeprecate.length +
+              " by " +
+              validatedData.ownerAddress.slice(0, 8),
           );
 
           // Auto-test new services (fire-and-forget)
@@ -1256,13 +1278,20 @@ function createRegisterRouter(
 
         logger.info(
           "Bazaar",
-          "OpenAPI import: " + data.length + " services for " + validatedData.ownerAddress.slice(0, 10),
+          "OpenAPI import: " +
+            data.length +
+            " services for " +
+            validatedData.ownerAddress.slice(0, 10),
         );
         logActivity(
           "openapi_import",
-          data.length + " services from \"" + (spec.info?.title || "spec") + "\" by " + validatedData.ownerAddress.slice(0, 8),
+          data.length +
+            ' services from "' +
+            (spec.info?.title || "spec") +
+            '" by ' +
+            validatedData.ownerAddress.slice(0, 8),
         );
-                // Validate shared credentials ONCE against the first service URL, then store for all
+        // Validate shared credentials ONCE against the first service URL, then store for all
         let importCredentialValidation;
         const importCredentials = req.body.credentials || null;
         if (importCredentials && data.length > 0) {

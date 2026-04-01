@@ -226,23 +226,28 @@ function createProviderRouter(
     }
 
     try {
-      // Parallel queries for speed
-      const [servicesResult, payoutsResult] = await Promise.all([
+      // Parallel queries — skip expensive payouts query for unauthenticated requests
+      const queries = [
         supabase
           .from("services")
           .select(SERVICE_COLUMNS)
           .ilike("owner_address", address)
           .neq("status", "pending_validation")
           .order("created_at", { ascending: false }),
-        supabase
-          .from("pending_payouts")
-          .select(
-            "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at",
-          )
-          .ilike("provider_wallet", address)
-          .order("created_at", { ascending: false })
-          .limit(10000),
-      ]);
+      ];
+      if (isAuthenticated) {
+        queries.push(
+          supabase
+            .from("pending_payouts")
+            .select(
+              "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at",
+            )
+            .ilike("provider_wallet", address)
+            .order("created_at", { ascending: false })
+            .limit(10000),
+        );
+      }
+      const [servicesResult, payoutsResult] = await Promise.all(queries);
 
       if (servicesResult.error) {
         logger.error(
@@ -251,7 +256,7 @@ function createProviderRouter(
         );
         return res.status(500).json({ error: "Failed to fetch services" });
       }
-      if (payoutsResult.error) {
+      if (payoutsResult && payoutsResult.error) {
         logger.error(
           "Provider",
           `analytics payouts error: ${payoutsResult.error.message}`,
@@ -260,7 +265,7 @@ function createProviderRouter(
       }
 
       const services = servicesResult.data || [];
-      const payouts = payoutsResult.data || [];
+      const payouts = (payoutsResult && payoutsResult.data) || [];
 
       // --- Aggregate revenue ---
       let total_earned = 0;
@@ -726,7 +731,14 @@ function createProviderRouter(
     }
 
     const provided = (req.query.secret || "").trim();
-    if (!provided || provided !== cronSecret) {
+    const maxLen = Math.max(provided.length, cronSecret.length);
+    const buf1 = Buffer.from(provided.padEnd(maxLen));
+    const buf2 = Buffer.from(cronSecret.padEnd(maxLen));
+    if (
+      !provided ||
+      buf1.length !== buf2.length ||
+      !require("crypto").timingSafeEqual(buf1, buf2)
+    ) {
       logger.warn(
         "CronPayout",
         "Unauthorized auto-payout attempt from " + (req.ip || "unknown"),

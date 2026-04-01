@@ -52,6 +52,8 @@ const ServiceRegistrationSchema = z.object({
     .nullable(),
 
   logo_url: z.string().url().max(500).optional().nullable(),
+
+  alert_webhook_url: z.string().url().max(500).optional().nullable(),
 });
 
 // ─── Service Search Schema ────────────────────────────────────────────

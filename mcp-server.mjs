@@ -1322,7 +1322,7 @@ server.tool(
             // Fetch marketplace root info + top services in parallel
             const [rootRes, topRes] = await Promise.allSettled([
                 fetchWithTimeout(SERVER_URL, {}, 15_000),
-                fetchWithTimeout(`${SERVER_URL}/api/services?limit=10&sort=popular`, {}, 15_000),
+                fetchWithTimeout(`${SERVER_URL}/api/services?limit=10`, {}, 15_000),
             ]);
 
             const rootData = rootRes.status === 'fulfilled' ? await rootRes.value.json() : {};
