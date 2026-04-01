@@ -277,7 +277,7 @@ app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter
 app.use(createMonitoringRouter(supabase, dashboardApiLimiter));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use(createRgpdRouter(supabase));
-app.use(createProviderRouter(supabase, logActivity, dashboardApiLimiter));
+app.use(createProviderRouter(supabase, logActivity, dashboardApiLimiter, payoutManager));
 app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));

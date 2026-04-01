@@ -376,6 +376,8 @@ function createRegisterRouter(
       quick_registered: true,
     };
     if (validatedData.logo_url) insertData.logo_url = validatedData.logo_url;
+    if (validatedData.alert_webhook_url)
+      insertData.alert_webhook_url = validatedData.alert_webhook_url;
     // If credentials are provided, mark as pending_validation to hide from public queries
     // during the validation window (prevents race condition)
     if (req.body.credentials) insertData.status = "pending_validation";
@@ -744,6 +746,7 @@ function createRegisterRouter(
       if (svc.required_parameters)
         row.required_parameters = svc.required_parameters;
       if (svc.logo_url) row.logo_url = svc.logo_url;
+      if (svc.alert_webhook_url) row.alert_webhook_url = svc.alert_webhook_url;
       return row;
     });
 
@@ -1033,19 +1036,24 @@ function createRegisterRouter(
           }
         }
 
-        // Check existing URLs
+        // Check existing URLs — fetch id too for sync mode
         const fullUrls = endpoints
           .filter((e) => !e._skip)
           .map((e) => e.fullUrl);
         const { data: existing } = await supabase
           .from("services")
-          .select("url")
+          .select("id, url, description, required_parameters, tags")
           .in("url", fullUrls.length > 0 ? fullUrls : ["__none__"]);
-        const existingUrls = new Set((existing || []).map((s) => s.url));
+        const existingByUrl = new Map(
+          (existing || []).map((s) => [s.url, s]),
+        );
+
+        const isSyncMode = validatedData.mode === "sync";
 
         // Filter endpoints
         const skipped = [];
         const toImport = [];
+        const toUpdate = []; // sync mode only
         for (const ep of endpoints) {
           if (ep._skip) {
             skipped.push({
@@ -1053,16 +1061,156 @@ function createRegisterRouter(
               method: ep.method,
               reason: ep._skipReason,
             });
-          } else if (existingUrls.has(ep.fullUrl)) {
-            skipped.push({
-              path: ep.path,
-              method: ep.method,
-              reason: "already_registered",
-            });
+          } else if (existingByUrl.has(ep.fullUrl)) {
+            if (isSyncMode) {
+              toUpdate.push({ ep, existing: existingByUrl.get(ep.fullUrl) });
+            } else {
+              skipped.push({
+                path: ep.path,
+                method: ep.method,
+                reason: "already_registered",
+              });
+            }
           } else {
             toImport.push(ep);
           }
         }
+
+        // ── SYNC MODE: update existing + deprecate removed endpoints ────
+        if (isSyncMode) {
+          // 1. Update existing endpoints (description, required_parameters, tags)
+          let updatedCount = 0;
+          let unchangedCount = 0;
+          for (const { ep, existing: ex } of toUpdate) {
+            const newTags = [
+              ...new Set([...(validatedData.defaultTags || []), ...ep.tags]),
+            ].slice(0, 10);
+            const hasChange =
+              ex.description !== ep.description ||
+              JSON.stringify(ex.required_parameters) !==
+                JSON.stringify(ep.parameters) ||
+              JSON.stringify(ex.tags) !== JSON.stringify(newTags);
+            if (hasChange) {
+              await supabase
+                .from("services")
+                .update({
+                  description: ep.description,
+                  required_parameters: ep.parameters,
+                  tags: newTags,
+                })
+                .eq("id", ex.id);
+              updatedCount++;
+            } else {
+              unchangedCount++;
+            }
+          }
+
+          // 2. Deprecate services owned by this address that are NOT in the spec
+          const specUrls = new Set(fullUrls);
+          const { data: allOwnerServices } = await supabase
+            .from("services")
+            .select("id, url")
+            .eq("owner_address", validatedData.ownerAddress)
+            .neq("status", "deprecated");
+
+          const toDeprecate = (allOwnerServices || []).filter(
+            (s) => !specUrls.has(s.url),
+          );
+          if (toDeprecate.length > 0) {
+            await supabase
+              .from("services")
+              .update({ status: "deprecated" })
+              .in(
+                "id",
+                toDeprecate.map((s) => s.id),
+              );
+          }
+
+          // 3. Create new endpoints
+          const syncInsertArray = toImport.map((ep) => {
+            const key = ep.method + ":" + ep.path;
+            return {
+              name: ep.name,
+              url: ep.fullUrl,
+              description: ep.description,
+              price_usdc:
+                validatedData.priceOverrides?.[key] || validatedData.defaultPrice,
+              owner_address: validatedData.ownerAddress,
+              tags: [
+                ...new Set([...(validatedData.defaultTags || []), ...ep.tags]),
+              ].slice(0, 10),
+              required_parameters: ep.parameters,
+            };
+          });
+
+          let createdServices = [];
+          if (syncInsertArray.length > 0) {
+            const { data: created, error: createError } = await supabase
+              .from("services")
+              .insert(syncInsertArray)
+              .select();
+            if (createError) {
+              logger.error(
+                "Supabase",
+                "/import-openapi sync create error:",
+                createError.message,
+              );
+              return res
+                .status(500)
+                .json({ error: "Sync failed", message: "Internal server error" });
+            }
+            createdServices = created || [];
+          }
+
+          logger.info(
+            "Bazaar",
+            "OpenAPI sync: +" + createdServices.length + " ~" + updatedCount + " -" + toDeprecate.length + " for " + validatedData.ownerAddress.slice(0, 10),
+          );
+          logActivity(
+            "openapi_sync",
+            (spec.info?.title || "spec") + ": +" + createdServices.length + " ~" + updatedCount + " -" + toDeprecate.length + " by " + validatedData.ownerAddress.slice(0, 8),
+          );
+
+          // Auto-test new services (fire-and-forget)
+          (async () => {
+            const BATCH_SIZE = 5;
+            const BATCH_DELAY = 1000;
+            for (let i = 0; i < createdServices.length; i += BATCH_SIZE) {
+              const batch = createdServices.slice(i, i + BATCH_SIZE);
+              await Promise.allSettled(
+                batch.map((svc) => autoTestService(svc, supabase)),
+              );
+              if (i + BATCH_SIZE < createdServices.length)
+                await new Promise((r) => setTimeout(r, BATCH_DELAY));
+            }
+          })();
+
+          notifyAdmin(
+            "\uD83D\uDD04 *OpenAPI Sync*\n*Spec:* " +
+              (spec.info?.title || "Untitled") +
+              "\n*Created:* " +
+              createdServices.length +
+              " *Updated:* " +
+              updatedCount +
+              " *Deprecated:* " +
+              toDeprecate.length,
+          ).catch(() => {});
+
+          return res.status(200).json({
+            success: true,
+            mode: "sync",
+            spec_title: spec.info?.title || "Untitled",
+            total_found: endpoints.length,
+            created: createdServices.length,
+            updated: updatedCount,
+            deprecated: toDeprecate.length,
+            unchanged: unchangedCount,
+            skipped: skipped.length,
+            skipped_details: skipped,
+            services: createdServices,
+          });
+        }
+        // ── END SYNC MODE ──────────────────────────────────
 
         if (toImport.length === 0) {
           return res.status(200).json({
@@ -1076,9 +1224,9 @@ function createRegisterRouter(
           });
         }
 
-        // Build service objects
+        // Build service objects (import mode)
         const insertArray = toImport.map((ep) => {
-          const key = `${ep.method}:${ep.path}`;
+          const key = ep.method + ":" + ep.path;
           return {
             name: ep.name,
             url: ep.fullUrl,
@@ -1108,14 +1256,13 @@ function createRegisterRouter(
 
         logger.info(
           "Bazaar",
-          `OpenAPI import: ${data.length} services for ${validatedData.ownerAddress.slice(0, 10)}`,
+          "OpenAPI import: " + data.length + " services for " + validatedData.ownerAddress.slice(0, 10),
         );
         logActivity(
           "openapi_import",
-          `${data.length} services from "${spec.info?.title || "spec"}" by ${validatedData.ownerAddress.slice(0, 8)}`,
+          data.length + " services from \"" + (spec.info?.title || "spec") + "\" by " + validatedData.ownerAddress.slice(0, 8),
         );
-
-        // Validate shared credentials ONCE against the first service URL, then store for all
+                // Validate shared credentials ONCE against the first service URL, then store for all
         let importCredentialValidation;
         const importCredentials = req.body.credentials || null;
         if (importCredentials && data.length > 0) {
