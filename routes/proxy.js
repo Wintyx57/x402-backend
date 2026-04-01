@@ -264,9 +264,33 @@ function createProxyRouter(
     if (agentWallet && budgetManager) {
       const check = budgetManager.checkAndRecord(agentWallet, price);
       if (!check.allowed) {
-        return res
-          .status(403)
-          .json({ error: "Budget Exceeded", message: check.reason });
+        // Return structured budget info so agents can display remaining quota and reset time
+        const budgetInfo = check.budget || {};
+        const periodMs = {
+          daily: 86400000,
+          weekly: 604800000,
+          monthly: 2592000000,
+        };
+        const periodDuration =
+          periodMs[budgetInfo.period || "daily"] || 86400000;
+        const periodStart = budgetInfo.periodStart
+          ? new Date(budgetInfo.periodStart).getTime()
+          : Date.now();
+        const resetAt = new Date(periodStart + periodDuration).toISOString();
+        return res.status(403).json({
+          error: "Budget Exceeded",
+          error_code: "BUDGET_EXCEEDED",
+          remaining_usdc: budgetInfo.remainingUsdc ?? 0,
+          budget_limit_usdc: budgetInfo.maxUsdc ?? null,
+          spent_usdc: budgetInfo.spentUsdc ?? null,
+          reset_at: resetAt,
+          _payment_status: "not_charged",
+          message: check.reason,
+        });
+      }
+      // Propagate budget state to response phase so X-Budget-Warning can be emitted
+      if (check.allowed && check.budget) {
+        req._budgetCheckResult = check;
       }
     }
 
@@ -894,6 +918,8 @@ async function executeProxyCall(
       "Proxy",
       `Circuit OPEN — blocking request for "${service.name}" (${service.url})`,
     );
+    // RFC 7231 §7.1.3: Retry-After in seconds lets HTTP clients back off automatically
+    res.set("Retry-After", Math.ceil(CB_OPEN_DURATION_MS / 1000));
     return res.status(503).json({
       error: "Service temporairement indisponible",
       message:
@@ -1613,6 +1639,21 @@ async function executeProxyCall(
 
         if (validationMeta) {
           x402Meta._validation = validationMeta;
+        }
+
+        // Warn agents when they have used >80% of their budget so they can top up proactively
+        const budgetCheckResult = req._budgetCheckResult;
+        if (budgetCheckResult && budgetCheckResult.budget) {
+          const { budget, pct, remaining } = budgetCheckResult;
+          if (pct !== undefined && pct >= 80) {
+            const limitStr = (budget.maxUsdc || 0).toFixed(2);
+            const remainingStr = (remaining || 0).toFixed(2);
+            const percentStr = Math.round(100 - pct).toString();
+            res.set(
+              "X-Budget-Warning",
+              `remaining=${remainingStr};limit=${limitStr};percent=${percentStr}`,
+            );
+          }
         }
 
         const responseBody = {
