@@ -188,7 +188,7 @@ const QuickRegisterSchema = z.object({
     .max(500, "Service URL must be at most 500 characters"),
   price: z
     .number()
-    .min(0.001, "Price must be at least 0.001 USDC")
+    .min(0, "Price must be 0 or higher")
     .max(1000, "Price must be at most 1000 USDC"),
   ownerAddress: z
     .string()
