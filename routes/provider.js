@@ -9,7 +9,6 @@
 //   DELETE /api/services/:id             — delete a service
 
 const express = require("express");
-const { verifyMessage } = require("viem");
 const { walletAuth } = require("../lib/wallet-auth");
 const { ServiceUpdateSchema, ServiceCredentialsSchema } = require("../schemas");
 const { encryptCredentials } = require("../lib/credentials");
@@ -172,9 +171,8 @@ function createProviderRouter(
 
   // ──────────────────────────────────────────────────────────────────────
   // GET /api/provider/:address/analytics
-  // Fix 6: Dual-mode — authenticated (full data) vs public (summary only).
-  //   Authenticated: send X-Wallet-Address + X-Wallet-Message + X-Wallet-Signature
-  //   Public: returns only total_calls, services_count, avg_trust_score
+  // Public — no auth required (consistent with /revenue and /services).
+  // Returns full analytics for the given wallet address.
   // ──────────────────────────────────────────────────────────────────────
   router.get("/api/provider/:address/analytics", async (req, res) => {
     const { address } = req.params;
@@ -183,71 +181,23 @@ function createProviderRouter(
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
 
-    // Fix 6: Detect authenticated mode via wallet signature headers
-    const isAuthenticated = !!(
-      req.headers["x-wallet-address"] &&
-      req.headers["x-wallet-message"] &&
-      req.headers["x-wallet-signature"]
-    );
-
-    // Verify the signature if present — owner sees full analytics, public sees summary only
-    if (isAuthenticated) {
-      const sigWallet = req.headers["x-wallet-address"];
-      const sigMessage = req.headers["x-wallet-message"];
-      const sigValue = req.headers["x-wallet-signature"];
-      if (
-        !WALLET_REGEX.test(sigWallet) ||
-        sigWallet.toLowerCase() !== address.toLowerCase()
-      ) {
-        return res
-          .status(403)
-          .json({ error: "Signature wallet does not match requested address" });
-      }
-      const parts = sigMessage.split(":");
-      const ts = Number(parts[parts.length - 1]);
-      if (!Number.isFinite(ts) || ts <= 0 || Date.now() - ts > 5 * 60 * 1000) {
-        return res
-          .status(401)
-          .json({ error: "Message expired or invalid timestamp" });
-      }
-      let valid = false;
-      try {
-        valid = await verifyMessage({
-          address: sigWallet,
-          message: sigMessage,
-          signature: sigValue,
-        });
-      } catch {
-        valid = false;
-      }
-      if (!valid) {
-        return res.status(401).json({ error: "Signature verification failed" });
-      }
-    }
-
     try {
-      // Parallel queries — skip expensive payouts query for unauthenticated requests
-      const queries = [
+      const [servicesResult, payoutsResult] = await Promise.all([
         supabase
           .from("services")
           .select(SERVICE_COLUMNS)
           .ilike("owner_address", address)
           .neq("status", "pending_validation")
           .order("created_at", { ascending: false }),
-      ];
-      if (isAuthenticated) {
-        queries.push(
-          supabase
-            .from("pending_payouts")
-            .select(
-              "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at",
-            )
-            .ilike("provider_wallet", address)
-            .order("created_at", { ascending: false })
-            .limit(10000),
-        );
-      }
-      const [servicesResult, payoutsResult] = await Promise.all(queries);
+        supabase
+          .from("pending_payouts")
+          .select(
+            "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at",
+          )
+          .ilike("provider_wallet", address)
+          .order("created_at", { ascending: false })
+          .limit(10000),
+      ]);
 
       if (servicesResult.error) {
         logger.error(
@@ -256,7 +206,7 @@ function createProviderRouter(
         );
         return res.status(500).json({ error: "Failed to fetch services" });
       }
-      if (payoutsResult && payoutsResult.error) {
+      if (payoutsResult.error) {
         logger.error(
           "Provider",
           `analytics payouts error: ${payoutsResult.error.message}`,
@@ -265,7 +215,7 @@ function createProviderRouter(
       }
 
       const services = servicesResult.data || [];
-      const payouts = (payoutsResult && payoutsResult.data) || [];
+      const payouts = payoutsResult.data || [];
 
       // --- Aggregate revenue ---
       let total_earned = 0;
@@ -374,17 +324,6 @@ function createProviderRouter(
               (uptimes.reduce((a, b) => a + b, 0) / uptimes.length) * 10,
             ) / 10
           : null;
-
-      // Unauthenticated callers get only aggregate public metrics (no revenue breakdown)
-      if (!isAuthenticated) {
-        return res.json({
-          total_calls: payouts.length,
-          services_count: services.length,
-          avg_trust_score: avg_uptime,
-          _auth:
-            "Send X-Wallet-Address + X-Wallet-Message + X-Wallet-Signature to access full analytics",
-        });
-      }
 
       return res.json({
         total_earned,
