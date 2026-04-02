@@ -167,6 +167,7 @@ function createServicesRouter(
     const offset = (page - 1) * limit;
     const rawSearch = (req.query.search || "").trim().slice(0, 200);
     const rawTag = (req.query.tag || "").trim().slice(0, 100);
+    const rawMaxPrice = parseFloat(req.query.maxPrice);
 
     // Sanitize for PostgREST ILIKE (escape %, _, and PostgREST operators)
     const sanitize = (s) => s.replace(/[%_\\]/g, "\\$&").replace(/[.,()]/g, "");
@@ -177,13 +178,31 @@ function createServicesRouter(
       .neq("status", "pending_validation");
 
     if (rawSearch) {
-      const safe = sanitize(rawSearch);
-      query = query.or(`name.ilike.%${safe}%,description.ilike.%${safe}%`);
+      // Split multi-word queries into individual words and OR them
+      const words = rawSearch.split(/\s+/).filter(Boolean).slice(0, 5);
+      if (words.length === 1) {
+        const safe = sanitize(words[0]);
+        query = query.or(
+          `name.ilike.%${safe}%,description.ilike.%${safe}%,tags.cs.{${safe}}`,
+        );
+      } else {
+        // Multi-word: match ANY word in name or description
+        const clauses = words.flatMap((w) => {
+          const safe = sanitize(w);
+          return [`name.ilike.%${safe}%`, `description.ilike.%${safe}%`];
+        });
+        query = query.or(clauses.join(","));
+      }
     }
 
     if (rawTag) {
       const safeTag = sanitize(rawTag);
       query = query.contains("tags", [safeTag]);
+    }
+
+    // Price filter
+    if (!isNaN(rawMaxPrice) && rawMaxPrice >= 0) {
+      query = query.lte("price_usdc", rawMaxPrice);
     }
 
     const { data, count, error } = await query

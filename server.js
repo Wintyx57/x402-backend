@@ -1,76 +1,99 @@
-require('dotenv').config();
-const crypto = require('crypto');
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const compression = require('compression');
-const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const swaggerUi = require('swagger-ui-express');
+require("dotenv").config();
+const crypto = require("crypto");
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const compression = require("compression");
+const { createClient } = require("@supabase/supabase-js");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const swaggerUi = require("swagger-ui-express");
 
-const logger = require('./lib/logger');
-const correlationId = require('./lib/correlationId');
-const { scheduleRetention } = require('./lib/retention');
-const { NETWORK, NETWORK_LABEL, CHAINS, DEFAULT_CHAIN_KEY } = require('./lib/chains');
-const { createActivityLogger } = require('./lib/activity');
-const { createPaymentSystem } = require('./lib/payment');
-const { startMonitor, stopMonitor, getStatus } = require('./lib/monitor');
-const { startTelegramBot, stopTelegramBot } = require('./lib/telegram-bot');
-const { BudgetManager } = require('./lib/budget');
-const { startAgent, stopAgent } = require('./lib/agent-process');
-const { createPayoutManager } = require('./lib/payouts');
-const { scheduleDailyTest, stopDailyTest } = require('./lib/daily-tester');
-const { scheduleTrustScore, stopTrustScore } = require('./lib/trust-score');
-const { scheduleRefundRetry, stopRefundRetry } = require('./lib/refund-retry');
-const { startLiveAgent, stopLiveAgent, runLiveAgentOnce } = require('./lib/live-agent');
-const { startQualityAudit, stopQualityAudit, runQualityAuditOnce } = require('./lib/ai-quality-agent');
+const logger = require("./lib/logger");
+const correlationId = require("./lib/correlationId");
+const { scheduleRetention } = require("./lib/retention");
+const {
+  NETWORK,
+  NETWORK_LABEL,
+  CHAINS,
+  DEFAULT_CHAIN_KEY,
+} = require("./lib/chains");
+const { createActivityLogger } = require("./lib/activity");
+const { createPaymentSystem } = require("./lib/payment");
+const { startMonitor, stopMonitor, getStatus } = require("./lib/monitor");
+const { startTelegramBot, stopTelegramBot } = require("./lib/telegram-bot");
+const { BudgetManager } = require("./lib/budget");
+const { startAgent, stopAgent } = require("./lib/agent-process");
+const { createPayoutManager } = require("./lib/payouts");
+const { scheduleDailyTest, stopDailyTest } = require("./lib/daily-tester");
+const { scheduleTrustScore, stopTrustScore } = require("./lib/trust-score");
+const { scheduleRefundRetry, stopRefundRetry } = require("./lib/refund-retry");
+const {
+  startLiveAgent,
+  stopLiveAgent,
+  runLiveAgentOnce,
+} = require("./lib/live-agent");
+const {
+  startQualityAudit,
+  stopQualityAudit,
+  runQualityAuditOnce,
+} = require("./lib/ai-quality-agent");
 
 // --- Route factories ---
-const createHealthRouter = require('./routes/health');
-const createServicesRouter = require('./routes/services');
-const createRegisterRouter = require('./routes/register');
-const createDashboardRouter = require('./routes/dashboard');
-const createWrappersRouter = require('./routes/wrappers/index');
-const createMonitoringRouter = require('./routes/monitoring');
-const createBudgetRouter = require('./routes/budget');
-const { createRgpdRouter } = require('./routes/rgpd');
-const { createCommunityAgentRouter } = require('./routes/community-agent');
-const createStreamRouter = require('./routes/stream');
-const createReviewsRouter = require('./routes/reviews');
-const createProxyRouter = require('./routes/proxy');
-const createProviderRouter = require('./routes/provider');
-const createAgentReportsRouter = require('./routes/agent-reports');
-const createPaymentLinksRouter = require('./routes/payment-links');
-const createCatalogRouter = require('./routes/catalog');
+const createHealthRouter = require("./routes/health");
+const createServicesRouter = require("./routes/services");
+const createRegisterRouter = require("./routes/register");
+const createDashboardRouter = require("./routes/dashboard");
+const createWrappersRouter = require("./routes/wrappers/index");
+const createMonitoringRouter = require("./routes/monitoring");
+const createBudgetRouter = require("./routes/budget");
+const { createRgpdRouter } = require("./routes/rgpd");
+const { createCommunityAgentRouter } = require("./routes/community-agent");
+const createStreamRouter = require("./routes/stream");
+const createReviewsRouter = require("./routes/reviews");
+const createProxyRouter = require("./routes/proxy");
+const createProviderRouter = require("./routes/provider");
+const createAgentReportsRouter = require("./routes/agent-reports");
+const createPaymentLinksRouter = require("./routes/payment-links");
+const createCatalogRouter = require("./routes/catalog");
 
 // --- VALIDATION ENV VARS ---
-const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_KEY', 'WALLET_ADDRESS'];
+const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "WALLET_ADDRESS"];
 for (const key of REQUIRED_ENV) {
-    if (!process.env[key]) {
-        logger.error('Init', `FATAL: Missing required environment variable: ${key}`);
-        process.exit(1);
-    }
+  if (!process.env[key]) {
+    logger.error(
+      "Init",
+      `FATAL: Missing required environment variable: ${key}`,
+    );
+    process.exit(1);
+  }
 }
 
 // Warn at startup if ADMIN_TOKEN is too short to be secure.
 // A brute-force attack on a short token could grant full dashboard access.
 if (process.env.ADMIN_TOKEN && process.env.ADMIN_TOKEN.trim().length < 32) {
-    logger.warn('Config', 'ADMIN_TOKEN is too short (< 32 chars). Use a strong random token in production (e.g.: openssl rand -hex 32).');
+  logger.warn(
+    "Config",
+    "ADMIN_TOKEN is too short (< 32 chars). Use a strong random token in production (e.g.: openssl rand -hex 32).",
+  );
 }
 
 // --- Lazy Gemini client ---
 let _gemini = null;
 function getGemini() {
-    if (!_gemini) {
-        if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not configured');
-        _gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    }
-    return _gemini;
+  if (!_gemini) {
+    if (!process.env.GEMINI_API_KEY)
+      throw new Error("GEMINI_API_KEY not configured");
+    _gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  }
+  return _gemini;
 }
 
 // --- Supabase ---
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY,
+);
 
 // --- Payout manager (95/5 revenue split) ---
 const payoutManager = createPayoutManager(supabase);
@@ -87,89 +110,124 @@ const { paymentMiddleware } = paymentSystem;
 
 // --- Express app ---
 const app = express();
-app.set('trust proxy', 1);
+app.set("trust proxy", 1);
 const PORT = process.env.PORT || 3000;
 
 // --- SECURITY HEADERS (Helmet) ---
-app.use(helmet({
+app.use(
+  helmet({
     contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            imgSrc: ["'self'", "https:"],
-            connectSrc: ["'self'", "https://*.base.org", "https://*.skalenodes.com", "https://*.thirdweb.com", "https://api.telegram.org"],
-        },
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "https:"],
+        connectSrc: [
+          "'self'",
+          "https://*.base.org",
+          "https://*.skalenodes.com",
+          "https://*.thirdweb.com",
+          "https://api.telegram.org",
+        ],
+      },
     },
-    frameguard: { action: 'deny' },
+    frameguard: { action: "deny" },
     hsts: { maxAge: 63072000, includeSubDomains: true, preload: true },
     crossOriginEmbedderPolicy: false,
-}));
+  }),
+);
 
 // --- COMPRESSION ---
 app.use(compression());
 
 // --- CORS (whitelist strict) ---
 const PROD_ORIGINS = [
-    process.env.FRONTEND_URL,
-    'https://x402bazaar.org',
-    'https://www.x402bazaar.org',
-    'https://x402-frontend-one.vercel.app',
-    'https://chatgpt.com',
-    'https://chat.openai.com',
+  process.env.FRONTEND_URL,
+  "https://x402bazaar.org",
+  "https://www.x402bazaar.org",
+  "https://x402-frontend-one.vercel.app",
+  "https://chatgpt.com",
+  "https://chat.openai.com",
 ].filter(Boolean);
 
-const DEV_ORIGINS = [
-    'http://localhost:5173',
-    'http://localhost:3000',
-];
+const DEV_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
 
-const ALLOWED_ORIGINS = process.env.NODE_ENV === 'production'
+const ALLOWED_ORIGINS =
+  process.env.NODE_ENV === "production"
     ? PROD_ORIGINS
     : [...PROD_ORIGINS, ...DEV_ORIGINS];
 
-app.use(cors({
+app.use(
+  cors({
     origin: (origin, callback) => {
-        if (!origin) return callback(null, false);
-        if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-        callback(new Error('CORS not allowed'));
+      if (!origin) return callback(null, false);
+      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+      callback(new Error("CORS not allowed"));
     },
-    methods: ['GET', 'POST', 'DELETE', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'X-Payment-TxHash', 'X-Payment-Chain', 'X-Agent-Wallet', 'X-Admin-Token', 'X-Wallet-Signature', 'X-Wallet-Message', 'X-Wallet-Address'],
+    methods: ["GET", "POST", "DELETE", "PATCH"],
+    allowedHeaders: [
+      "Content-Type",
+      "X-Payment-TxHash",
+      "X-Payment-Chain",
+      "X-Agent-Wallet",
+      "X-Admin-Token",
+      "X-Wallet-Signature",
+      "X-Wallet-Message",
+      "X-Wallet-Address",
+    ],
     exposedHeaders: [
-        'X-Budget-Remaining', 'X-Budget-Used-Percent', 'X-Budget-Alert',
-        'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset', 'Retry-After',
-        'X-RateLimit-Limit', 'X-RateLimit-Remaining', 'X-RateLimit-Reset'
-    ]
-}));
+      "X-Budget-Remaining",
+      "X-Budget-Used-Percent",
+      "X-Budget-Alert",
+      "RateLimit-Limit",
+      "RateLimit-Remaining",
+      "RateLimit-Reset",
+      "Retry-After",
+      "X-RateLimit-Limit",
+      "X-RateLimit-Remaining",
+      "X-RateLimit-Reset",
+    ],
+  }),
+);
 
 // --- BODY LIMITS ---
-app.use(express.json({ limit: '10kb' }));
+app.use(express.json({ limit: "10kb" }));
 
 // Helper — Check if request comes from the internal monitor (localhost self-ping only)
 // Prevents unauthenticated X-Monitor header from bypassing rate limits from external IPs
 function isInternalMonitor(req) {
-    const ip = req.ip || req.socket?.remoteAddress || '';
-    const isLocalhost = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
-    return isLocalhost && req.headers['x-monitor'] === 'internal';
+  const ip = req.ip || req.socket?.remoteAddress || "";
+  const isLocalhost =
+    ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
+  return isLocalhost && req.headers["x-monitor"] === "internal";
 }
 
 // --- RATE LIMITING ---
 const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 500,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => req.path === '/health' || req.path === '/health/deep' || isInternalMonitor(req) || req.path.startsWith('/api/status'),
-    message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 15 minutes.' }
+  windowMs: 15 * 60 * 1000,
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) =>
+    req.path === "/health" ||
+    req.path === "/health/deep" ||
+    isInternalMonitor(req) ||
+    req.path.startsWith("/api/status"),
+  message: {
+    error: "Too many requests",
+    message: "Rate limit exceeded. Try again in 15 minutes.",
+  },
 });
 
 const dashboardApiLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 60,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests', message: 'Dashboard API rate limit exceeded.' }
+  windowMs: 1 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Too many requests",
+    message: "Dashboard API rate limit exceeded.",
+  },
 });
 
 // Separate, more generous rate limiter for admin-authenticated requests.
@@ -177,36 +235,48 @@ const dashboardApiLimiter = rateLimit({
 // quota (300 req / 15 min) to support legitimate admin dashboards while still
 // protecting against brute-force / credential stuffing on a compromised token.
 const adminDashboardLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 300,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests', message: 'Admin dashboard rate limit exceeded. Try again in 15 minutes.' }
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Too many requests",
+    message: "Admin dashboard rate limit exceeded. Try again in 15 minutes.",
+  },
 });
 
 const paidEndpointLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000,
-    max: 120,
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => isInternalMonitor(req),
-    message: { error: 'Too many requests', message: 'Rate limit exceeded. Try again in 1 minute.' }
+  windowMs: 1 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isInternalMonitor(req),
+  message: {
+    error: "Too many requests",
+    message: "Rate limit exceeded. Try again in 1 minute.",
+  },
 });
 
 const registerLimiter = rateLimit({
-    windowMs: 60 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests', message: 'Registration rate limit exceeded. Try again in 1 hour.' }
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Too many requests",
+    message: "Registration rate limit exceeded. Try again in 1 hour.",
+  },
 });
 
 const adminAuthLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 10,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { error: 'Too many requests', message: 'Too many admin auth attempts. Try again in 5 minutes.' }
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: "Too many requests",
+    message: "Too many admin auth attempts. Try again in 5 minutes.",
+  },
 });
 
 app.use(generalLimiter);
@@ -216,52 +286,86 @@ app.use(correlationId);
 
 // S4 — Timing-safe token comparison to prevent timing attacks
 function timingSafeCompare(a, b) {
-    const maxLen = Math.max(Buffer.byteLength(a), Buffer.byteLength(b));
-    const bufA = Buffer.alloc(maxLen);
-    const bufB = Buffer.alloc(maxLen);
-    Buffer.from(a).copy(bufA);
-    Buffer.from(b).copy(bufB);
-    return Buffer.byteLength(a) === Buffer.byteLength(b) && crypto.timingSafeEqual(bufA, bufB);
+  const maxLen = Math.max(Buffer.byteLength(a), Buffer.byteLength(b));
+  const bufA = Buffer.alloc(maxLen);
+  const bufB = Buffer.alloc(maxLen);
+  Buffer.from(a).copy(bufA);
+  Buffer.from(b).copy(bufB);
+  return (
+    Buffer.byteLength(a) === Buffer.byteLength(b) &&
+    crypto.timingSafeEqual(bufA, bufB)
+  );
 }
 
 // Helper — Check if request has valid ADMIN_TOKEN (used for rate-limit bypass in CI)
 function isValidAdminToken(req) {
-    const expected = (process.env.ADMIN_TOKEN || '').trim();
-    if (!expected) return false;
-    const token = (req.headers['x-admin-token'] || '').trim();
-    return token && timingSafeCompare(token, expected);
+  const expected = (process.env.ADMIN_TOKEN || "").trim();
+  if (!expected) return false;
+  const token = (req.headers["x-admin-token"] || "").trim();
+  return token && timingSafeCompare(token, expected);
 }
 
 // --- ADMIN AUTH MIDDLEWARE ---
 function adminAuth(req, res, next) {
-    const expected = (process.env.ADMIN_TOKEN || '').trim();
-    if (!expected) {
-        return res.status(503).json({ error: 'Admin not configured', message: 'ADMIN_TOKEN environment variable is not set.' });
-    }
-    const token = (req.headers['x-admin-token'] || '').trim();
-    if (!token || !timingSafeCompare(token, expected)) {
-        logger.warn('AdminAuth', `Rejected from ${req.ip || 'unknown'}`);
-        return res.status(401).json({ error: 'Unauthorized', message: 'Valid X-Admin-Token header required.' });
-    }
-    logger.info('AdminAuth', 'ACCESS GRANTED: ' + req.ip + ' -> ' + req.method + ' ' + req.path);
-    next();
+  const expected = (process.env.ADMIN_TOKEN || "").trim();
+  if (!expected) {
+    return res
+      .status(503)
+      .json({
+        error: "Admin not configured",
+        message: "ADMIN_TOKEN environment variable is not set.",
+      });
+  }
+  const token = (req.headers["x-admin-token"] || "").trim();
+  if (!token || !timingSafeCompare(token, expected)) {
+    logger.warn("AdminAuth", `Rejected from ${req.ip || "unknown"}`);
+    return res
+      .status(401)
+      .json({
+        error: "Unauthorized",
+        message: "Valid X-Admin-Token header required.",
+      });
+  }
+  logger.info(
+    "AdminAuth",
+    "ACCESS GRANTED: " + req.ip + " -> " + req.method + " " + req.path,
+  );
+  next();
 }
 
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
-    const start = Date.now();
-    res.on('finish', () => {
-        const duration = Date.now() - start;
-        const extra = { method: req.method, url: req.originalUrl, status: res.statusCode, ms: duration, correlationId: req.correlationId };
-        if (res.statusCode >= 500) {
-            logger.error('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
-        } else if (res.statusCode >= 400) {
-            logger.warn('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
-        } else {
-            logger.info('HTTP', `${req.method} ${req.originalUrl} -> ${res.statusCode}`, extra);
-        }
-    });
-    next();
+  const start = Date.now();
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    const extra = {
+      method: req.method,
+      url: req.originalUrl,
+      status: res.statusCode,
+      ms: duration,
+      correlationId: req.correlationId,
+    };
+    if (res.statusCode >= 500) {
+      logger.error(
+        "HTTP",
+        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        extra,
+      );
+    } else if (res.statusCode >= 400) {
+      logger.warn(
+        "HTTP",
+        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        extra,
+      );
+    } else {
+      logger.info(
+        "HTTP",
+        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        extra,
+      );
+    }
+  });
+  next();
 });
 
 // ============================================================
@@ -269,177 +373,286 @@ app.use((req, res, next) => {
 // ============================================================
 
 app.use(createHealthRouter(supabase, adminAuth));
-app.use(createServicesRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, dashboardApiLimiter, adminAuth, getGemini));
-app.use(createRegisterRouter(supabase, logActivity, paymentMiddleware, registerLimiter));
-app.use(createProxyRouter(supabase, logActivity, paymentMiddleware, paidEndpointLimiter, payoutManager, paymentSystem, budgetManager));
-app.use(createDashboardRouter(supabase, adminAuth, dashboardApiLimiter, adminAuthLimiter, payoutManager, logActivity, adminDashboardLimiter));
-app.use(createWrappersRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini));
+app.use(
+  createServicesRouter(
+    supabase,
+    logActivity,
+    paymentMiddleware,
+    paidEndpointLimiter,
+    dashboardApiLimiter,
+    adminAuth,
+    getGemini,
+  ),
+);
+app.use(
+  createRegisterRouter(
+    supabase,
+    logActivity,
+    paymentMiddleware,
+    registerLimiter,
+  ),
+);
+app.use(
+  createProxyRouter(
+    supabase,
+    logActivity,
+    paymentMiddleware,
+    paidEndpointLimiter,
+    payoutManager,
+    paymentSystem,
+    budgetManager,
+  ),
+);
+app.use(
+  createDashboardRouter(
+    supabase,
+    adminAuth,
+    dashboardApiLimiter,
+    adminAuthLimiter,
+    payoutManager,
+    logActivity,
+    adminDashboardLimiter,
+  ),
+);
+app.use(
+  createWrappersRouter(
+    logActivity,
+    paymentMiddleware,
+    paidEndpointLimiter,
+    getGemini,
+  ),
+);
 app.use(createMonitoringRouter(supabase, dashboardApiLimiter));
 app.use(createBudgetRouter(budgetManager, logActivity, adminAuth));
 app.use(createRgpdRouter(supabase));
-app.use(createProviderRouter(supabase, logActivity, dashboardApiLimiter, payoutManager));
-app.use('/admin/community-agent', createCommunityAgentRouter(adminAuth));
+app.use(
+  createProviderRouter(
+    supabase,
+    logActivity,
+    dashboardApiLimiter,
+    payoutManager,
+  ),
+);
+app.use("/admin/community-agent", createCommunityAgentRouter(adminAuth));
 app.use(createReviewsRouter(supabase));
 app.use(createStreamRouter(adminAuth));
 app.use(createAgentReportsRouter(supabase, adminAuth, runLiveAgentOnce));
-app.use(createPaymentLinksRouter(supabase, logActivity, registerLimiter, paymentSystem, payoutManager));
+app.use(
+  createPaymentLinksRouter(
+    supabase,
+    logActivity,
+    registerLimiter,
+    paymentSystem,
+    payoutManager,
+  ),
+);
 app.use(createCatalogRouter(supabase, dashboardApiLimiter));
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
-app.post('/api/admin/quality-audit/run', adminAuth, (req, res) => {
-    const { getQualityAuditStatus } = require('./lib/ai-quality-agent');
-    const status = getQualityAuditStatus();
-    if (status.running) {
-        return res.json({ triggered: false, reason: 'already_running' });
-    }
-    runQualityAuditOnce().catch(err => {
-        logger.error('QualityAudit', `Manual run failed: ${err.message}`);
-    });
-    res.json({ triggered: true, message: 'Quality audit started. Check Telegram for report.' });
+app.post("/api/admin/quality-audit/run", adminAuth, (req, res) => {
+  const { getQualityAuditStatus } = require("./lib/ai-quality-agent");
+  const status = getQualityAuditStatus();
+  if (status.running) {
+    return res.json({ triggered: false, reason: "already_running" });
+  }
+  runQualityAuditOnce().catch((err) => {
+    logger.error("QualityAudit", `Manual run failed: ${err.message}`);
+  });
+  res.json({
+    triggered: true,
+    message: "Quality audit started. Check Telegram for report.",
+  });
 });
 
 // Admin view for latest quality audit results
-app.get('/api/admin/quality-audit/latest', adminAuth, async (req, res) => {
-    try {
-        const { data, error } = await supabase
-            .from('quality_audits')
-            .select('service_name, overall_score, severity, error, http_status, response_latency_ms, payment_amount_usdc, gemini_summary, checked_at')
-            .order('checked_at', { ascending: false })
-            .limit(20);
-        if (error) return res.status(500).json({ error: error.message });
-        const { getQualityAuditStatus } = require('./lib/ai-quality-agent');
-        res.json({ status: getQualityAuditStatus(), results: data || [] });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+app.get("/api/admin/quality-audit/latest", adminAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("quality_audits")
+      .select(
+        "service_name, overall_score, severity, error, http_status, response_latency_ms, payment_amount_usdc, gemini_summary, checked_at",
+      )
+      .order("checked_at", { ascending: false })
+      .limit(20);
+    if (error) return res.status(500).json({ error: error.message });
+    const { getQualityAuditStatus } = require("./lib/ai-quality-agent");
+    res.json({ status: getQualityAuditStatus(), results: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // --- SWAGGER UI ---
-const openApiSpec = require('./openapi.json');
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, { customSiteTitle: 'x402 Bazaar API Docs' }));
+const openApiSpec = require("./openapi.json");
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openApiSpec, { customSiteTitle: "x402 Bazaar API Docs" }),
+);
+
+// --- 404 CATCH-ALL (JSON instead of Express default HTML) ---
+app.use((req, res) => {
+  res.status(404).json({
+    error: "Not Found",
+    message: `No endpoint at ${req.method} ${req.path}. Browse available APIs at /api/services or /api/catalog.`,
+  });
+});
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
-    const safeUrl = (req.originalUrl || '').replace(/[\r\n\x00-\x1f]/g, '_');
-    logger.error('Global', `${req.method} ${safeUrl}`);
-    logger.error('Global', err.stack || err.message || err);
-    logActivity('error', `${req.method} ${req.originalUrl} -> Internal error`);
-    res.status(err.status || 500).json({
-        error: 'Internal Server Error',
-        message: 'Something went wrong'
-    });
+  const safeUrl = (req.originalUrl || "").replace(/[\r\n\x00-\x1f]/g, "_");
+  logger.error("Global", `${req.method} ${safeUrl}`);
+  logger.error("Global", err.stack || err.message || err);
+  logActivity("error", `${req.method} ${req.originalUrl} -> Internal error`);
+  res.status(err.status || 500).json({
+    error: "Internal Server Error",
+    message: "Something went wrong",
+  });
 });
 
 // --- STARTUP ---
 const serverInstance = app.listen(PORT, async () => {
-    let count = 0;
-    try {
-        const result = await supabase.from('services').select('id', { count: 'exact', head: true });
-        count = result.count || 0;
-    } catch (err) { logger.warn('server', `Failed to count services at startup: ${err.message}`); }
-    const maskedWallet = process.env.WALLET_ADDRESS
-        ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
-        : 'NOT SET';
-    const activeNetworks = Object.entries(CHAINS)
-        .filter(([key]) => NETWORK === 'testnet' ? key === 'base-sepolia' : key !== 'base-sepolia')
-        .map(([, cfg]) => cfg.label).join(', ');
-    logger.info('server', `x402 Bazaar active on http://localhost:${PORT}`, { port: PORT, wallet: maskedWallet, networks: activeNetworks, services: count });
+  let count = 0;
+  try {
+    const result = await supabase
+      .from("services")
+      .select("id", { count: "exact", head: true });
+    count = result.count || 0;
+  } catch (err) {
+    logger.warn(
+      "server",
+      `Failed to count services at startup: ${err.message}`,
+    );
+  }
+  const maskedWallet = process.env.WALLET_ADDRESS
+    ? `${process.env.WALLET_ADDRESS.slice(0, 6)}...${process.env.WALLET_ADDRESS.slice(-4)}`
+    : "NOT SET";
+  const activeNetworks = Object.entries(CHAINS)
+    .filter(([key]) =>
+      NETWORK === "testnet" ? key === "base-sepolia" : key !== "base-sepolia",
+    )
+    .map(([, cfg]) => cfg.label)
+    .join(", ");
+  logger.info("server", `x402 Bazaar active on http://localhost:${PORT}`, {
+    port: PORT,
+    wallet: maskedWallet,
+    networks: activeNetworks,
+    services: count,
+  });
 
-    // Load budgets from Supabase (non-blocking — table may not exist yet)
-    budgetManager.loadFromDb().catch(err => {
-        logger.warn('Budget', `Failed to load budgets from DB (table may not exist yet): ${err.message}`);
+  // Load budgets from Supabase (non-blocking — table may not exist yet)
+  budgetManager.loadFromDb().catch((err) => {
+    logger.warn(
+      "Budget",
+      `Failed to load budgets from DB (table may not exist yet): ${err.message}`,
+    );
+  });
+
+  // Start monitoring (checks localhost endpoints)
+  startMonitor(`http://localhost:${PORT}`, supabase);
+
+  // Start Telegram bot (interactive commands)
+  startTelegramBot(supabase, getStatus);
+
+  // Start Community Agent companion process (port 3500)
+  if (
+    process.env.COMMUNITY_AGENT_URL ||
+    process.env.ENABLE_COMMUNITY_AGENT === "true"
+  ) {
+    startAgent();
+  }
+
+  // Data retention: purge old activity + monitoring_checks + daily_checks
+  scheduleRetention(supabase);
+
+  // Daily E2E API tester: real USDC payments on SKALE, tests all services
+  if (process.env.ENABLE_DAILY_TESTER === "true") {
+    scheduleDailyTest(`http://localhost:${PORT}`, supabase);
+  }
+
+  // Proof of Quality: recalculate TrustScores every 6h
+  scheduleTrustScore(supabase);
+
+  // Refund retry: retry failed on-chain refunds every 15min
+  scheduleRefundRetry(supabase);
+
+  // Live AI Agent: calls 3 space APIs with real USDC payments, 2x/day
+  if (process.env.AGENT_PRIVATE_KEY) {
+    startLiveAgent(`http://localhost:${PORT}`, supabase);
+  }
+
+  // AI Quality Audit Agent: Gemini-based semantic evaluation, 2x/day
+  if (process.env.AGENT_PRIVATE_KEY && process.env.GEMINI_API_KEY) {
+    startQualityAudit(`http://localhost:${PORT}`, supabase, getGemini);
+  }
+
+  // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
+  try {
+    const {
+      initClients: initERC8004,
+      repairAgentMapping,
+    } = require("./lib/erc8004-registry");
+    initERC8004();
+    // Auto-repair: restore agent mapping from on-chain if lost (fire-and-forget)
+    repairAgentMapping(supabase).catch((err) => {
+      logger.warn(
+        "ERC8004",
+        `Agent mapping repair failed (non-blocking): ${err.message}`,
+      );
     });
+  } catch (err) {
+    logger.warn(
+      "ERC8004",
+      `On-chain registry init failed (non-blocking): ${err.message}`,
+    );
+  }
 
-    // Start monitoring (checks localhost endpoints)
-    startMonitor(`http://localhost:${PORT}`, supabase);
-
-    // Start Telegram bot (interactive commands)
-    startTelegramBot(supabase, getStatus);
-
-    // Start Community Agent companion process (port 3500)
-    if (process.env.COMMUNITY_AGENT_URL || process.env.ENABLE_COMMUNITY_AGENT === 'true') {
-        startAgent();
-    }
-
-    // Data retention: purge old activity + monitoring_checks + daily_checks
-    scheduleRetention(supabase);
-
-    // Daily E2E API tester: real USDC payments on SKALE, tests all services
-    if (process.env.ENABLE_DAILY_TESTER === 'true') {
-        scheduleDailyTest(`http://localhost:${PORT}`, supabase);
-    }
-
-    // Proof of Quality: recalculate TrustScores every 6h
-    scheduleTrustScore(supabase);
-
-    // Refund retry: retry failed on-chain refunds every 15min
-    scheduleRefundRetry(supabase);
-
-    // Live AI Agent: calls 3 space APIs with real USDC payments, 2x/day
-    if (process.env.AGENT_PRIVATE_KEY) {
-        startLiveAgent(`http://localhost:${PORT}`, supabase);
-    }
-
-    // AI Quality Audit Agent: Gemini-based semantic evaluation, 2x/day
-    if (process.env.AGENT_PRIVATE_KEY && process.env.GEMINI_API_KEY) {
-        startQualityAudit(`http://localhost:${PORT}`, supabase, getGemini);
-    }
-
-    // ERC-8004: on-chain agent identity + reputation (SKALE on Base)
-    try {
-        const { initClients: initERC8004, repairAgentMapping } = require('./lib/erc8004-registry');
-        initERC8004();
-        // Auto-repair: restore agent mapping from on-chain if lost (fire-and-forget)
-        repairAgentMapping(supabase).catch(err => {
-            logger.warn('ERC8004', `Agent mapping repair failed (non-blocking): ${err.message}`);
-        });
-    } catch (err) {
-        logger.warn('ERC8004', `On-chain registry init failed (non-blocking): ${err.message}`);
-    }
-
-    // Keep-alive: ping external Render URL every 14min to prevent free-tier spin-down
-    // Render spins down after 15min of inactivity — 14min gives a 1min safety margin.
-    // Render only counts EXTERNAL requests for idle detection, localhost doesn't count.
-    const externalUrl = process.env.RENDER_EXTERNAL_URL;
-    if (externalUrl) {
-        const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes (Render spin-down = 15min)
-        setInterval(() => {
-            fetch(`${externalUrl}/health`).catch(() => {});
-        }, KEEP_ALIVE_INTERVAL).unref();
-        logger.info('KeepAlive', `Self-ping every 14min to ${externalUrl}`);
-    }
+  // Keep-alive: ping external Render URL every 14min to prevent free-tier spin-down
+  // Render spins down after 15min of inactivity — 14min gives a 1min safety margin.
+  // Render only counts EXTERNAL requests for idle detection, localhost doesn't count.
+  const externalUrl = process.env.RENDER_EXTERNAL_URL;
+  if (externalUrl) {
+    const KEEP_ALIVE_INTERVAL = 14 * 60 * 1000; // 14 minutes (Render spin-down = 15min)
+    setInterval(() => {
+      fetch(`${externalUrl}/health`).catch(() => {});
+    }, KEEP_ALIVE_INTERVAL).unref();
+    logger.info("KeepAlive", `Self-ping every 14min to ${externalUrl}`);
+  }
 });
 
 // --- GRACEFUL SHUTDOWN ---
 async function gracefulShutdown(signal) {
-    logger.info('server', `${signal} received — shutting down`);
-    stopMonitor();
-    stopTelegramBot();
-    stopDailyTest();
-    stopTrustScore();
-    stopRefundRetry();
-    stopLiveAgent();
-    stopQualityAudit();
-    await stopAgent().catch(err => {
-        logger.warn('server', `Failed to stop community agent during shutdown: ${err.message}`);
-    });
-    serverInstance.close(() => {
-        logger.info('server', 'HTTP server closed');
-        process.exit(0);
-    });
-    setTimeout(() => {
-        logger.error('server', 'Forcing exit after shutdown timeout');
-        process.exit(1);
-    }, 10000);
+  logger.info("server", `${signal} received — shutting down`);
+  stopMonitor();
+  stopTelegramBot();
+  stopDailyTest();
+  stopTrustScore();
+  stopRefundRetry();
+  stopLiveAgent();
+  stopQualityAudit();
+  await stopAgent().catch((err) => {
+    logger.warn(
+      "server",
+      `Failed to stop community agent during shutdown: ${err.message}`,
+    );
+  });
+  serverInstance.close(() => {
+    logger.info("server", "HTTP server closed");
+    process.exit(0);
+  });
+  setTimeout(() => {
+    logger.error("server", "Forcing exit after shutdown timeout");
+    process.exit(1);
+  }, 10000);
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-process.on('unhandledRejection', (reason) => {
-    logger.error('process', `Unhandled rejection: ${reason?.stack || reason}`);
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("unhandledRejection", (reason) => {
+  logger.error("process", `Unhandled rejection: ${reason?.stack || reason}`);
 });
 
-process.on('uncaughtException', (err) => {
-    logger.error('process', `Uncaught exception: ${err.stack || err.message}`);
-    gracefulShutdown('uncaughtException').catch(() => process.exit(1));
+process.on("uncaughtException", (err) => {
+  logger.error("process", `Uncaught exception: ${err.stack || err.message}`);
+  gracefulShutdown("uncaughtException").catch(() => process.exit(1));
 });
