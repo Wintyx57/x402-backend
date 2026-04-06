@@ -1276,12 +1276,16 @@ async function executeProxyCall(
                     },
                   });
                 }
+                const retryBody = await retryRes.text().catch(() => "");
+                res._retryStatus = retryRes.status;
+                res._retryBody = retryBody.slice(0, 500);
                 logger.warn(
                   "Proxy",
-                  `Upstream retry failed for "${service.name}" — status ${retryRes.status}`,
+                  `Upstream retry failed for "${service.name}" — status ${retryRes.status}: ${retryBody.slice(0, 200)}`,
                   { correlationId: cid },
                 );
               } catch (retryErr) {
+                res._retryError = retryErr.message;
                 logger.error(
                   "Proxy",
                   `Upstream retry error: ${retryErr.message}`,
@@ -1310,6 +1314,9 @@ async function executeProxyCall(
               relay_address: getRelayAddress(),
               relay_errors: res._relayErrors || [],
               should_use_eip3009: shouldUseEIP3009(normalized),
+              retry_status: res._retryStatus || null,
+              retry_body: res._retryBody || null,
+              retry_error: res._retryError || null,
             },
             _payment_status: "not_charged",
             _x402: {
