@@ -1101,6 +1101,11 @@ async function executeProxyCall(
           }
 
           // Attempt upstream payment relay
+          logger.info(
+            "Proxy",
+            `Relay check: configured=${isRelayConfigured()}, canPay=${canPayUpstream(normalized)}, payable=${normalized.payable}, chain=${normalized.chain}, amount=${normalized.amount}, recipient=${normalized.recipient}`,
+            { correlationId: cid },
+          );
           if (isRelayConfigured() && canPayUpstream(normalized)) {
             const upstreamCostUsdc = Number(normalized.amount) / 1e6;
 
@@ -1312,13 +1317,11 @@ async function executeProxyCall(
             { correlationId: cid },
           );
           if (inflightKey) _proxyInFlight.delete(inflightKey);
-          return res
-            .status(502)
-            .json({
-              error: "UPSTREAM_RESPONSE_TOO_LARGE",
-              message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
-              _payment_status: "charged_but_failed",
-            });
+          return res.status(502).json({
+            error: "UPSTREAM_RESPONSE_TOO_LARGE",
+            message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
+            _payment_status: "charged_but_failed",
+          });
         }
 
         const contentType = proxyRes.headers.get("content-type") || "";
@@ -1332,13 +1335,11 @@ async function executeProxyCall(
               { correlationId: cid },
             );
             if (inflightKey) _proxyInFlight.delete(inflightKey);
-            return res
-              .status(502)
-              .json({
-                error: "UPSTREAM_RESPONSE_TOO_LARGE",
-                message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
-                _payment_status: "charged_but_failed",
-              });
+            return res.status(502).json({
+              error: "UPSTREAM_RESPONSE_TOO_LARGE",
+              message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
+              _payment_status: "charged_but_failed",
+            });
           }
           if (contentType.includes("application/json")) {
             responseData = JSON.parse(rawBody);
