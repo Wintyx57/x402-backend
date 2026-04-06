@@ -1149,8 +1149,7 @@ async function executeProxyCall(
               } else {
                 retryHeaders = {
                   ...proxyHeaders,
-                  "X-PAYMENT": eip3009Result.xPaymentV1,
-                  "PAYMENT-SIGNATURE": eip3009Result.paymentSignatureV2,
+                  "X-PAYMENT": eip3009Result.paymentSignatureV2,
                   "X-Agent-Wallet": getRelayAddress(),
                   "X-Payer-Address": getRelayAddress(),
                 };
