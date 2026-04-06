@@ -80,3 +80,25 @@ services:
       # WARNING: rotating this key invalidates all stored provider credentials.
       - key: CREDENTIALS_ENCRYPTION_KEY
         sync: false
+      # --- Auto-Payout Cron ---
+      - key: CRON_SECRET
+        sync: false
+
+  # ─── Auto-Payout Cron Job ───────────────────────────────────────────
+  # Runs every 6 hours, triggers provider payouts for wallets with > $1 pending.
+  - type: cron
+    name: x402-auto-payout
+    env: node
+    region: oregon
+    schedule: "0 */6 * * *"
+    buildCommand: npm install
+    startCommand: >-
+      node -e "
+        const https = require('https');
+        const url = 'https://x402-api.onrender.com/api/cron/auto-payout?secret=' + process.env.CRON_SECRET + '&threshold=1';
+        https.get(url, res => {
+          let d = '';
+          res.on('data', c => d += c);
+          res.on('end', () => { console.log(res.statusCode, d); process.exit(res.statusCode === 200 ? 0 : 1); });
+        }).on('error', e => { console.error(e); process.exit(1); });
+      "
