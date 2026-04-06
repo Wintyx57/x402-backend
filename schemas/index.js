@@ -16,7 +16,11 @@ const ServiceRegistrationSchema = z.object({
   url: z
     .string()
     .url("Must be a valid HTTP(S) URL")
-    .max(500, "Service URL must be at most 500 characters"),
+    .max(500, "Service URL must be at most 500 characters")
+    .refine(
+      (u) => u.startsWith("http://") || u.startsWith("https://"),
+      "Only HTTP and HTTPS URLs are allowed",
+    ),
 
   price: z
     .number()
