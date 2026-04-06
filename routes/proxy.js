@@ -54,6 +54,21 @@ const SELF_HOSTNAME = (() => {
 // Minimum price (micro-USDC) for split payment to ensure both split amounts are non-zero
 const MIN_SPLIT_AMOUNT_RAW = 100; // 0.0001 USDC
 
+// Maximum upstream response size (10 MB) to prevent OOM
+const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+// Protocol classification sets (module scope — avoid per-request allocation)
+const UNPAYABLE_PROTOCOLS = new Set(["l402", "l402-protocol", "stripe402"]);
+const RELAY_PAYABLE_PROTOCOLS = new Set([
+  "x402-v2",
+  "x402-v1",
+  "x402-bazaar",
+  "x402-variant",
+  "flat",
+  "header-based",
+  "mpp",
+]);
+
 /**
  * @param {object} supabase
  * @param {Function} logActivity
@@ -136,16 +151,6 @@ function createProxyRouter(
     }
 
     // --- PROTOCOL SNIFFER: handle upstream payment protocols BEFORE payment ---
-    const UNPAYABLE_PROTOCOLS = new Set(["l402", "l402-protocol", "stripe402"]);
-    const RELAY_PAYABLE_PROTOCOLS = new Set([
-      "x402-v2",
-      "x402-v1",
-      "x402-bazaar",
-      "x402-variant",
-      "flat",
-      "header-based",
-      "mpp",
-    ]);
     const isRelayEligible =
       service.payment_protocol &&
       RELAY_PAYABLE_PROTOCOLS.has(service.payment_protocol) &&
@@ -1087,8 +1092,11 @@ async function executeProxyCall(
               .from("services")
               .update({ payment_protocol: normalized.format })
               .eq("id", service.id)
-              .then(null, () => {
-                /* silent */
+              .then(null, (err) => {
+                logger.debug(
+                  "Proxy",
+                  `DB update payment_protocol failed: ${err.message}`,
+                );
               });
           }
 
@@ -1292,12 +1300,58 @@ async function executeProxyCall(
         }
 
         // 2xx or 4xx → accept response, claim tx
+        // Size cap: reject responses larger than MAX_RESPONSE_BYTES to prevent OOM
+        const upstreamContentLength = parseInt(
+          proxyRes.headers.get("content-length") || "0",
+          10,
+        );
+        if (upstreamContentLength > MAX_RESPONSE_BYTES) {
+          logger.warn(
+            "Proxy",
+            `Response too large from "${service.name}": ${upstreamContentLength} bytes`,
+            { correlationId: cid },
+          );
+          if (inflightKey) _proxyInFlight.delete(inflightKey);
+          return res
+            .status(502)
+            .json({
+              error: "UPSTREAM_RESPONSE_TOO_LARGE",
+              message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
+              _payment_status: "charged_but_failed",
+            });
+        }
+
         const contentType = proxyRes.headers.get("content-type") || "";
         let responseData;
-        if (contentType.includes("application/json")) {
-          responseData = await proxyRes.json();
-        } else {
-          responseData = { raw: await proxyRes.text() };
+        try {
+          const rawBody = await proxyRes.text();
+          if (rawBody.length > MAX_RESPONSE_BYTES) {
+            logger.warn(
+              "Proxy",
+              `Response body too large from "${service.name}": ${rawBody.length} bytes`,
+              { correlationId: cid },
+            );
+            if (inflightKey) _proxyInFlight.delete(inflightKey);
+            return res
+              .status(502)
+              .json({
+                error: "UPSTREAM_RESPONSE_TOO_LARGE",
+                message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
+                _payment_status: "charged_but_failed",
+              });
+          }
+          if (contentType.includes("application/json")) {
+            responseData = JSON.parse(rawBody);
+          } else {
+            responseData = { raw: rawBody };
+          }
+        } catch (parseErr) {
+          logger.warn(
+            "Proxy",
+            `Failed to parse upstream response: ${parseErr.message}`,
+            { correlationId: cid },
+          );
+          responseData = { raw: "", _warning: "parse_error" };
         }
 
         // Detect HTML SPA responses (proxy returning frontend instead of API data)

@@ -155,12 +155,10 @@ function createReviewsRouter(supabase) {
         });
       }
     } else if (NETWORK !== "testnet") {
-      return res
-        .status(400)
-        .json({
-          error: "Signature required",
-          message: "Reviews require wallet signature in production.",
-        });
+      return res.status(400).json({
+        error: "Signature required",
+        message: "Reviews require wallet signature in production.",
+      });
     } else {
       logger.warn(
         "Reviews",
@@ -212,14 +210,15 @@ function createReviewsRouter(supabase) {
         .ilike("detail", `%${wallet.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`)
         .limit(1);
 
-      // If activity table is empty or wallet never used anything, still allow
-      // (graceful degradation — table structure may vary)
-      if (walletActivity && walletActivity.length === 0) {
-        // Best-effort check passed (wallet unknown but not blocked)
+      if (!walletActivity || walletActivity.length === 0) {
         logger.warn(
           "Reviews",
-          `Wallet ${wallet.slice(0, 8)}... has no recorded activity — allowing review`,
+          `Wallet ${wallet.slice(0, 8)}... has no recorded activity — review rejected`,
         );
+        return res.status(403).json({
+          error:
+            "No verified activity found for this wallet. You must use a service before reviewing it.",
+        });
       }
     }
 

@@ -309,22 +309,18 @@ function isValidAdminToken(req) {
 function adminAuth(req, res, next) {
   const expected = (process.env.ADMIN_TOKEN || "").trim();
   if (!expected) {
-    return res
-      .status(503)
-      .json({
-        error: "Admin not configured",
-        message: "ADMIN_TOKEN environment variable is not set.",
-      });
+    return res.status(503).json({
+      error: "Admin not configured",
+      message: "ADMIN_TOKEN environment variable is not set.",
+    });
   }
   const token = (req.headers["x-admin-token"] || "").trim();
   if (!token || !timingSafeCompare(token, expected)) {
     logger.warn("AdminAuth", `Rejected from ${req.ip || "unknown"}`);
-    return res
-      .status(401)
-      .json({
-        error: "Unauthorized",
-        message: "Valid X-Admin-Token header required.",
-      });
+    return res.status(401).json({
+      error: "Unauthorized",
+      message: "Valid X-Admin-Token header required.",
+    });
   }
   logger.info(
     "AdminAuth",
@@ -338,9 +334,14 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on("finish", () => {
     const duration = Date.now() - start;
+    // Sanitize secrets from query strings before logging
+    const safeLogUrl = (req.originalUrl || "").replace(
+      /([?&]secret=)[^&]*/gi,
+      "$1[REDACTED]",
+    );
     const extra = {
       method: req.method,
-      url: req.originalUrl,
+      url: safeLogUrl,
       status: res.statusCode,
       ms: duration,
       correlationId: req.correlationId,
@@ -348,19 +349,19 @@ app.use((req, res, next) => {
     if (res.statusCode >= 500) {
       logger.error(
         "HTTP",
-        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        `${req.method} ${safeLogUrl} -> ${res.statusCode}`,
         extra,
       );
     } else if (res.statusCode >= 400) {
       logger.warn(
         "HTTP",
-        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        `${req.method} ${safeLogUrl} -> ${res.statusCode}`,
         extra,
       );
     } else {
       logger.info(
         "HTTP",
-        `${req.method} ${req.originalUrl} -> ${res.statusCode}`,
+        `${req.method} ${safeLogUrl} -> ${res.statusCode}`,
         extra,
       );
     }

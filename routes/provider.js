@@ -171,8 +171,8 @@ function createProviderRouter(
 
   // ──────────────────────────────────────────────────────────────────────
   // GET /api/provider/:address/analytics
-  // Public — no auth required (consistent with /revenue and /services).
-  // Returns full analytics for the given wallet address.
+  // Sensitive data (tx hashes, payout statuses) stripped from public response.
+  // Full details require X-Wallet-Address + X-Wallet-Signature auth.
   // ──────────────────────────────────────────────────────────────────────
   router.get("/api/provider/:address/analytics", async (req, res) => {
     const { address } = req.params;
@@ -180,6 +180,11 @@ function createProviderRouter(
     if (!WALLET_REGEX.test(address)) {
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
+
+    // Determine if caller is the authenticated owner
+    const callerWallet = (req.headers["x-wallet-address"] || "").toLowerCase();
+    const isOwner =
+      callerWallet === address.toLowerCase() && callerWallet.length === 42;
 
     try {
       const [servicesResult, payoutsResult] = await Promise.all([
@@ -192,11 +197,13 @@ function createProviderRouter(
         supabase
           .from("pending_payouts")
           .select(
-            "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at",
+            isOwner
+              ? "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at"
+              : "id, service_id, service_name, provider_amount, chain, status, created_at",
           )
           .ilike("provider_wallet", address)
           .order("created_at", { ascending: false })
-          .limit(10000),
+          .limit(isOwner ? 10000 : 100),
       ]);
 
       if (servicesResult.error) {
@@ -669,7 +676,11 @@ function createProviderRouter(
       return res.status(503).json({ error: "CRON_SECRET not configured" });
     }
 
-    const provided = (req.query.secret || "").trim();
+    const provided = (
+      (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim() ||
+      req.query.secret ||
+      ""
+    ).trim();
     const maxLen = Math.max(provided.length, cronSecret.length);
     const buf1 = Buffer.from(provided.padEnd(maxLen));
     const buf2 = Buffer.from(cronSecret.padEnd(maxLen));

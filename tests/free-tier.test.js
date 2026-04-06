@@ -203,8 +203,8 @@ describe("checkFreeTier", () => {
     assert.ok(result.reason);
   });
 
-  it("fails open on DB errors — returns eligible:true", async () => {
-    // When the DB throws, we fail open (don't block the user)
+  it("fails closed on DB errors — returns eligible:false", async () => {
+    // When the DB throws, we fail closed (prevent abuse)
     const supabase = mockSupabase({
       data: null,
       error: { message: "relation does not exist" },
@@ -212,7 +212,8 @@ describe("checkFreeTier", () => {
     const service = { price_usdc: 0.005, owner_address: null };
     const result = await checkFreeTier(supabase, "aabbcc", service);
 
-    assert.strictEqual(result.eligible, true);
+    assert.strictEqual(result.eligible, false);
+    assert.strictEqual(result.reason, "service_unavailable");
   });
 });
 
