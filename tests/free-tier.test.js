@@ -203,6 +203,22 @@ describe("checkFreeTier", () => {
     assert.ok(result.reason);
   });
 
+  it("allows new users when no usage row found (PGRST116)", async () => {
+    // .single() returns PGRST116 when no row exists — this is normal for new users
+    const supabase = mockSupabase({
+      data: null,
+      error: {
+        code: "PGRST116",
+        message: "JSON object requested, multiple (or no) rows returned",
+      },
+    });
+    const service = { price_usdc: 0.005, owner_address: null };
+    const result = await checkFreeTier(supabase, "aabbcc", service);
+
+    assert.strictEqual(result.eligible, true);
+    assert.strictEqual(result.remaining, 5);
+  });
+
   it("fails closed on DB errors — returns eligible:false", async () => {
     // When the DB throws, we fail closed (prevent abuse)
     const supabase = mockSupabase({
