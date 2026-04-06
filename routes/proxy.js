@@ -1135,10 +1135,12 @@ async function executeProxyCall(
             let relayTxHash = null;
             let relayChain = null;
 
+            let _relayErrors = [];
             if (shouldUseEIP3009(normalized)) {
               // x402-standard: sign EIP-3009 off-chain (no gas, no TX, instant)
               const eip3009Result = await signEIP3009ForUpstream(normalized);
               if (!eip3009Result.success) {
+                _relayErrors.push(`eip3009: ${eip3009Result.error}`);
                 logger.warn(
                   "Proxy",
                   `EIP-3009 signing failed: ${eip3009Result.error} — falling back to direct transfer`,
@@ -1180,6 +1182,7 @@ async function executeProxyCall(
                   relayChain = payResult.chain;
                 }
               } else {
+                _relayErrors.push(`directPay: ${payResult.error}`);
                 logger.warn(
                   "Proxy",
                   `Upstream payment failed: ${payResult.error}`,
@@ -1187,6 +1190,8 @@ async function executeProxyCall(
                 );
               }
             }
+            // Store errors for debug response
+            res._relayErrors = _relayErrors;
 
             if (retryHeaders) {
               logger.info(
@@ -1303,6 +1308,8 @@ async function executeProxyCall(
               normalized_amount: normalized.amount,
               normalized_recipient: normalized.recipient,
               relay_address: getRelayAddress(),
+              relay_errors: res._relayErrors || [],
+              should_use_eip3009: shouldUseEIP3009(normalized),
             },
             _payment_status: "not_charged",
             _x402: {
