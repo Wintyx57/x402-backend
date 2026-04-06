@@ -1295,6 +1295,15 @@ async function executeProxyCall(
             upstream_price: normalized.amount || null,
             upstream_recipient: normalized.recipient || null,
             upstream_chain: normalized.chain || null,
+            _relay_debug: {
+              relay_configured: isRelayConfigured(),
+              can_pay: canPayUpstream(normalized),
+              normalized_payable: normalized.payable,
+              normalized_chain: normalized.chain,
+              normalized_amount: normalized.amount,
+              normalized_recipient: normalized.recipient,
+              relay_address: getRelayAddress(),
+            },
             _payment_status: "not_charged",
             _x402: {
               upstream_402: true,
