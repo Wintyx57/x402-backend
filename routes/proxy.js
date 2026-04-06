@@ -838,6 +838,11 @@ function shouldChargeForResponse(httpStatus, responseData, serviceUrl) {
     return { shouldCharge: false, reason: "empty_response" };
   }
 
+  // Layer 0: HTML response (paywall, login page, SPA) → not API data
+  if (responseData && responseData._warning === "html_response") {
+    return { shouldCharge: false, reason: "html_response" };
+  }
+
   // Layer 1+2: Schema-based validation (only for known internal APIs)
   if (serviceUrl) {
     const expected = getExpectedFieldsForUrl(serviceUrl);
@@ -1328,7 +1333,8 @@ async function executeProxyCall(
           return res.status(502).json({
             error: "UPSTREAM_RESPONSE_TOO_LARGE",
             message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
-            _payment_status: "charged_but_failed",
+            _payment_status: "not_charged",
+            retry_eligible: true,
           });
         }
 
@@ -1346,7 +1352,8 @@ async function executeProxyCall(
             return res.status(502).json({
               error: "UPSTREAM_RESPONSE_TOO_LARGE",
               message: `Upstream response exceeds ${MAX_RESPONSE_BYTES / 1024 / 1024}MB limit`,
-              _payment_status: "charged_but_failed",
+              _payment_status: "not_charged",
+              retry_eligible: true,
             });
           }
           if (contentType.includes("application/json")) {
