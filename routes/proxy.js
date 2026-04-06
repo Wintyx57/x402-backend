@@ -1101,9 +1101,9 @@ async function executeProxyCall(
           }
 
           // Attempt upstream payment relay
-          logger.info(
+          logger.debug(
             "Proxy",
-            `Relay check: configured=${isRelayConfigured()}, canPay=${canPayUpstream(normalized)}, payable=${normalized.payable}, chain=${normalized.chain}, amount=${normalized.amount}, recipient=${normalized.recipient}`,
+            `Relay check: configured=${isRelayConfigured()}, canPay=${canPayUpstream(normalized)}, chain=${normalized.chain}`,
             { correlationId: cid },
           );
           if (isRelayConfigured() && canPayUpstream(normalized)) {
@@ -1303,20 +1303,6 @@ async function executeProxyCall(
             upstream_price: normalized.amount || null,
             upstream_recipient: normalized.recipient || null,
             upstream_chain: normalized.chain || null,
-            _relay_debug: {
-              relay_configured: isRelayConfigured(),
-              can_pay: canPayUpstream(normalized),
-              normalized_payable: normalized.payable,
-              normalized_chain: normalized.chain,
-              normalized_amount: normalized.amount,
-              normalized_recipient: normalized.recipient,
-              relay_address: getRelayAddress(),
-              relay_errors: res._relayErrors || [],
-              should_use_eip3009: shouldUseEIP3009(normalized),
-              retry_status: res._retryStatus || null,
-              retry_body: res._retryBody || null,
-              retry_error: res._retryError || null,
-            },
             _payment_status: "not_charged",
             _x402: {
               upstream_402: true,
