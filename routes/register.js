@@ -378,6 +378,8 @@ function createRegisterRouter(
     if (validatedData.logo_url) insertData.logo_url = validatedData.logo_url;
     if (validatedData.alert_webhook_url)
       insertData.alert_webhook_url = validatedData.alert_webhook_url;
+    if (validatedData.webhook_url)
+      insertData.webhook_url = validatedData.webhook_url;
     // If credentials are provided, mark as pending_validation to hide from public queries
     // during the validation window (prevents race condition)
     if (req.body.credentials) insertData.status = "pending_validation";

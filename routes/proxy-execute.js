@@ -12,6 +12,7 @@
 "use strict";
 
 const logger = require("../lib/logger");
+const { notifyWebhook } = require("../lib/webhooks");
 const { safeUrl } = require("../lib/safe-url");
 const { getChainConfig } = require("../lib/chains");
 const {
@@ -919,6 +920,15 @@ async function executeProxyCall(
             txHash,
           );
         }
+
+        // Fire-and-forget webhook notification to provider
+        const callerWallet = req.headers["x-agent-wallet"] || null;
+        notifyWebhook(service, {
+          amount_usdc: price,
+          caller_wallet: callerWallet,
+          tx_hash: txHash || null,
+          chain,
+        });
 
         logger.info(
           "Proxy",

@@ -17,6 +17,7 @@ const { getInputSchemaForUrl } = require("../lib/bazaar-discovery");
 const { DEFAULT_CHAIN_KEY, getChainConfig } = require("../lib/chains");
 const { hashIp, checkFreeTier, recordFreeUsage } = require("../lib/free-tier");
 const { isRelayConfigured } = require("../lib/upstreamPayer");
+const { validateApiKey, deductCredits, KEY_PREFIX } = require("../lib/credits");
 const {
   executeProxyCall,
   isEmptyResponse,
@@ -202,6 +203,91 @@ function createProxyRouter(
     // 3. Determine the price (from service or override)
     const price = Number(service.price_usdc) || 0.01;
     const minAmountRaw = Math.round(price * 1e6); // USDC has 6 decimals
+
+    // --- API KEY AUTH (after free tier, before payment) ---
+    // Accept "Authorization: Bearer x402_sk_..." as an alternative to on-chain payment.
+    // If a valid key with sufficient credits is found, deduct credits and serve the request.
+    const authHeader = (req.headers["authorization"] || "").trim();
+    if (
+      authHeader.startsWith("Bearer ") &&
+      authHeader.slice(7).startsWith(KEY_PREFIX)
+    ) {
+      const rawKey = authHeader.slice(7);
+      const keyRow = await validateApiKey(supabase, rawKey);
+
+      if (!keyRow) {
+        return res.status(401).json({
+          error: "Invalid or revoked API key",
+          _payment_status: "not_charged",
+        });
+      }
+
+      // Daily limit check
+      if (
+        keyRow.daily_limit_usdc !== null &&
+        keyRow.daily_limit_usdc !== undefined
+      ) {
+        const spent = Number(keyRow.daily_spent_usdc || 0);
+        const limit = Number(keyRow.daily_limit_usdc);
+        if (spent + price > limit) {
+          return res.status(402).json({
+            error: "Daily API key limit exceeded",
+            daily_limit_usdc: limit,
+            daily_spent_usdc: spent,
+            _payment_status: "not_charged",
+          });
+        }
+      }
+
+      // Deduct credits atomically (passing daily_spent so it's incremented in the same UPDATE)
+      const deductResult = await deductCredits(
+        supabase,
+        keyRow.id,
+        price,
+        Number(keyRow.credits_usdc),
+        Number(keyRow.daily_spent_usdc || 0),
+      );
+
+      if (!deductResult.ok) {
+        return res.status(402).json({
+          error: "Insufficient API key credits",
+          credits_usdc: Number(keyRow.credits_usdc),
+          required_usdc: price,
+          message: "Top up your credits at POST /api/credits/topup",
+          _payment_status: "not_charged",
+        });
+      }
+
+      res.setHeader("X-Payment-Method", "api-key");
+      res.setHeader(
+        "X-Credits-Remaining",
+        String(deductResult.credits_remaining ?? 0),
+      );
+
+      // Serve the request as a free-tier-style call (credits already deducted)
+      const keyOnSuccess = async () => {
+        logActivity(
+          "api_key_call",
+          `API key call: ${service.name} (${price} USDC deducted from key ${keyRow.id.slice(0, 8)})`,
+          price,
+          null,
+        );
+        return { ok: true };
+      };
+
+      return executeProxyCall(req, res, {
+        service,
+        price,
+        txHash: null,
+        chain: DEFAULT_CHAIN_KEY,
+        payoutManager,
+        logActivity,
+        splitMode: "legacy",
+        splitMeta: null,
+        onSuccess: keyOnSuccess,
+        supabase,
+      });
+    }
 
     // 4. Detect payment mode
     const txHashProvider = req.headers["x-payment-txhash-provider"];

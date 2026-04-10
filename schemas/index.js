@@ -58,6 +58,14 @@ const ServiceRegistrationSchema = z.object({
   logo_url: z.string().url().max(500).optional().nullable(),
 
   alert_webhook_url: z.string().url().max(500).optional().nullable(),
+
+  webhook_url: z
+    .string()
+    .url("Must be a valid HTTPS URL")
+    .max(500)
+    .refine((u) => u.startsWith("https://"), "Webhook URL must use HTTPS")
+    .optional()
+    .nullable(),
 });
 
 // ─── Service Search Schema ────────────────────────────────────────────
@@ -207,6 +215,13 @@ const QuickRegisterSchema = z.object({
     .optional(),
   logo_url: z.string().url().max(500).optional().nullable(),
   alert_webhook_url: z.string().url().max(500).optional().nullable(),
+  webhook_url: z
+    .string()
+    .url("Must be a valid HTTPS URL")
+    .max(500)
+    .refine((u) => u.startsWith("https://"), "Webhook URL must use HTTPS")
+    .optional()
+    .nullable(),
 });
 
 // ─── Service Update Schema ────────────────────────────────────────────
@@ -240,6 +255,14 @@ const ServiceUpdateSchema = z
       .optional(),
     // Fix 3: allow updating monitoring webhook URL
     alert_webhook_url: z.string().url().max(500).optional().nullable(),
+    // Payment webhook: notified on every confirmed payment
+    webhook_url: z
+      .string()
+      .url("Must be a valid HTTPS URL")
+      .max(500)
+      .refine((u) => u.startsWith("https://"), "Webhook URL must use HTTPS")
+      .optional()
+      .nullable(),
   })
   .refine((data) => Object.keys(data).length > 0, {
     message: "At least one field must be provided",

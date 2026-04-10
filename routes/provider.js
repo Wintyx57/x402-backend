@@ -410,6 +410,7 @@ function createProviderRouter(
           encrypted_credentials: rawCreds,
           credential_type: credType,
           endpoint_url,
+          webhook_url,
         } = parseResult.data;
         const updates = {};
         if (name !== undefined) updates.name = name;
@@ -418,6 +419,7 @@ function createProviderRouter(
         if (tags !== undefined) updates.tags = tags;
         if (required_parameters !== undefined)
           updates.required_parameters = required_parameters;
+        if (webhook_url !== undefined) updates.webhook_url = webhook_url;
 
         // Re-encrypt credentials so providers can rotate expired API keys
         if (rawCreds !== undefined && rawCreds !== null) {
@@ -730,6 +732,102 @@ function createProviderRouter(
       return res.status(500).json({ error: "Internal server error" });
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────
+  // PUT /api/services/:id/webhook
+  // Update (or clear) the payment webhook URL for a service.
+  // Requires wallet signature (action: "update-webhook").
+  // Body: { webhook_url: "https://..." } or { webhook_url: null } to remove.
+  // ─────────────────────────────────────────────────────────────────────
+  router.put(
+    "/api/services/:id/webhook",
+    walletAuth("update-webhook"),
+    async (req, res) => {
+      const { id } = req.params;
+      const wallet = req.verifiedWallet;
+
+      // Validate webhook_url
+      const rawUrl = req.body.webhook_url;
+      if (rawUrl !== null && rawUrl !== undefined) {
+        if (typeof rawUrl !== "string") {
+          return res
+            .status(400)
+            .json({ error: "webhook_url must be a string or null" });
+        }
+        if (!rawUrl.startsWith("https://")) {
+          return res.status(400).json({ error: "webhook_url must use HTTPS" });
+        }
+        if (rawUrl.length > 500) {
+          return res
+            .status(400)
+            .json({ error: "webhook_url must be at most 500 characters" });
+        }
+        // SSRF check
+        try {
+          await safeUrl(rawUrl);
+        } catch (ssrfErr) {
+          return res.status(400).json({
+            error: `Invalid webhook URL: ${ssrfErr.message}`,
+          });
+        }
+      }
+
+      try {
+        // Verify ownership
+        const { data: existing, error: fetchError } = await supabase
+          .from("services")
+          .select("id, owner_address, name")
+          .eq("id", id)
+          .single();
+
+        if (fetchError || !existing) {
+          return res.status(404).json({ error: "Service not found" });
+        }
+        if (existing.owner_address.toLowerCase() !== wallet) {
+          return res
+            .status(403)
+            .json({ error: "Forbidden: you do not own this service" });
+        }
+
+        const { error: updateError } = await supabase
+          .from("services")
+          .update({
+            webhook_url: rawUrl ?? null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (updateError) {
+          logger.error(
+            "Provider",
+            `PUT /api/services/:id/webhook error: ${updateError.message}`,
+          );
+          return res.status(500).json({ error: "Failed to update webhook" });
+        }
+
+        logActivity(
+          "webhook_updated",
+          `Webhook ${rawUrl ? "set" : "cleared"} for service ${id} by ${wallet.slice(0, 10)}...`,
+        );
+        logger.info(
+          "Provider",
+          `Webhook ${rawUrl ? "updated" : "cleared"} for service ${id} by ${wallet.slice(0, 10)}...`,
+        );
+
+        return res.json({
+          success: true,
+          service_id: id,
+          webhook_url: rawUrl ?? null,
+        });
+      } catch (err) {
+        logger.error(
+          "Provider",
+          `PUT /api/services/:id/webhook unexpected: ${err.message}`,
+        );
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
 
   return router;
 }

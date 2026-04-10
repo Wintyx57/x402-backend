@@ -56,6 +56,8 @@ const createProviderRouter = require("./routes/provider");
 const createAgentReportsRouter = require("./routes/agent-reports");
 const createPaymentLinksRouter = require("./routes/payment-links");
 const createCatalogRouter = require("./routes/catalog");
+const createApiKeysRouter = require("./routes/api-keys");
+const createAdminPayoutsRouter = require("./routes/admin-payouts");
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "WALLET_ADDRESS"];
@@ -164,9 +166,10 @@ app.use(
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
       callback(new Error("CORS not allowed"));
     },
-    methods: ["GET", "POST", "DELETE", "PATCH"],
+    methods: ["GET", "POST", "DELETE", "PATCH", "PUT"],
     allowedHeaders: [
       "Content-Type",
+      "Authorization",
       "X-Payment-TxHash",
       "X-Payment-Chain",
       "X-Agent-Wallet",
@@ -179,6 +182,10 @@ app.use(
       "X-Budget-Remaining",
       "X-Budget-Used-Percent",
       "X-Budget-Alert",
+      "X-Payment-Method",
+      "X-Credits-Remaining",
+      "X-Free-Tier",
+      "X-Free-Tier-Remaining",
       "RateLimit-Limit",
       "RateLimit-Remaining",
       "RateLimit-Reset",
@@ -448,6 +455,10 @@ app.use(
   ),
 );
 app.use(createCatalogRouter(supabase, dashboardApiLimiter));
+app.use(createApiKeysRouter(supabase, logActivity, paymentSystem));
+app.use(
+  createAdminPayoutsRouter(supabase, adminAuth, logActivity, payoutManager),
+);
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
 app.post("/api/admin/quality-audit/run", adminAuth, (req, res) => {
