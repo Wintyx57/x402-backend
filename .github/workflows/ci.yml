@@ -34,7 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run unit tests (no network required)
-        run: node --test tests/*.test.js --exclude tests/e2e.test.js
+        run: npm test
 
   security:
     name: Security Audit

@@ -10,8 +10,9 @@
     "demo:live": "node demo-live.js",
     "mcp": "node mcp-server.mjs",
     "seed:wrappers": "node seed-wrappers.js",
-    "test": "node --test tests/*.test.js",
+    "test": "node scripts/run-unit-tests.js",
     "test:e2e": "node --test tests/e2e.test.js",
+    "test:all": "node --test tests/*.test.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
