@@ -6,7 +6,7 @@
 //   3. Valid address + key set → calls viem (mocked here via env + input validation)
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ─── Pure validation helpers extracted from routes/health.js ─────────────────

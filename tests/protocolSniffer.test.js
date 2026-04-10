@@ -1,7 +1,7 @@
 // tests/protocolSniffer.test.js — Unit tests for lib/protocolSniffer.js
 "use strict";
 
-const { describe, it, beforeEach, afterEach } = require("node:test");
+const { describe, it, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
 
 // Helper: build a base64-encoded Payment-Required header for x402-v2

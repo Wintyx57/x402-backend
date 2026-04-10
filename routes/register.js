@@ -937,7 +937,7 @@ function createRegisterRouter(
     optionalUpload,
     async (req, res) => {
       // Parse body — multer with multipart puts fields in req.body as strings
-      let body = req.body;
+      const body = req.body;
       // If multipart, parse numeric/JSON fields
       if (req.file) {
         if (body.defaultPrice)

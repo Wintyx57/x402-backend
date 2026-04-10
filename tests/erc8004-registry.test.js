@@ -5,7 +5,7 @@
 // On-chain writes are NOT tested live (integration concern, requires testnet wallet).
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ---------------------------------------------------------------------------

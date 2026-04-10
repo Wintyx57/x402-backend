@@ -5,7 +5,7 @@
 // pour tester les branches facilitateur sans acces reseau reel.
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

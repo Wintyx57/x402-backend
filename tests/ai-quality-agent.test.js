@@ -3,7 +3,7 @@
 // scheduler, status, report formatting, error resilience
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@
 //
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 

@@ -336,7 +336,7 @@ describe('createPaymentSystem — verifyPayment edge cases', () => {
 
     it('should use SKALE USDC contract when chain is skale', async () => {
         const origFetch = global.fetch;
-        let capturedAddress = null;
+        const capturedAddress = null;
 
         global.fetch = async (url, options) => {
             const body = JSON.parse(options.body);

@@ -194,7 +194,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
 
     // --- 5. DOMAIN INTELLIGENCE REPORT (GET) - 0.01 USDC ---
     router.get('/api/domain-report', paidEndpointLimiter, paymentMiddleware(10000, 0.01, 'Domain Intelligence Report'), async (req, res) => {
-        let domain = (req.query.domain || '').trim().toLowerCase()
+        const domain = (req.query.domain || '').trim().toLowerCase()
             .replace(/^https?:\/\//, '').replace(/\/.*$/, '');
         if (!domain) return res.status(400).json({ error: "Param 'domain' required. Ex: /api/domain-report?domain=example.com" });
         if (!/^[a-z0-9][a-z0-9\-.]{0,250}[a-z0-9]$/.test(domain)) {
@@ -392,7 +392,7 @@ Be thorough. Focus on bugs, security vulnerabilities, performance, and maintaina
 
     // --- 7. LEAD SCORE (GET) - 0.01 USDC ---
     router.get('/api/lead-score', paidEndpointLimiter, paymentMiddleware(10000, 0.01, 'Lead Scoring'), async (req, res) => {
-        let domain = (req.query.domain || '').trim().toLowerCase()
+        const domain = (req.query.domain || '').trim().toLowerCase()
             .replace(/^https?:\/\//, '').replace(/\/.*$/, '');
         if (!domain) return res.status(400).json({ error: "Param 'domain' required. Ex: /api/lead-score?domain=stripe.com" });
         if (!/^[a-z0-9][a-z0-9\-.]{0,250}[a-z0-9]$/.test(domain)) {

@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 // SwaggerParser est une dépendance externe (réseau + système de fichiers).
 // On la remplace par une implémentation synchrone contrôlée.
 
-let swaggerParserStub = {
+const swaggerParserStub = {
   parse: async (input) => {
     // Si l'input est un objet, le retourner tel quel (cas dereference)
     if (typeof input === 'object' && input !== null) return input;

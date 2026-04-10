@@ -9,14 +9,8 @@ const {
   defineChain,
 } = require("viem");
 const { privateKeyToAccount } = require("viem/accounts");
+const { NETWORK, CHAINS, NETWORK_LABEL } = require("../lib/chains");
 const {
-  NETWORK,
-  CHAINS,
-  NETWORK_LABEL,
-  DEFAULT_CHAIN_KEY,
-} = require("../lib/chains");
-const {
-  verifyAgent,
   getAgentInfo,
   IDENTITY_REGISTRY,
   REPUTATION_REGISTRY,

@@ -445,8 +445,8 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
 
     // --- PUBLIC HOLIDAYS API WRAPPER (0.005 USDC) ---
     router.get('/api/holidays', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Public Holidays API"), async (req, res) => {
-        let country = (req.query.country || '').trim().toUpperCase().slice(0, 2);
-        let year = parseInt(req.query.year) || new Date().getFullYear();
+        const country = (req.query.country || '').trim().toUpperCase().slice(0, 2);
+        const year = parseInt(req.query.year) || new Date().getFullYear();
 
         if (!country) {
             return res.status(400).json({ error: "Parameter 'country' required (2-letter code). Ex: /api/holidays?country=FR&year=2026" });
@@ -811,7 +811,7 @@ function createMiscRouter(logActivity, paymentMiddleware, paidEndpointLimiter) {
     router.get('/api/color-palette', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Color Palette API"), async (req, res) => {
         try {
             const seed = (req.query.seed || '').trim().replace(/^#/, '');
-            let model = 'default';
+            const model = 'default';
             let input = [[Math.random() * 255 | 0, Math.random() * 255 | 0, Math.random() * 255 | 0], 'N', 'N', 'N', 'N'];
 
             if (seed && /^[0-9a-fA-F]{6}$/.test(seed)) {

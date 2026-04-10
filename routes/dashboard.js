@@ -3,7 +3,6 @@
 const express = require("express");
 const logger = require("../lib/logger");
 const {
-  RPC_URL,
   USDC_CONTRACT,
   EXPLORER_URL,
   NETWORK_LABEL,
@@ -15,16 +14,12 @@ const {
   UUID_REGEX,
 } = require("../lib/payment");
 const { getDailyTesterStatus } = require("../lib/daily-tester");
-const {
-  getTrustBreakdown,
-  recalculateAllScores,
-} = require("../lib/trust-score");
+const { getTrustBreakdown } = require("../lib/trust-score");
 const feeSplitter = require("../lib/fee-splitter");
 const {
   getPushStatus,
   getFeedbackWalletInfo,
   forcePushAllScores,
-  ensureFeedbackCredits,
 } = require("../lib/erc8004-registry");
 
 // Cache solde USDC RPC — TTL 5 minutes (evite 1-3s de latence RPC par appel)

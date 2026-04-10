@@ -1,7 +1,7 @@
 // tests/catalog.test.js — Unit tests for GET /api/catalog (routes/catalog.js)
 'use strict';
 
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ─── Mock Supabase ──────────────────────────────────────────────────────────

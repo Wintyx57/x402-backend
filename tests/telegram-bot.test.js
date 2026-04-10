@@ -1,5 +1,5 @@
 // tests/telegram-bot.test.js — Unit tests for Telegram bot + auto-test
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 // ============================

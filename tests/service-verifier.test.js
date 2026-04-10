@@ -4,7 +4,7 @@
 // verifyService() calls that require network are stubbed via global.fetch override.
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { decodePaymentHeader, KNOWN_CHAINS } = require('../lib/service-verifier');
 

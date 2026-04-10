@@ -1,7 +1,7 @@
 // tests/credentialValidator.test.js — Unit + integration tests for credential validation at registration
 'use strict';
 
-const { describe, it, beforeEach, afterEach } = require('node:test');
+const { describe, it, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 
@@ -220,7 +220,7 @@ describe('validateCredentials with mock upstream', () => {
     });
 
     it('HEAD 405 → falls back to GET', async () => {
-        let methods = [];
+        const methods = [];
         await startServer((req, res) => {
             methods.push(req.method);
             if (req.method === 'HEAD') {

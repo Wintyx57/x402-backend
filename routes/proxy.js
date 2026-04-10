@@ -1140,7 +1140,7 @@ async function executeProxyCall(
             let relayTxHash = null;
             let relayChain = null;
 
-            let _relayErrors = [];
+            const _relayErrors = [];
             if (shouldUseEIP3009(normalized)) {
               // x402-standard: sign EIP-3009 off-chain (no gas, no TX, instant)
               const eip3009Result = await signEIP3009ForUpstream(normalized);
@@ -1424,14 +1424,12 @@ async function executeProxyCall(
           let refundSkipReason = null;
           if (agentWallet && refundEngine.isConfigured()) {
             // Anti-double-spend: mark tx used BEFORE refund (Option A)
-            let txClaimed = false;
             if (onSuccess) {
               const claimResult = await onSuccess();
               if (claimResult && !claimResult.ok) {
                 // Race condition — tx already claimed, skip refund
                 paymentStatus = "not_charged";
               } else {
-                txClaimed = true;
                 // Attempt on-chain refund
                 const refundResult = await refundEngine.processRefund(
                   agentWallet,
@@ -1477,7 +1475,6 @@ async function executeProxyCall(
                           ),
                       );
                   }
-                  txClaimed = false;
                 }
               }
             }

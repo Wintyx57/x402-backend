@@ -8,9 +8,9 @@ const { makeHash, makeWallet, makeUUID } = require('./helpers');
 // ---------------------------------------------------------------------------
 // Mock viem before requiring refund module
 // ---------------------------------------------------------------------------
-let _mockTransferCalls = [];
-let _mockBalances = {};
-let _mockTransferError = null;
+const _mockTransferCalls = [];
+const _mockBalances = {};
+const _mockTransferError = null;
 
 // We need to test the module in isolation. Since it uses require('viem') lazily,
 // we'll test the exported functions by manipulating env vars and module cache.
