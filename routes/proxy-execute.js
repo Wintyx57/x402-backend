@@ -21,6 +21,7 @@ const {
   buildValidationMeta,
 } = require("../lib/response-validator");
 const feeSplitter = require("../lib/fee-splitter");
+const refundEngine = require("../lib/refund");
 const { decryptCredentials, injectCredentials } = require("../lib/credentials");
 const {
   normalize402,
@@ -701,7 +702,6 @@ async function executeProxyCall(
             `Consumer protection: NOT charging for "${service.name}" (${chargeDecision.reason})`,
             { correlationId: cid, reason: chargeDecision.reason },
           );
-          const refundEngine = require("../lib/refund");
           const rawAgentWallet = req.headers["x-agent-wallet"];
           const agentWallet = /^0x[a-fA-F0-9]{40}$/.test(rawAgentWallet)
             ? rawAgentWallet
@@ -869,14 +869,14 @@ async function executeProxyCall(
         // When USDC was sent to the FeeSplitter contract (fee_splitter mode), we need to
         // call distribute(provider, amount) so the contract splits 95/5 and sends funds.
         // For native wrappers (no owner_address), the platform IS the provider → use WALLET_ADDRESS.
-        const _feeSplitterChain = getChainConfig(chain);
+        const _chainConfig = getChainConfig(chain);
         const _isFeeSplitter =
           splitMode === "legacy" &&
           chain === "polygon" &&
           !!(
-            _feeSplitterChain &&
-            _feeSplitterChain.facilitator &&
-            _feeSplitterChain.feeSplitterContract
+            _chainConfig &&
+            _chainConfig.facilitator &&
+            _chainConfig.feeSplitterContract
           );
         if (_isFeeSplitter) {
           const distributeProvider =
@@ -934,13 +934,12 @@ async function executeProxyCall(
         );
 
         // Build _x402 metadata
-        const _x402Chain = getChainConfig(chain);
         const _isFeeSplitterMode =
           splitMode === "legacy" &&
           !!(
-            _x402Chain &&
-            _x402Chain.facilitator &&
-            _x402Chain.feeSplitterContract
+            _chainConfig &&
+            _chainConfig.facilitator &&
+            _chainConfig.feeSplitterContract
           );
 
         const x402Meta = splitMeta
@@ -957,8 +956,8 @@ async function executeProxyCall(
             ? {
                 payment: price + " USDC",
                 split_mode: "fee_splitter",
-                fee_splitter: _x402Chain.feeSplitterContract,
-                facilitator: _x402Chain.facilitator,
+                fee_splitter: _chainConfig.feeSplitterContract,
+                facilitator: _chainConfig.facilitator,
                 tx_hash: txHash,
               }
             : (() => {

@@ -9,9 +9,7 @@
 const express = require("express");
 const logger = require("../lib/logger");
 const {
-  TX_HASH_REGEX,
   UUID_REGEX,
-  createInternalBypassToken,
   checkWalletRateLimit,
   WALLET_RATE_LIMIT,
 } = require("../lib/payment");
@@ -27,6 +25,7 @@ const {
 const { handleSplitMode } = require("./proxy-split");
 
 // Protocol classification sets (module scope — avoid per-request allocation)
+const DANGEROUS_PROPS = new Set(["__proto__", "constructor", "prototype"]);
 const UNPAYABLE_PROTOCOLS = new Set(["l402", "l402-protocol", "stripe402"]);
 const RELAY_PAYABLE_PROTOCOLS = new Set([
   "x402-v2",
@@ -100,9 +99,8 @@ function createProxyRouter(
       if (req.query && Object.keys(req.query).length > 0)
         Object.assign(params, req.query);
 
-      const DANGEROUS_PROPS = ["__proto__", "constructor", "prototype"];
       const missing = inputSchema.required
-        .filter((p) => typeof p === "string" && !DANGEROUS_PROPS.includes(p))
+        .filter((p) => typeof p === "string" && !DANGEROUS_PROPS.has(p))
         .filter(
           (p) =>
             params[p] === undefined || params[p] === null || params[p] === "",

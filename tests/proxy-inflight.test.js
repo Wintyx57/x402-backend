@@ -1,4 +1,9 @@
 // tests/proxy-inflight.test.js — Fix 3: In-flight dedup prevents duplicate upstream calls
+//
+// NOTE: After the proxy refactor, in-flight dedup state (INFLIGHT_MAX_ENTRIES,
+// _proxyInFlight) lives in routes/proxy-execute.js. Source-reading assertions
+// target that file. The final export assertion still checks routes/proxy.js
+// (which re-exports shouldChargeForResponse and isEmptyResponse).
 "use strict";
 
 const test = require("node:test");
@@ -11,12 +16,11 @@ const { mockRes, mockReq } = require("./helpers");
 
 test("Proxy In-Flight Dedup — Fix 3", async (t) => {
   await t.test("INFLIGHT_MAX_ENTRIES constant exists (5000 cap)", () => {
-    // The proxy module defines INFLIGHT_MAX_ENTRIES = 5000
-    // We verify by checking the module source
+    // In-flight dedup logic lives in routes/proxy-execute.js after refactor
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     assert.ok(
@@ -35,7 +39,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
       const fs = require("fs");
       const path = require("path");
       const src = fs.readFileSync(
-        path.join(__dirname, "..", "routes", "proxy.js"),
+        path.join(__dirname, "..", "routes", "proxy-execute.js"),
         "utf8",
       );
       // Check the inflight guard pattern
@@ -58,7 +62,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     // The guard block should return 409 with TX_ALREADY_USED
@@ -76,7 +80,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     assert.ok(
@@ -93,7 +97,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     // The finally block should clean up
@@ -105,7 +109,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     assert.ok(
@@ -118,7 +122,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
     const fs = require("fs");
     const path = require("path");
     const src = fs.readFileSync(
-      path.join(__dirname, "..", "routes", "proxy.js"),
+      path.join(__dirname, "..", "routes", "proxy-execute.js"),
       "utf8",
     );
     assert.ok(
@@ -130,6 +134,7 @@ test("Proxy In-Flight Dedup — Fix 3", async (t) => {
   await t.test(
     "exports still include shouldChargeForResponse and isEmptyResponse",
     () => {
+      // These are re-exported from proxy.js for backward compatibility
       const proxy = require("../routes/proxy");
       assert.strictEqual(typeof proxy.shouldChargeForResponse, "function");
       assert.strictEqual(typeof proxy.isEmptyResponse, "function");

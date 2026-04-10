@@ -127,8 +127,9 @@ test("Refund Retry — Fix 4", async (t) => {
     () => {
       const fs = require("fs");
       const path = require("path");
+      // Refund status logic lives in proxy-execute.js after refactor
       const src = fs.readFileSync(
-        path.join(__dirname, "..", "routes", "proxy.js"),
+        path.join(__dirname, "..", "routes", "proxy-execute.js"),
         "utf8",
       );
       assert.ok(
