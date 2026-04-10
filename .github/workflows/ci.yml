@@ -20,7 +20,8 @@ jobs:
           node-version: '20.19.0'
           cache: npm
       - run: npm ci
-      - run: npm run lint
+      # Progressively tighten: 124 warnings remain (mostly unused vars in test fixtures)
+      - run: npx eslint . --max-warnings 130
 
   unit-tests:
     name: Unit Tests
