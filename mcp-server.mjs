@@ -1533,8 +1533,8 @@ server.tool(
                 : '';
 
             const buildResult = (s, role) => {
-                const statusWarning = s.status === 'offline'
-                    ? ' WARNING: This service is currently OFFLINE — payment may be wasted.'
+                const statusWarning = (s.status === 'offline' || s.status === 'quarantined')
+                    ? ` WARNING: This service is currently ${s.status.toUpperCase()} — payment will be blocked.`
                     : s.status === 'degraded'
                         ? ' This service is DEGRADED (partial responses).'
                         : '';
@@ -1611,15 +1611,15 @@ server.tool(
                     const serviceInfo = await infoRes.json();
                     serviceName = serviceInfo.name || service_id;
 
-                    // Warn if service is offline (prevent USDC waste)
-                    if (serviceInfo.status === 'offline') {
+                    // Block if service is offline or quarantined (prevent USDC waste)
+                    if (serviceInfo.status === 'offline' || serviceInfo.status === 'quarantined') {
                         return {
                             content: [{ type: 'text', text: JSON.stringify({
-                                error: 'Service is currently OFFLINE',
+                                error: `Service is currently ${serviceInfo.status.toUpperCase()}`,
                                 service: serviceInfo.name,
                                 status: serviceInfo.status,
                                 last_checked_at: serviceInfo.last_checked_at,
-                                message: `⚠️ This service failed its last health check and is currently offline. Calling it would likely waste your USDC. Try again later or use search_services to find an alternative.`,
+                                message: `Service "${serviceInfo.name}" is currently ${serviceInfo.status} and cannot be called. Try again later or use search_services to find an alternative.`,
                             }, null, 2) }],
                             isError: true,
                         };

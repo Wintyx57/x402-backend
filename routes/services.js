@@ -84,6 +84,7 @@ function createServicesRouter(
       .from("services")
       .select(SERVICE_COLUMNS, { count: "exact" })
       .neq("status", "pending_validation")
+      .neq("status", "quarantined")
       .order("created_at", { ascending: true })
       .range(offset, offset + limit - 1);
 
@@ -175,7 +176,8 @@ function createServicesRouter(
     let query = supabase
       .from("services")
       .select(SERVICE_COLUMNS, { count: "exact" })
-      .neq("status", "pending_validation");
+      .neq("status", "pending_validation")
+      .neq("status", "quarantined");
 
     if (rawSearch) {
       // Split multi-word queries into individual words and OR them

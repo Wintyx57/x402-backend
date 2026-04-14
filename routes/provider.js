@@ -193,6 +193,7 @@ function createProviderRouter(
           .select(SERVICE_COLUMNS)
           .ilike("owner_address", address)
           .neq("status", "pending_validation")
+          .neq("status", "quarantined")
           .order("created_at", { ascending: false }),
         supabase
           .from("pending_payouts")

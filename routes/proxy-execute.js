@@ -396,6 +396,29 @@ async function executeProxyCall(
               });
           }
 
+          // --- GUARD: bare 402 with no parseable payment details ---
+          if (normalized.format === "unknown") {
+            logger.warn(
+              "Proxy",
+              `Bare 402 from "${service.name}" — no x402 payment details, skipping relay`,
+              { correlationId: cid },
+            );
+            // Auto-quarantine (fire-and-forget)
+            if (supabase) {
+              supabase
+                .from("services")
+                .update({ status: "quarantined", verified_status: "bare_402" })
+                .eq("id", service.id)
+                .then(null, () => {});
+            }
+            if (inflightKey) _proxyInFlight.delete(inflightKey);
+            return res.status(502).json({
+              error: "UPSTREAM_BARE_402",
+              message: `Service "${service.name}" returns 402 without x402 payment details. The upstream API is not properly integrated.`,
+              _payment_status: "not_charged",
+            });
+          }
+
           // Attempt upstream payment relay
           logger.debug(
             "Proxy",

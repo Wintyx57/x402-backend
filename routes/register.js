@@ -435,7 +435,17 @@ function createRegisterRouter(
     } else {
       // No credentials — probe the URL to detect upstream payment protocol
       protocolProbe = await probeProtocol(validatedData.url);
-      if (protocolProbe.is402 && protocolProbe.protocol !== "unknown") {
+      if (protocolProbe.is402 && protocolProbe.protocol === "unknown") {
+        // Bare 402 with no x402 payment details — quarantine
+        await supabase
+          .from("services")
+          .update({ status: "quarantined", verified_status: "bare_402" })
+          .eq("id", service.id);
+        logger.warn(
+          "Register",
+          `Quarantined "${derivedName}": upstream returns 402 without x402 payment details`,
+        );
+      } else if (protocolProbe.is402 && protocolProbe.protocol !== "unknown") {
         await supabase
           .from("services")
           .update({ payment_protocol: protocolProbe.protocol })
@@ -609,7 +619,20 @@ function createRegisterRouter(
       } else {
         // No credentials — probe the URL to detect upstream payment protocol
         const protocolProbe = await probeProtocol(validatedData.url);
-        if (protocolProbe.is402 && protocolProbe.protocol !== "unknown") {
+        if (protocolProbe.is402 && protocolProbe.protocol === "unknown") {
+          // Bare 402 with no x402 payment details — quarantine
+          await supabase
+            .from("services")
+            .update({ status: "quarantined", verified_status: "bare_402" })
+            .eq("id", data[0].id);
+          logger.warn(
+            "Register",
+            `Quarantined "${validatedData.name}": upstream returns 402 without x402 payment details`,
+          );
+        } else if (
+          protocolProbe.is402 &&
+          protocolProbe.protocol !== "unknown"
+        ) {
           await supabase
             .from("services")
             .update({ payment_protocol: protocolProbe.protocol })
