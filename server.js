@@ -58,6 +58,7 @@ const createPaymentLinksRouter = require("./routes/payment-links");
 const createCatalogRouter = require("./routes/catalog");
 const createApiKeysRouter = require("./routes/api-keys");
 const createAdminPayoutsRouter = require("./routes/admin-payouts");
+const createAdminQuarantineRouter = require("./routes/admin-quarantine");
 
 // --- VALIDATION ENV VARS ---
 const REQUIRED_ENV = ["SUPABASE_URL", "SUPABASE_KEY", "WALLET_ADDRESS"];
@@ -459,6 +460,7 @@ app.use(createApiKeysRouter(supabase, logActivity, paymentSystem));
 app.use(
   createAdminPayoutsRouter(supabase, adminAuth, logActivity, payoutManager),
 );
+app.use(createAdminQuarantineRouter(supabase, adminAuth, logActivity));
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
 app.post("/api/admin/quality-audit/run", adminAuth, (req, res) => {
