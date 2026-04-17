@@ -270,6 +270,12 @@ async function handleSplitMode(
       price,
       txHashProvider,
     );
+    // Expose the exact replay keys that were just claimed so the proxy can
+    // roll them back on refund without guessing the format.
+    req._claimedReplayKeys = [providerReplayKey];
+    if (splitMode === "split_complete" && platformReplayKey) {
+      req._claimedReplayKeys.push(platformReplayKey);
+    }
     return { ok: true, splitMode };
   };
 

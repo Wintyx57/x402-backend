@@ -319,7 +319,10 @@ function createProxyRouter(
           .json({ error: "Too Many Requests", retry_after: retryAfter });
       }
     }
-    if (agentWallet && budgetManager) {
+    // Budget check is only needed for split mode. For legacy mode,
+    // paymentMiddleware.checkAndRecord() runs the same check downstream — calling
+    // it twice double-counted the agent's spending (bug found in session 108 audit).
+    if (agentWallet && budgetManager && isSplitMode) {
       const check = budgetManager.checkAndRecord(agentWallet, price);
       if (!check.allowed) {
         // Return structured budget info so agents can display remaining quota and reset time
@@ -442,6 +445,8 @@ function createProxyRouter(
           `API Call: ${service.name}`,
         );
         if (!claimed) return { ok: false };
+        // Expose the exact key for the refund rollback path in proxy-execute.
+        req._claimedReplayKeys = [req._paymentReplayKey];
         logActivity(
           "payment",
           `API Call: ${service.name} - ${price} USDC verified`,

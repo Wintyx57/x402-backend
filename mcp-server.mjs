@@ -317,16 +317,48 @@ const chainClients = {}; // { base: { public, wallet }, skale: { public, wallet 
 
 const AUTO_WALLET_PATH = join(X402_DIR, 'wallet.json');
 
-// ─── Wallet encryption helpers (AES-256-GCM, machine-bound key) ─────
-function getMachineKey() {
-    // Derive a stable 256-bit key from machine identifiers.
-    // Synchronous: uses already-imported 'os' named exports.
+// ─── Wallet encryption helpers (AES-256-GCM) ─────────────────────────
+// SECURITY: The legacy machine-key was SHA256(hostname:username:homedir), which
+// has zero secret entropy — any process reading the wallet file could
+// reconstruct the key from system metadata. We now prefer a user-supplied
+// passphrase via WALLET_PASSPHRASE (HKDF-stretched with a per-wallet salt).
+// If no passphrase is configured, the legacy machine-key is used as a fallback
+// for backward compatibility with existing wallets, and a warning is logged
+// on every decryption so users know to migrate.
+const LEGACY_MACHINE_KEY_WARNING =
+    '[x402-bazaar] WARNING: wallet is encrypted with the legacy machine-key ' +
+    '(reversible from hostname/username/homedir). Set WALLET_PASSPHRASE in your ' +
+    'MCP env to re-encrypt with a secret passphrase. This will become required ' +
+    'in a future release.';
+
+function getLegacyMachineKey() {
     const raw = `${hostname()}:${userInfo().username}:${homedir()}`;
     return crypto.createHash('sha256').update(raw).digest();
 }
 
+function derivePassphraseKey(passphrase, saltHex) {
+    // HKDF-SHA256 with a per-wallet salt. 100k iterations of PBKDF2 provides
+    // reasonable resistance to offline brute force even for short passphrases.
+    const salt = Buffer.from(saltHex, 'hex');
+    return crypto.pbkdf2Sync(passphrase, salt, 100000, 32, 'sha256');
+}
+
+function getEncryptionKey(saltHex) {
+    const pass = process.env.WALLET_PASSPHRASE;
+    if (pass && pass.length >= 8) {
+        return { key: derivePassphraseKey(pass, saltHex), source: 'passphrase' };
+    }
+    return { key: getLegacyMachineKey(), source: 'legacy_machine_key' };
+}
+
 function encryptPrivateKey(privateKey) {
-    const key = getMachineKey();
+    // Always generate a fresh salt so that a compromised encryption key on one
+    // wallet doesn't help decrypt another.
+    const salt = crypto.randomBytes(16);
+    const { key, source } = getEncryptionKey(salt.toString('hex'));
+    if (source === 'legacy_machine_key') {
+        console.error(LEGACY_MACHINE_KEY_WARNING);
+    }
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     const encrypted = Buffer.concat([cipher.update(privateKey, 'utf8'), cipher.final()]);
@@ -335,11 +367,25 @@ function encryptPrivateKey(privateKey) {
         encrypted: encrypted.toString('hex'),
         iv: iv.toString('hex'),
         tag: tag.toString('hex'),
+        salt: salt.toString('hex'),
+        kdf: source === 'passphrase' ? 'pbkdf2-sha256-100k' : 'legacy-machine-key',
     };
 }
 
 function decryptPrivateKey(data) {
-    const key = getMachineKey();
+    // Backward-compat: old wallets have no salt field. Fall back to the legacy
+    // machine-key when salt is missing, regardless of WALLET_PASSPHRASE.
+    let key;
+    if (data.salt && data.kdf === 'pbkdf2-sha256-100k') {
+        const pass = process.env.WALLET_PASSPHRASE;
+        if (!pass) {
+            throw new Error('WALLET_PASSPHRASE env var is required to decrypt this wallet (kdf=pbkdf2-sha256-100k).');
+        }
+        key = derivePassphraseKey(pass, data.salt);
+    } else {
+        console.error(LEGACY_MACHINE_KEY_WARNING);
+        key = getLegacyMachineKey();
+    }
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(data.iv, 'hex'));
     decipher.setAuthTag(Buffer.from(data.tag, 'hex'));
     return decipher.update(Buffer.from(data.encrypted, 'hex')) + decipher.final('utf8');
@@ -582,23 +628,9 @@ function buildX402StandardPayload(signature, authorization, chainKey, normalized
     return Buffer.from(JSON.stringify(payload)).toString('base64');
 }
 
-// ─── fetchWithTimeout: wraps fetch with an AbortController timeout ───
-// Usage: fetchWithTimeout(url, options, timeoutMs)
-// On timeout: throws an Error with a clear message (no process crash).
-// clearTimeout is called on success to avoid timer leaks.
-function fetchWithTimeout(url, opts = {}, ms = 15_000) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), ms);
-    return fetch(url, { ...opts, signal: controller.signal })
-        .then(res => { clearTimeout(timer); return res; })
-        .catch(err => {
-            clearTimeout(timer);
-            if (err.name === 'AbortError') {
-                throw new Error(`Request timed out after ${ms / 1000}s: ${url}`);
-            }
-            throw err;
-        });
-}
+// Shared fetchWithTimeout — imported from lib/http-client.js via createRequire
+// (ESM -> CJS). Single source of truth; used by the backend too.
+const { fetchWithTimeout } = require('./lib/http-client');
 
 // ─── Facilitator Payment Flow (Polygon Phase 2 — gas-free EIP-3009) ──
 //
@@ -2040,21 +2072,21 @@ server.tool(
                 ];
             } else if (isAutoWallet) {
                 keySource = 'auto_generated_encrypted_file';
-                // Commande de déchiffrement locale — utilise des guillemets doubles pour éviter
-                // les conflits avec les apostrophes JavaScript à l'intérieur de la chaîne
-                const decryptCmd = "node -e \"const fs=require('fs'),os=require('os'),c=require('crypto');" +
-                    "const d=JSON.parse(fs.readFileSync(os.homedir()+'/.x402-bazaar/wallet.json','utf-8'));" +
-                    "const k=c.createHash('sha256').update(os.hostname()+':'+os.userInfo().username+':'+os.homedir()).digest();" +
-                    "const dc=c.createDecipheriv('aes-256-gcm',k,Buffer.from(d.iv,'hex'));" +
-                    "dc.setAuthTag(Buffer.from(d.tag,'hex'));" +
-                    "console.log(dc.update(Buffer.from(d.encrypted,'hex'))+dc.final('utf8'))\"";
+                // SECURITY: we deliberately do NOT return a ready-to-run decryption
+                // command here. Any such command leaks the key-derivation scheme into
+                // the LLM conversation (logs, screenshots, shared transcripts) and
+                // makes the wallet file exploitable by anyone who later gets a copy
+                // of it. Users must run the dedicated CLI locally, which requires
+                // interactive confirmation and never echoes the key to stdout.
                 instructions = [
-                    `Your private key is stored encrypted (AES-256-GCM, machine-bound key) at: ${AUTO_WALLET_PATH}`,
-                    'The file is readable only on this machine (the decryption key is derived from your hostname, username and home directory).',
-                    'To retrieve the raw private key, run the following command in a LOCAL terminal on this machine (never share the output):',
-                    decryptCmd,
+                    `Your private key is stored encrypted (AES-256-GCM) at: ${AUTO_WALLET_PATH}`,
+                    'To retrieve the raw private key, run the dedicated CLI in a LOCAL terminal on this machine:',
+                    '    npx x402-bazaar wallet export',
+                    'The CLI will ask for an interactive confirmation and your WALLET_PASSPHRASE if one was configured.',
                     'Copy the output directly into your password manager (1Password, Bitwarden, etc.), then close the terminal.',
                     'NEVER paste or share the output in any chat, log, screenshot, or unsecured document.',
+                    'If you have not set WALLET_PASSPHRASE yet, set one now in your MCP env and re-run setup_wallet ' +
+                        'with import=<your current private key> to re-encrypt the wallet with strong entropy.',
                 ];
             } else {
                 keySource = 'unknown_or_not_initialized';

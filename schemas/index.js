@@ -32,7 +32,8 @@ const ServiceRegistrationSchema = z.object({
     .regex(
       /^0x[a-fA-F0-9]{40}$/,
       "Owner address must be a valid Ethereum address (0x followed by 40 hex characters)",
-    ),
+    )
+    .transform((s) => s.toLowerCase()),
 
   description: z
     .string()
@@ -207,7 +208,8 @@ const QuickRegisterSchema = z.object({
     .regex(
       /^0x[a-fA-F0-9]{40}$/,
       "Owner address must be a valid Ethereum address (0x followed by 40 hex characters)",
-    ),
+    )
+    .transform((s) => s.toLowerCase()),
   name: z
     .string()
     .trim()
@@ -295,7 +297,10 @@ const BatchRegisterSchema = z.object({
     )
     .min(1)
     .max(50),
-  ownerAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  ownerAddress: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/)
+    .transform((s) => s.toLowerCase()),
   signature: z.string(),
   timestamp: z.number(),
 });
@@ -367,7 +372,8 @@ const PaymentLinkSchema = z.object({
     .regex(
       /^0x[a-fA-F0-9]{40}$/,
       "Owner address must be a valid Ethereum address (0x followed by 40 hex characters)",
-    ),
+    )
+    .transform((s) => s.toLowerCase()),
   signature: z.string().min(1, "Signature is required"),
   timestamp: z.number().int().positive(),
   redirectAfterPayment: z.boolean().optional().default(true),

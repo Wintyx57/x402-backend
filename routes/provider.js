@@ -65,11 +65,16 @@ function createProviderRouter(
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
 
+    // Migration 030 normalized `services.owner_address` to lowercase and added
+    // a CHECK constraint, so a plain eq() hits the B-tree index instead of the
+    // full table scan that .ilike() was doing.
+    const addrLower = address.toLowerCase();
+
     try {
       const { data, error } = await supabase
         .from("services")
         .select(SERVICE_COLUMNS)
-        .ilike("owner_address", address)
+        .eq("owner_address", addrLower)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -102,11 +107,13 @@ function createProviderRouter(
       return res.status(400).json({ error: "Invalid wallet address format" });
     }
 
+    const addrLower = address.toLowerCase();
+
     try {
       const { data, error } = await supabase
         .from("pending_payouts")
         .select("service_id, service_name, provider_amount, chain")
-        .ilike("provider_wallet", address)
+        .eq("provider_wallet", addrLower)
         .order("created_at", { ascending: false })
         .limit(10000);
 
@@ -186,12 +193,14 @@ function createProviderRouter(
     const isOwner =
       callerWallet === address.toLowerCase() && callerWallet.length === 42;
 
+    const addrLower = address.toLowerCase();
+
     try {
       const [servicesResult, payoutsResult] = await Promise.all([
         supabase
           .from("services")
           .select(SERVICE_COLUMNS)
-          .ilike("owner_address", address)
+          .eq("owner_address", addrLower)
           .neq("status", "pending_validation")
           .neq("status", "quarantined")
           .order("created_at", { ascending: false }),
@@ -202,7 +211,7 @@ function createProviderRouter(
               ? "id, service_id, service_name, provider_amount, gross_amount, platform_fee, chain, status, tx_hash_in, created_at, paid_at"
               : "id, service_id, service_name, provider_amount, chain, status, created_at",
           )
-          .ilike("provider_wallet", address)
+          .eq("provider_wallet", addrLower)
           .order("created_at", { ascending: false })
           .limit(isOwner ? 10000 : 100),
       ]);

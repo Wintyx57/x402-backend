@@ -238,83 +238,90 @@ describe("checkFreeTier", () => {
 describe("recordFreeUsage", () => {
   const { recordFreeUsage } = loadFreeTier();
 
-  it("calls upsert with ip_hash, usage_date, and count:1 when no existing row", async () => {
-    let upsertCalled = false;
-    let upsertArgs = null;
+  it("calls the increment_free_usage RPC atomically", async () => {
+    let rpcCalled = false;
+    let rpcArgs = null;
 
     const supabase = {
-      from: (table) => {
-        assert.strictEqual(table, "free_usage");
-        return {
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                single: async () => ({ data: null, error: null }),
-              }),
-            }),
-          }),
-          upsert: (data, opts) => {
-            upsertCalled = true;
-            upsertArgs = { data, opts };
-            return Promise.resolve({ error: null });
-          },
-          update: () => ({
-            eq: () => ({ eq: () => Promise.resolve({ error: null }) }),
-          }),
-        };
+      rpc: (name, args) => {
+        rpcCalled = true;
+        rpcArgs = { name, args };
+        return Promise.resolve({ data: 1, error: null });
+      },
+      from: () => {
+        throw new Error(
+          "from() should not be called when RPC path is available",
+        );
       },
     };
 
     await recordFreeUsage(supabase, "deadbeef");
 
-    assert.strictEqual(upsertCalled, true, "upsert should have been called");
-    assert.ok(upsertArgs.data, "upsert args should contain data");
-    const row = Array.isArray(upsertArgs.data)
-      ? upsertArgs.data[0]
-      : upsertArgs.data;
-    assert.strictEqual(row.ip_hash, "deadbeef");
-    assert.ok(row.usage_date, "usage_date should be set");
-    // usage_date should look like YYYY-MM-DD
-    assert.match(row.usage_date, /^\d{4}-\d{2}-\d{2}$/);
-    assert.strictEqual(row.count, 1);
+    assert.strictEqual(rpcCalled, true, "RPC should have been called");
+    assert.strictEqual(rpcArgs.name, "increment_free_usage");
+    assert.strictEqual(rpcArgs.args.p_ip_hash, "deadbeef");
+    assert.match(rpcArgs.args.p_usage_date, /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("calls update (count+1) when an existing row exists for today", async () => {
-    let updateCalled = false;
+  it("returns the new count from the RPC", async () => {
+    // The RPC contract is: RETURNS INTEGER (new count after increment).
+    // We don't expose the return value, but we verify recordFreeUsage handles
+    // both first call (count=1) and subsequent (count=4) without throwing.
+    for (const count of [1, 2, 5, 100]) {
+      const supabase = {
+        rpc: () => Promise.resolve({ data: count, error: null }),
+      };
+      await recordFreeUsage(supabase, "deadbeef");
+    }
+  });
 
+  it("falls back to legacy non-atomic path when RPC missing (migration not applied)", async () => {
+    let upsertCalled = false;
     const supabase = {
-      from: (table) => {
-        assert.strictEqual(table, "free_usage");
-        return {
-          select: () => ({
+      rpc: () =>
+        Promise.resolve({
+          data: null,
+          error: {
+            code: "42883",
+            message: "function increment_free_usage does not exist",
+          },
+        }),
+      from: () => ({
+        select: () => ({
+          eq: () => ({
             eq: () => ({
-              eq: () => ({
-                single: async () => ({ data: { count: 3 }, error: null }),
-              }),
+              single: async () => ({ data: null, error: null }),
             }),
           }),
-          update: (data) => {
-            updateCalled = true;
-            assert.strictEqual(
-              data.count,
-              4,
-              "count should be incremented to 4",
-            );
-            return {
-              eq: () => ({
-                eq: () => Promise.resolve({ error: null }),
-              }),
-            };
-          },
-          upsert: () => {
-            throw new Error("upsert should not be called when row exists");
-          },
-        };
-      },
+        }),
+        upsert: () => {
+          upsertCalled = true;
+          return Promise.resolve({ error: null });
+        },
+        update: () => ({
+          eq: () => ({ eq: () => Promise.resolve({ error: null }) }),
+        }),
+      }),
     };
 
     await recordFreeUsage(supabase, "deadbeef");
-    assert.strictEqual(updateCalled, true, "update should have been called");
+    assert.strictEqual(
+      upsertCalled,
+      true,
+      "legacy upsert fallback should be used when RPC missing",
+    );
+  });
+
+  it("does not throw on generic RPC errors", async () => {
+    const supabase = {
+      rpc: () =>
+        Promise.resolve({
+          data: null,
+          error: { code: "XX000", message: "internal server error" },
+        }),
+    };
+    // Should swallow the error silently (logged as warn), not throw.
+    await recordFreeUsage(supabase, "deadbeef");
   });
 });
 

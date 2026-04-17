@@ -466,9 +466,13 @@ async function executeProxyCall(
                   { correlationId: cid },
                 );
               } else {
+                // Send BOTH v1 (X-PAYMENT) and v2 (PAYMENT-SIGNATURE) for max compatibility
+                // with upstream facilitators. Previously X-PAYMENT received the v2 payload,
+                // which caused silent upstream rejection → USDC burned on each retry.
                 retryHeaders = {
                   ...proxyHeaders,
-                  "X-PAYMENT": eip3009Result.paymentSignatureV2,
+                  "X-PAYMENT": eip3009Result.xPaymentV1,
+                  "PAYMENT-SIGNATURE": eip3009Result.paymentSignatureV2,
                   "X-Agent-Wallet": getRelayAddress(),
                   "X-Payer-Address": getRelayAddress(),
                 };
@@ -765,26 +769,38 @@ async function executeProxyCall(
                     refundResult.txHash,
                   );
                 } else {
-                  // Refund failed — unmark tx to restore reusability (Option A rollback)
+                  // Refund failed — unmark tx(s) to restore reusability (Option A rollback).
+                  // Use the exact replay keys that were claimed in onSuccess (exposed via
+                  // req._claimedReplayKeys) — never reconstruct the format here, we had a
+                  // drift bug where the rollback key didn't match the inserted key and the
+                  // UPDATE silently affected 0 rows. Also handles the platform tx in split mode.
                   refundSkipReason = refundResult.reason;
                   if (supabase) {
-                    const replayKey = `${chain}:${splitMode === "split" ? "split_provider:" : ""}${txHash}`;
+                    const keys =
+                      Array.isArray(req._claimedReplayKeys) &&
+                      req._claimedReplayKeys.length > 0
+                        ? req._claimedReplayKeys
+                        : [
+                            splitMode === "split"
+                              ? `${chain}:split_provider:${txHash}`
+                              : `${chain}:${txHash}`,
+                          ];
                     supabase
                       .from("used_transactions")
                       .update({ status: "rolled_back" })
-                      .eq("tx_hash", replayKey)
+                      .in("tx_hash", keys)
                       .then(
                         ({ error }) => {
                           if (error)
                             logger.error(
                               "Proxy:refund-rollback",
-                              `Failed to mark tx ${replayKey} as rolled_back: ${error.message}`,
+                              `Failed to mark tx(s) ${keys.join(",")} as rolled_back: ${error.message}`,
                             );
                         },
                         (err) =>
                           logger.error(
                             "Proxy:refund-rollback",
-                            `Exception marking tx ${replayKey} as rolled_back: ${err?.message}`,
+                            `Exception marking tx(s) ${keys.join(",")} as rolled_back: ${err?.message}`,
                           ),
                       );
                   }
@@ -1050,6 +1066,16 @@ async function executeProxyCall(
           data: responseData,
           _x402: x402Meta,
         };
+        // Harden proxied responses — an upstream service could return HTML
+        // or JS that would execute in the browser if a client renders the
+        // response directly. Since we're wrapping the upstream payload in
+        // JSON and never expect the browser to execute anything from here,
+        // lock down the response completely.
+        res.setHeader(
+          "Content-Security-Policy",
+          "default-src 'none'; frame-ancestors 'none'",
+        );
+        res.setHeader("X-Content-Type-Options", "nosniff");
         return res.status(proxyRes.status).json(responseBody);
       } catch (err) {
         // Network error (timeout, DNS, connection refused, abort) → retry

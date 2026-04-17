@@ -1,433 +1,656 @@
 // routes/wrappers/ai.js — AI-powered API wrappers
 // sentiment, image, code, readability, math
 
-const express = require('express');
-const cheerio = require('cheerio');
-const { evaluate } = require('mathjs');
-const logger = require('../../lib/logger');
-const { fetchWithTimeout } = require('../../lib/payment');
-const { openaiRetry } = require('../../lib/openai-retry');
-const { safeUrl } = require('../../lib/safe-url');
-const { SentimentAnalysisSchema, CodeExecutionSchema } = require('../../schemas/index');
+const express = require("express");
+const cheerio = require("cheerio");
+const { create, all } = require("mathjs");
 
-function createAiRouter(logActivity, paymentMiddleware, paidEndpointLimiter, getGemini) {
-    const router = express.Router();
+// Hardened mathjs sandbox: disable the functions that let a crafted expression
+// escape the scope (GHSA-jvff-x2qm-6286 / GHSA-29qv-4j9f-fjw5 historical class).
+// `evaluate(expr, {})` alone is NOT safe: attacker can call `import`, `createUnit`,
+// `parse`, `simplify`, `derivative` to break out. We remove them entirely.
+const _math = create(all);
+// Capture the real evaluator BEFORE overriding the expression-namespace names.
+// Without this capture, calling `_math.evaluate(...)` from JS would hit the
+// thrower we just installed. Pattern from mathjs docs (Security section).
+const _limitedEvaluate = _math.evaluate;
+_math.import(
+  {
+    import: function () {
+      throw new Error("Function import is disabled");
+    },
+    createUnit: function () {
+      throw new Error("Function createUnit is disabled");
+    },
+    evaluate: function () {
+      throw new Error("Function evaluate is disabled");
+    },
+    parse: function () {
+      throw new Error("Function parse is disabled");
+    },
+    simplify: function () {
+      throw new Error("Function simplify is disabled");
+    },
+    derivative: function () {
+      throw new Error("Function derivative is disabled");
+    },
+    resolve: function () {
+      throw new Error("Function resolve is disabled");
+    },
+  },
+  { override: true },
+);
 
-    // --- SENTIMENT ANALYSIS API WRAPPER (0.005 USDC) ---
-    router.get('/api/sentiment', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Sentiment Analysis API"), async (req, res) => {
-        // Validate query parameter using Zod
-        const parseResult = SentimentAnalysisSchema.safeParse({ text: req.query.text || '' });
+// Strict character whitelist (defense-in-depth). Allows digits, operators,
+// parentheses, common math names (pi, e, sqrt, sin, cos, tan, log, ln, abs, exp...).
+const SAFE_MATH_EXPR = /^[a-zA-Z0-9_+\-*/^%().,\s!=<>]*$/;
 
-        if (!parseResult.success) {
-            const errors = parseResult.error.errors.map(err => err.message).join(', ');
-            return res.status(400).json({ error: errors });
-        }
+function safeEvaluate(expr) {
+  if (!SAFE_MATH_EXPR.test(expr)) {
+    throw new Error("Expression contains forbidden characters");
+  }
+  return _limitedEvaluate(expr, {});
+}
+const logger = require("../../lib/logger");
+const { fetchWithTimeout } = require("../../lib/payment");
+const { openaiRetry } = require("../../lib/openai-retry");
+const { safeUrl } = require("../../lib/safe-url");
+const {
+  SentimentAnalysisSchema,
+  CodeExecutionSchema,
+} = require("../../schemas/index");
 
-        const text = parseResult.data.text;
+function createAiRouter(
+  logActivity,
+  paymentMiddleware,
+  paidEndpointLimiter,
+  getGemini,
+) {
+  const router = express.Router();
 
-        try {
-            const model = getGemini().getGenerativeModel({
-                model: 'gemini-2.5-flash',
-                systemInstruction: 'You are a sentiment analysis assistant. Analyze the sentiment of the provided text and respond ONLY with valid JSON in this exact format: {"sentiment": "positive|negative|neutral", "score": 0.0-1.0, "keywords": ["word1", "word2", "word3"]}. The score represents confidence (0=low, 1=high). Extract 3-5 keywords that influenced the sentiment.'
-            });
+  // --- SENTIMENT ANALYSIS API WRAPPER (0.005 USDC) ---
+  router.get(
+    "/api/sentiment",
+    paidEndpointLimiter,
+    paymentMiddleware(5000, 0.005, "Sentiment Analysis API"),
+    async (req, res) => {
+      // Validate query parameter using Zod
+      const parseResult = SentimentAnalysisSchema.safeParse({
+        text: req.query.text || "",
+      });
 
-            const response = await openaiRetry(() => model.generateContent({
-                contents: [{ role: 'user', parts: [{ text }] }],
-                generationConfig: {
-                    temperature: 0.3,
-                    maxOutputTokens: 200,
-                    responseMimeType: 'application/json'
-                }
-            }), 'Sentiment API');
+      if (!parseResult.success) {
+        const errors = parseResult.error.errors
+          .map((err) => err.message)
+          .join(", ");
+        return res.status(400).json({ error: errors });
+      }
 
-            const resultText = response.response.text().trim();
-            let analysis;
+      const text = parseResult.data.text;
 
-            try {
-                analysis = JSON.parse(resultText);
-            } catch {
-                // Fallback if Gemini doesn't return valid JSON
-                analysis = {
-                    sentiment: 'neutral',
-                    score: 0.5,
-                    keywords: []
-                };
-            }
-
-            logActivity('api_call', `Sentiment Analysis API: ${analysis.sentiment} (${analysis.score.toFixed(2)})`);
-
-            res.json({
-                success: true,
-                sentiment: analysis.sentiment || 'neutral',
-                score: analysis.score || 0.5,
-                keywords: analysis.keywords || [],
-                text: text.slice(0, 100) + (text.length > 100 ? '...' : '')
-            });
-        } catch (err) {
-            logger.error('Sentiment Analysis API', err.message);
-
-            if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
-                return res.status(429).json({
-                    error: 'Rate limit exceeded',
-                    message: 'AI rate limit reached. Please try again in a few seconds.'
-                });
-            }
-
-            return res.status(500).json({ error: 'Sentiment Analysis API request failed' });
-        }
-    });
-
-    // --- AI IMAGE GENERATION API (0.02 USDC) ---
-    // Uses Gemini native image generation (free upstream, rate-limited)
-    router.get('/api/image', paidEndpointLimiter, paymentMiddleware(20000, 0.02, "AI Image Generation API"), async (req, res) => {
-        const prompt = (req.query.prompt || '').trim().slice(0, 1000);
-        const size = (req.query.size || '512').trim();
-
-        if (!prompt) {
-            return res.status(400).json({ error: "Parameter 'prompt' required. Ex: /api/image?prompt=a+sunset+over+mountains&size=512" });
-        }
-
-        const validSizes = ['256', '512', '1024'];
-        if (!validSizes.includes(size)) {
-            return res.status(400).json({ error: `Invalid size '${size}'. Supported: ${validSizes.join(', ')}` });
-        }
-
-        try {
-            const apiKey = process.env.GEMINI_API_KEY;
-            if (!apiKey) {
-                return res.status(503).json({ error: 'Image generation service not configured' });
-            }
-
-            // Try image generation models in order (models get deprecated frequently)
-            const IMAGE_MODELS = [
-                'gemini-2.5-flash-image',
-                'gemini-3.1-flash-image-preview',
-            ];
-
-            const requestBody = JSON.stringify({
-                contents: [{ parts: [{ text: `Generate an image: ${prompt}. Size: ${size}x${size} pixels.` }] }],
-                generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-            });
-
-            let geminiRes = null;
-            let usedModel = null;
-            for (const model of IMAGE_MODELS) {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-                const attempt = await fetchWithTimeout(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: requestBody
-                }, 35000);
-
-                if (attempt.status === 404) {
-                    logger.warn('Image Generation API', `Model ${model} not found (404), trying next`);
-                    continue;
-                }
-                geminiRes = attempt;
-                usedModel = model;
-                break;
-            }
-
-            if (!geminiRes) {
-                return res.status(503).json({ error: 'No working image generation model available' });
-            }
-
-            if (!geminiRes.ok) {
-                const errBody = await geminiRes.text().catch(() => '');
-                logger.error('Image Generation API', `Gemini ${usedModel} HTTP ${geminiRes.status}: ${errBody.slice(0, 200)}`);
-
-                if (geminiRes.status === 429) {
-                    return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
-                }
-                const safeDetail = errBody.replace(/key=[^&"}\s]+/g, 'key=***').slice(0, 150);
-                return res.status(500).json({ error: 'Image generation failed', detail: safeDetail });
-            }
-
-            const data = await geminiRes.json();
-            const parts = data.candidates?.[0]?.content?.parts || [];
-
-            let imageData = null;
-            let mimeType = 'image/png';
-            let textResponse = '';
-
-            for (const part of parts) {
-                if (part.inlineData) {
-                    imageData = part.inlineData.data;
-                    mimeType = part.inlineData.mimeType || 'image/png';
-                } else if (part.text) {
-                    textResponse = part.text;
-                }
-            }
-
-            if (!imageData) {
-                logger.warn('Image Generation API', `No image in response. Text: ${textResponse.slice(0, 200)}`);
-                return res.status(500).json({
-                    error: 'Image generation returned no image',
-                    message: textResponse.slice(0, 200) || 'The model could not generate an image for this prompt'
-                });
-            }
-
-            logActivity('api_call', `Image Generation API: "${prompt.slice(0, 50)}" (${size}px)`);
-
-            // Return as JSON with base64 data URI
-            res.json({
-                success: true,
-                prompt: prompt.slice(0, 200),
-                size: `${size}x${size}`,
-                mime_type: mimeType,
-                image_base64: imageData,
-                data_uri: `data:${mimeType};base64,${imageData}`,
-            });
-        } catch (err) {
-            logger.error('Image Generation API', err.message);
-
-            if (err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429')) {
-                return res.status(429).json({ error: 'Rate limit exceeded. Try again in a few seconds.' });
-            }
-            return res.status(500).json({ error: 'Image generation failed' });
-        }
-    });
-
-    // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
-    // Primary: Piston API (emkc.org) — free, reliable, no API key required
-    // Fallback: Wandbox (wandbox.org) — free, open-source
-    const PISTON_LANG_MAP = {
-        python:     { language: 'python', version: '3.10.0' },
-        python3:    { language: 'python', version: '3.10.0' },
-        javascript: { language: 'javascript', version: '18.15.0' },
-        js:         { language: 'javascript', version: '18.15.0' },
-        typescript: { language: 'typescript', version: '5.0.3' },
-        ts:         { language: 'typescript', version: '5.0.3' },
-        ruby:       { language: 'ruby', version: '3.0.1' },
-        go:         { language: 'go', version: '1.16.2' },
-        rust:       { language: 'rust', version: '1.68.2' },
-        c:          { language: 'c', version: '10.2.0' },
-        cpp:        { language: 'c++', version: '10.2.0' },
-        java:       { language: 'java', version: '15.0.2' },
-        php:        { language: 'php', version: '8.2.3' },
-        bash:       { language: 'bash', version: '5.2.0' },
-        swift:      { language: 'swift', version: '5.3.3' },
-        kotlin:     { language: 'kotlin', version: '1.8.20' },
-    };
-
-    const WANDBOX_COMPILER_MAP = {
-        python:     'cpython-3.12.7',
-        python3:    'cpython-3.12.7',
-        javascript: 'nodejs-20.17.0',
-        js:         'nodejs-20.17.0',
-        typescript: 'typescript-5.6.2',
-        ts:         'typescript-5.6.2',
-        ruby:       'ruby-3.3.6',
-        go:         'go-1.22.8',
-        rust:       'rust-1.82.0',
-        php:        'php-8.3.12',
-        bash:       'bash',
-        lua:        'lua-5.4.7',
-        r:          'r-4.4.1',
-    };
-
-    router.post('/api/code', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Code Execution API"), async (req, res) => {
-        // Validate request body using Zod
-        const parseResult = CodeExecutionSchema.safeParse({
-            code: req.body.code || '',
-            language: req.body.language || 'python',
-            timeout: req.body.timeout || '5000'
+      try {
+        const model = getGemini().getGenerativeModel({
+          model: "gemini-2.5-flash",
+          systemInstruction:
+            'You are a sentiment analysis assistant. Analyze the sentiment of the provided text and respond ONLY with valid JSON in this exact format: {"sentiment": "positive|negative|neutral", "score": 0.0-1.0, "keywords": ["word1", "word2", "word3"]}. The score represents confidence (0=low, 1=high). Extract 3-5 keywords that influenced the sentiment.',
         });
 
-        if (!parseResult.success) {
-            const errors = parseResult.error.errors.map(err => err.message).join(', ');
-            return res.status(400).json({ error: errors });
-        }
+        const response = await openaiRetry(
+          () =>
+            model.generateContent({
+              contents: [{ role: "user", parts: [{ text }] }],
+              generationConfig: {
+                temperature: 0.3,
+                maxOutputTokens: 200,
+                responseMimeType: "application/json",
+              },
+            }),
+          "Sentiment API",
+        );
 
-        const language = parseResult.data.language.toLowerCase();
-        const code = parseResult.data.code;
-
-        const pistonLang = PISTON_LANG_MAP[language];
-        const wandboxCompiler = WANDBOX_COMPILER_MAP[language];
-        if (!pistonLang && !wandboxCompiler) {
-            const supported = [...new Set([...Object.keys(PISTON_LANG_MAP), ...Object.keys(WANDBOX_COMPILER_MAP)])].join(', ');
-            return res.status(400).json({ error: `Unsupported language "${language}". Supported: ${supported}` });
-        }
+        const resultText = response.response.text().trim();
+        let analysis;
 
         try {
-            // Primary: Piston API (emkc.org)
-            if (pistonLang) {
-                try {
-                    const pistonRes = await fetchWithTimeout('https://emkc.org/api/v2/piston/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            language: pistonLang.language,
-                            version: pistonLang.version,
-                            files: [{ content: code }]
-                        })
-                    }, 20000);
+          analysis = JSON.parse(resultText);
+        } catch {
+          // Fallback if Gemini doesn't return valid JSON
+          analysis = {
+            sentiment: "neutral",
+            score: 0.5,
+            keywords: [],
+          };
+        }
 
-                    if (pistonRes.ok) {
-                        const data = await pistonRes.json();
-                        const run = data.run || {};
-                        const compile = data.compile || {};
-                        logActivity('api_call', `Code Execution API (piston): ${language} (${code.length} chars)`);
-                        return res.json({
-                            success: true,
-                            language,
-                            output: run.stdout || run.output || '',
-                            stderr: run.stderr || '',
-                            compiler_error: compile.stderr || '',
-                            exit_code: String(run.code ?? '0')
-                        });
-                    }
-                    logger.warn('Code Execution API', `Piston HTTP ${pistonRes.status}, trying Wandbox fallback`);
-                } catch (pistonErr) {
-                    logger.warn('Code Execution API', `Piston failed: ${pistonErr.message}, trying Wandbox fallback`);
-                }
-            }
+        logActivity(
+          "api_call",
+          `Sentiment Analysis API: ${analysis.sentiment} (${analysis.score.toFixed(2)})`,
+        );
 
-            // Fallback: Wandbox
-            if (!wandboxCompiler) {
-                return res.status(500).json({ error: 'Code execution failed — primary engine unavailable and no fallback for this language' });
-            }
+        res.json({
+          success: true,
+          sentiment: analysis.sentiment || "neutral",
+          score: analysis.score || 0.5,
+          keywords: analysis.keywords || [],
+          text: text.slice(0, 100) + (text.length > 100 ? "..." : ""),
+        });
+      } catch (err) {
+        logger.error("Sentiment Analysis API", err.message);
 
-            const apiUrl = 'https://wandbox.org/api/compile.json';
-            const apiRes = await fetchWithTimeout(apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ compiler: wandboxCompiler, code })
-            }, 20000);
+        if (err.status === 429 || err.message?.includes("RESOURCE_EXHAUSTED")) {
+          return res.status(429).json({
+            error: "Rate limit exceeded",
+            message:
+              "AI rate limit reached. Please try again in a few seconds.",
+          });
+        }
 
-            if (!apiRes.ok) {
-                const errText = await apiRes.text().catch(() => '');
-                logger.error('Code Execution API', `Wandbox HTTP ${apiRes.status}: ${errText.slice(0, 100)}`);
-                return res.status(500).json({ error: 'Code execution failed', details: errText.slice(0, 200) });
-            }
+        return res
+          .status(500)
+          .json({ error: "Sentiment Analysis API request failed" });
+      }
+    },
+  );
 
-            const data = await apiRes.json();
+  // --- AI IMAGE GENERATION API (0.02 USDC) ---
+  // Uses Gemini native image generation (free upstream, rate-limited)
+  router.get(
+    "/api/image",
+    paidEndpointLimiter,
+    paymentMiddleware(20000, 0.02, "AI Image Generation API"),
+    async (req, res) => {
+      const prompt = (req.query.prompt || "").trim().slice(0, 1000);
+      const size = (req.query.size || "512").trim();
 
-            logActivity('api_call', `Code Execution API (wandbox): ${language} (${code.length} chars)`);
+      if (!prompt) {
+        return res.status(400).json({
+          error:
+            "Parameter 'prompt' required. Ex: /api/image?prompt=a+sunset+over+mountains&size=512",
+        });
+      }
 
-            res.json({
+      const validSizes = ["256", "512", "1024"];
+      if (!validSizes.includes(size)) {
+        return res.status(400).json({
+          error: `Invalid size '${size}'. Supported: ${validSizes.join(", ")}`,
+        });
+      }
+
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          return res
+            .status(503)
+            .json({ error: "Image generation service not configured" });
+        }
+
+        // Try image generation models in order (models get deprecated frequently)
+        const IMAGE_MODELS = [
+          "gemini-2.5-flash-image",
+          "gemini-3.1-flash-image-preview",
+        ];
+
+        const requestBody = JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Generate an image: ${prompt}. Size: ${size}x${size} pixels.`,
+                },
+              ],
+            },
+          ],
+          generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+        });
+
+        let geminiRes = null;
+        let usedModel = null;
+        for (const model of IMAGE_MODELS) {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+          const attempt = await fetchWithTimeout(
+            url,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: requestBody,
+            },
+            35000,
+          );
+
+          if (attempt.status === 404) {
+            logger.warn(
+              "Image Generation API",
+              `Model ${model} not found (404), trying next`,
+            );
+            continue;
+          }
+          geminiRes = attempt;
+          usedModel = model;
+          break;
+        }
+
+        if (!geminiRes) {
+          return res
+            .status(503)
+            .json({ error: "No working image generation model available" });
+        }
+
+        if (!geminiRes.ok) {
+          const errBody = await geminiRes.text().catch(() => "");
+          logger.error(
+            "Image Generation API",
+            `Gemini ${usedModel} HTTP ${geminiRes.status}: ${errBody.slice(0, 200)}`,
+          );
+
+          if (geminiRes.status === 429) {
+            return res.status(429).json({
+              error: "Rate limit exceeded. Try again in a few seconds.",
+            });
+          }
+          const safeDetail = errBody
+            .replace(/key=[^&"}\s]+/g, "key=***")
+            .slice(0, 150);
+          return res
+            .status(500)
+            .json({ error: "Image generation failed", detail: safeDetail });
+        }
+
+        const data = await geminiRes.json();
+        const parts = data.candidates?.[0]?.content?.parts || [];
+
+        let imageData = null;
+        let mimeType = "image/png";
+        let textResponse = "";
+
+        for (const part of parts) {
+          if (part.inlineData) {
+            imageData = part.inlineData.data;
+            mimeType = part.inlineData.mimeType || "image/png";
+          } else if (part.text) {
+            textResponse = part.text;
+          }
+        }
+
+        if (!imageData) {
+          logger.warn(
+            "Image Generation API",
+            `No image in response. Text: ${textResponse.slice(0, 200)}`,
+          );
+          return res.status(500).json({
+            error: "Image generation returned no image",
+            message:
+              textResponse.slice(0, 200) ||
+              "The model could not generate an image for this prompt",
+          });
+        }
+
+        logActivity(
+          "api_call",
+          `Image Generation API: "${prompt.slice(0, 50)}" (${size}px)`,
+        );
+
+        // Return as JSON with base64 data URI
+        res.json({
+          success: true,
+          prompt: prompt.slice(0, 200),
+          size: `${size}x${size}`,
+          mime_type: mimeType,
+          image_base64: imageData,
+          data_uri: `data:${mimeType};base64,${imageData}`,
+        });
+      } catch (err) {
+        logger.error("Image Generation API", err.message);
+
+        if (
+          err.message?.includes("RESOURCE_EXHAUSTED") ||
+          err.message?.includes("429")
+        ) {
+          return res.status(429).json({
+            error: "Rate limit exceeded. Try again in a few seconds.",
+          });
+        }
+        return res.status(500).json({ error: "Image generation failed" });
+      }
+    },
+  );
+
+  // --- CODE EXECUTION API WRAPPER (0.005 USDC) ---
+  // Primary: Piston API (emkc.org) — free, reliable, no API key required
+  // Fallback: Wandbox (wandbox.org) — free, open-source
+  const PISTON_LANG_MAP = {
+    python: { language: "python", version: "3.10.0" },
+    python3: { language: "python", version: "3.10.0" },
+    javascript: { language: "javascript", version: "18.15.0" },
+    js: { language: "javascript", version: "18.15.0" },
+    typescript: { language: "typescript", version: "5.0.3" },
+    ts: { language: "typescript", version: "5.0.3" },
+    ruby: { language: "ruby", version: "3.0.1" },
+    go: { language: "go", version: "1.16.2" },
+    rust: { language: "rust", version: "1.68.2" },
+    c: { language: "c", version: "10.2.0" },
+    cpp: { language: "c++", version: "10.2.0" },
+    java: { language: "java", version: "15.0.2" },
+    php: { language: "php", version: "8.2.3" },
+    bash: { language: "bash", version: "5.2.0" },
+    swift: { language: "swift", version: "5.3.3" },
+    kotlin: { language: "kotlin", version: "1.8.20" },
+  };
+
+  const WANDBOX_COMPILER_MAP = {
+    python: "cpython-3.12.7",
+    python3: "cpython-3.12.7",
+    javascript: "nodejs-20.17.0",
+    js: "nodejs-20.17.0",
+    typescript: "typescript-5.6.2",
+    ts: "typescript-5.6.2",
+    ruby: "ruby-3.3.6",
+    go: "go-1.22.8",
+    rust: "rust-1.82.0",
+    php: "php-8.3.12",
+    bash: "bash",
+    lua: "lua-5.4.7",
+    r: "r-4.4.1",
+  };
+
+  router.post(
+    "/api/code",
+    paidEndpointLimiter,
+    paymentMiddleware(5000, 0.005, "Code Execution API"),
+    async (req, res) => {
+      // Validate request body using Zod
+      const parseResult = CodeExecutionSchema.safeParse({
+        code: req.body.code || "",
+        language: req.body.language || "python",
+        timeout: req.body.timeout || "5000",
+      });
+
+      if (!parseResult.success) {
+        const errors = parseResult.error.errors
+          .map((err) => err.message)
+          .join(", ");
+        return res.status(400).json({ error: errors });
+      }
+
+      const language = parseResult.data.language.toLowerCase();
+      const code = parseResult.data.code;
+
+      const pistonLang = PISTON_LANG_MAP[language];
+      const wandboxCompiler = WANDBOX_COMPILER_MAP[language];
+      if (!pistonLang && !wandboxCompiler) {
+        const supported = [
+          ...new Set([
+            ...Object.keys(PISTON_LANG_MAP),
+            ...Object.keys(WANDBOX_COMPILER_MAP),
+          ]),
+        ].join(", ");
+        return res.status(400).json({
+          error: `Unsupported language "${language}". Supported: ${supported}`,
+        });
+      }
+
+      try {
+        // Primary: Piston API (emkc.org)
+        if (pistonLang) {
+          try {
+            const pistonRes = await fetchWithTimeout(
+              "https://emkc.org/api/v2/piston/execute",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  language: pistonLang.language,
+                  version: pistonLang.version,
+                  files: [{ content: code }],
+                }),
+              },
+              20000,
+            );
+
+            if (pistonRes.ok) {
+              const data = await pistonRes.json();
+              const run = data.run || {};
+              const compile = data.compile || {};
+              logActivity(
+                "api_call",
+                `Code Execution API (piston): ${language} (${code.length} chars)`,
+              );
+              return res.json({
                 success: true,
                 language,
-                output: data.program_output || '',
-                stderr: data.program_error || '',
-                compiler_error: data.compiler_error || '',
-                exit_code: data.status || '0'
-            });
-        } catch (err) {
-            logger.error('Code Execution API', err.message);
-            return res.status(500).json({ error: 'Code Execution API request failed' });
-        }
-    });
-
-    // --- READABILITY API WRAPPER (0.005 USDC) ---
-    router.get('/api/readability', paidEndpointLimiter, paymentMiddleware(5000, 0.005, "Readability API"), async (req, res) => {
-        const targetUrl = (req.query.url || '').trim();
-
-        if (!targetUrl) {
-            return res.status(400).json({ error: "Parameter 'url' required. Ex: /api/readability?url=https://example.com/article" });
-        }
-
-        let parsed;
-        try {
-            parsed = await safeUrl(targetUrl);
-        } catch (e) {
-            return res.status(400).json({ error: e.message });
-        }
-
-        try {
-            const pageRes = await fetchWithTimeout(targetUrl, {
-                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; x402-bazaar/1.0)' },
-                redirect: 'follow',
-            }, 10000);
-
-            const contentLength = parseInt(pageRes.headers.get('content-length') || '0');
-            if (contentLength > 5 * 1024 * 1024) {
-                return res.status(400).json({ error: 'Page too large (max 5MB)' });
+                output: run.stdout || run.output || "",
+                stderr: run.stderr || "",
+                compiler_error: compile.stderr || "",
+                exit_code: String(run.code ?? "0"),
+              });
             }
-
-            const contentType = pageRes.headers.get('content-type') || '';
-            if (!contentType.includes('text/html') && !contentType.includes('text/plain')) {
-                return res.status(400).json({ error: 'URL does not return HTML or text content', content_type: contentType });
-            }
-
-            const html = await pageRes.text();
-
-            if (html.length > 5 * 1024 * 1024) {
-                return res.status(400).json({ error: 'Page too large (max 5MB)' });
-            }
-
-            const $ = cheerio.load(html);
-
-            // Remove unwanted elements
-            $('script, style, nav, footer, header, iframe, noscript, svg, [role="navigation"], [role="banner"], .sidebar, .menu, .nav, .footer, .header, .ad, .ads, .advertisement').remove();
-
-            const title = $('title').text().trim() || $('h1').first().text().trim() || '';
-
-            // Extract main text content
-            const textParts = [];
-            $('article, main, [role="main"], p').each((i, el) => {
-                const text = $(el).text().trim();
-                if (text.length > 50) {
-                    textParts.push(text);
-                }
-            });
-
-            let fullText = textParts.join('\n\n').replace(/\s+/g, ' ').trim();
-
-            if (fullText.length > 50000) {
-                fullText = fullText.slice(0, 50000) + '\n\n[...truncated]';
-            }
-
-            const wordCount = fullText.split(/\s+/).length;
-
-            logActivity('api_call', `Readability API: ${parsed.hostname} -> ${wordCount} words`);
-
-            res.json({
-                success: true,
-                title,
-                text: fullText,
-                word_count: wordCount,
-                url: targetUrl
-            });
-        } catch (err) {
-            logger.error('Readability API', err.message);
-            return res.status(500).json({ error: 'Readability API request failed' });
-        }
-    });
-
-    // --- MATH EXPRESSION API (0.001 USDC) ---
-    router.get('/api/math', paidEndpointLimiter, paymentMiddleware(1000, 0.001, "Math Expression API"), async (req, res) => {
-        const expr = (req.query.expr || req.query.expression || '').trim().slice(0, 500);
-
-        if (!expr) {
-            return res.status(400).json({ error: "Parameter 'expr' required. Ex: /api/math?expr=2*pi*5+sqrt(16)" });
+            logger.warn(
+              "Code Execution API",
+              `Piston HTTP ${pistonRes.status}, trying Wandbox fallback`,
+            );
+          } catch (pistonErr) {
+            logger.warn(
+              "Code Execution API",
+              `Piston failed: ${pistonErr.message}, trying Wandbox fallback`,
+            );
+          }
         }
 
-        if (expr.length > 500) {
-            return res.status(400).json({ error: 'Expression too long (max 500 characters)' });
+        // Fallback: Wandbox
+        if (!wandboxCompiler) {
+          return res.status(500).json({
+            error:
+              "Code execution failed — primary engine unavailable and no fallback for this language",
+          });
         }
 
-        let result;
-        try {
-            // Safe math evaluation using mathjs with empty scope to block global variable access
-            result = evaluate(expr, {});
-        } catch (mathErr) {
-            return res.status(400).json({ error: 'Invalid math expression', details: mathErr.message });
+        const apiUrl = "https://wandbox.org/api/compile.json";
+        const apiRes = await fetchWithTimeout(
+          apiUrl,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ compiler: wandboxCompiler, code }),
+          },
+          20000,
+        );
+
+        if (!apiRes.ok) {
+          const errText = await apiRes.text().catch(() => "");
+          logger.error(
+            "Code Execution API",
+            `Wandbox HTTP ${apiRes.status}: ${errText.slice(0, 100)}`,
+          );
+          return res.status(500).json({
+            error: "Code execution failed",
+            details: errText.slice(0, 200),
+          });
         }
 
-        if (typeof result !== 'number' || !isFinite(result)) {
-            return res.status(400).json({ error: 'Expression resulted in invalid number (Infinity or NaN)' });
+        const data = await apiRes.json();
+
+        logActivity(
+          "api_call",
+          `Code Execution API (wandbox): ${language} (${code.length} chars)`,
+        );
+
+        res.json({
+          success: true,
+          language,
+          output: data.program_output || "",
+          stderr: data.program_error || "",
+          compiler_error: data.compiler_error || "",
+          exit_code: data.status || "0",
+        });
+      } catch (err) {
+        logger.error("Code Execution API", err.message);
+        return res
+          .status(500)
+          .json({ error: "Code Execution API request failed" });
+      }
+    },
+  );
+
+  // --- READABILITY API WRAPPER (0.005 USDC) ---
+  router.get(
+    "/api/readability",
+    paidEndpointLimiter,
+    paymentMiddleware(5000, 0.005, "Readability API"),
+    async (req, res) => {
+      const targetUrl = (req.query.url || "").trim();
+
+      if (!targetUrl) {
+        return res.status(400).json({
+          error:
+            "Parameter 'url' required. Ex: /api/readability?url=https://example.com/article",
+        });
+      }
+
+      let parsed;
+      try {
+        parsed = await safeUrl(targetUrl);
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+
+      try {
+        const pageRes = await fetchWithTimeout(
+          targetUrl,
+          {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (compatible; x402-bazaar/1.0)",
+            },
+            redirect: "follow",
+          },
+          10000,
+        );
+
+        const contentLength = parseInt(
+          pageRes.headers.get("content-length") || "0",
+        );
+        if (contentLength > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "Page too large (max 5MB)" });
         }
 
-        try {
-            logActivity('api_call', `Math Expression API: ${expr} = ${result}`);
-            res.json({ success: true, expression: expr, result, result_formatted: result.toLocaleString('en-US', { maximumFractionDigits: 10 }) });
-        } catch (err) {
-            return res.status(500).json({ error: 'Internal server error' });
+        const contentType = pageRes.headers.get("content-type") || "";
+        if (
+          !contentType.includes("text/html") &&
+          !contentType.includes("text/plain")
+        ) {
+          return res.status(400).json({
+            error: "URL does not return HTML or text content",
+            content_type: contentType,
+          });
         }
-    });
 
-    return router;
+        const html = await pageRes.text();
+
+        if (html.length > 5 * 1024 * 1024) {
+          return res.status(400).json({ error: "Page too large (max 5MB)" });
+        }
+
+        const $ = cheerio.load(html);
+
+        // Remove unwanted elements
+        $(
+          'script, style, nav, footer, header, iframe, noscript, svg, [role="navigation"], [role="banner"], .sidebar, .menu, .nav, .footer, .header, .ad, .ads, .advertisement',
+        ).remove();
+
+        const title =
+          $("title").text().trim() || $("h1").first().text().trim() || "";
+
+        // Extract main text content
+        const textParts = [];
+        $('article, main, [role="main"], p').each((i, el) => {
+          const text = $(el).text().trim();
+          if (text.length > 50) {
+            textParts.push(text);
+          }
+        });
+
+        let fullText = textParts.join("\n\n").replace(/\s+/g, " ").trim();
+
+        if (fullText.length > 50000) {
+          fullText = fullText.slice(0, 50000) + "\n\n[...truncated]";
+        }
+
+        const wordCount = fullText.split(/\s+/).length;
+
+        logActivity(
+          "api_call",
+          `Readability API: ${parsed.hostname} -> ${wordCount} words`,
+        );
+
+        res.json({
+          success: true,
+          title,
+          text: fullText,
+          word_count: wordCount,
+          url: targetUrl,
+        });
+      } catch (err) {
+        logger.error("Readability API", err.message);
+        return res
+          .status(500)
+          .json({ error: "Readability API request failed" });
+      }
+    },
+  );
+
+  // --- MATH EXPRESSION API (0.001 USDC) ---
+  router.get(
+    "/api/math",
+    paidEndpointLimiter,
+    paymentMiddleware(1000, 0.001, "Math Expression API"),
+    async (req, res) => {
+      const expr = (req.query.expr || req.query.expression || "")
+        .trim()
+        .slice(0, 500);
+
+      if (!expr) {
+        return res.status(400).json({
+          error:
+            "Parameter 'expr' required. Ex: /api/math?expr=2*pi*5+sqrt(16)",
+        });
+      }
+
+      if (expr.length > 500) {
+        return res
+          .status(400)
+          .json({ error: "Expression too long (max 500 characters)" });
+      }
+
+      let result;
+      try {
+        result = safeEvaluate(expr);
+      } catch (mathErr) {
+        return res
+          .status(400)
+          .json({ error: "Invalid math expression", details: mathErr.message });
+      }
+
+      if (typeof result !== "number" || !isFinite(result)) {
+        return res.status(400).json({
+          error: "Expression resulted in invalid number (Infinity or NaN)",
+        });
+      }
+
+      try {
+        logActivity("api_call", `Math Expression API: ${expr} = ${result}`);
+        res.json({
+          success: true,
+          expression: expr,
+          result,
+          result_formatted: result.toLocaleString("en-US", {
+            maximumFractionDigits: 10,
+          }),
+        });
+      } catch (err) {
+        return res.status(500).json({ error: "Internal server error" });
+      }
+    },
+  );
+
+  return router;
 }
 
 module.exports = createAiRouter;

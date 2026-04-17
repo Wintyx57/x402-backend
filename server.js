@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const compression = require("compression");
 const { createClient } = require("@supabase/supabase-js");
@@ -163,10 +164,16 @@ const ALLOWED_ORIGINS =
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, false);
+      // Requests without an Origin header come from non-browser clients
+      // (CLI, MCP, curl, server-to-server). Allow them — there is no browser
+      // same-origin policy to enforce. Browser requests always set Origin.
+      if (!origin) return callback(null, true);
       if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
       callback(new Error("CORS not allowed"));
     },
+    // Required for the admin session cookie (httpOnly Secure SameSite=Strict).
+    // Without this, fetch({credentials:'include'}) cannot attach/receive the cookie.
+    credentials: true,
     methods: ["GET", "POST", "DELETE", "PATCH", "PUT"],
     allowedHeaders: [
       "Content-Type",
@@ -200,6 +207,7 @@ app.use(
 
 // --- BODY LIMITS ---
 app.use(express.json({ limit: "10kb" }));
+app.use(cookieParser());
 
 // Helper — Check if request comes from the internal monitor (localhost self-ping only)
 // Prevents unauthenticated X-Monitor header from bypassing rate limits from external IPs
@@ -314,6 +322,16 @@ function isValidAdminToken(req) {
 }
 
 // --- ADMIN AUTH MIDDLEWARE ---
+//
+// Accepts credentials from either:
+//   - `X-Admin-Token` header (legacy, used by CI and server-to-server scripts), or
+//   - `admin_session` cookie (httpOnly + Secure + SameSite=Strict, set via
+//     POST /api/admin/session after login — protects the browser dashboard
+//     against XSS since JavaScript can never read the cookie).
+//
+// Both paths use the same constant-time comparison against ADMIN_TOKEN.
+const ADMIN_SESSION_COOKIE = "admin_session";
+
 function adminAuth(req, res, next) {
   const expected = (process.env.ADMIN_TOKEN || "").trim();
   if (!expected) {
@@ -322,12 +340,14 @@ function adminAuth(req, res, next) {
       message: "ADMIN_TOKEN environment variable is not set.",
     });
   }
-  const token = (req.headers["x-admin-token"] || "").trim();
+  const headerToken = (req.headers["x-admin-token"] || "").trim();
+  const cookieToken = (req.cookies?.[ADMIN_SESSION_COOKIE] || "").trim();
+  const token = headerToken || cookieToken;
   if (!token || !timingSafeCompare(token, expected)) {
     logger.warn("AdminAuth", `Rejected from ${req.ip || "unknown"}`);
     return res.status(401).json({
       error: "Unauthorized",
-      message: "Valid X-Admin-Token header required.",
+      message: "Valid X-Admin-Token header or admin_session cookie required.",
     });
   }
   logger.info(
@@ -343,8 +363,13 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     // Sanitize secrets from query strings before logging
+    // Scrub ANY plausible secret from query strings before logging.
+    // Previously only ?secret= was scrubbed, so a stray ?token=..., ?key=...,
+    // ?apikey=..., ?auth=..., ?password=... or ?sig=... would end up in
+    // Render's access logs. The backend never legitimately accepts these in
+    // the query string (always headers), so they're always safe to mask.
     const safeLogUrl = (req.originalUrl || "").replace(
-      /([?&]secret=)[^&]*/gi,
+      /([?&](?:secret|token|key|apikey|api_key|auth|password|sig|signature|credential|access_token)=)[^&]*/gi,
       "$1[REDACTED]",
     );
     const extra = {
@@ -461,6 +486,49 @@ app.use(
   createAdminPayoutsRouter(supabase, adminAuth, logActivity, payoutManager),
 );
 app.use(createAdminQuarantineRouter(supabase, adminAuth, logActivity));
+
+// ─── Admin Session (httpOnly cookie) ────────────────────────────────────────
+// Prefer this over the X-Admin-Token header for browser-based admin dashboards:
+// the token is set as a cookie that JavaScript can never read (httpOnly), so an
+// XSS anywhere on the frontend cannot exfiltrate it. Header-based auth is kept
+// for CI and server-to-server use, so existing scripts keep working unchanged.
+
+const _adminSessionCookieOptions = (req) => ({
+  httpOnly: true,
+  secure: req.secure || req.get("x-forwarded-proto") === "https",
+  sameSite: "strict",
+  path: "/",
+  // 12h matches a reasonable operator shift without keeping long-lived sessions.
+  maxAge: 12 * 60 * 60 * 1000,
+});
+
+app.post("/api/admin/session", adminAuthLimiter, (req, res) => {
+  const expected = (process.env.ADMIN_TOKEN || "").trim();
+  if (!expected) {
+    return res.status(503).json({ error: "Admin not configured" });
+  }
+  const provided =
+    typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!provided || !timingSafeCompare(provided, expected)) {
+    logger.warn(
+      "AdminSession",
+      `Failed login attempt from ${req.ip || "unknown"}`,
+    );
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  res.cookie(ADMIN_SESSION_COOKIE, provided, _adminSessionCookieOptions(req));
+  logger.info("AdminSession", `Login from ${req.ip || "unknown"}`);
+  return res.json({ ok: true });
+});
+
+app.delete("/api/admin/session", (req, res) => {
+  res.clearCookie(ADMIN_SESSION_COOKIE, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "strict",
+  });
+  return res.json({ ok: true });
+});
 
 // Admin trigger for AI Quality Audit (fire-and-forget — returns immediately)
 app.post("/api/admin/quality-audit/run", adminAuth, (req, res) => {

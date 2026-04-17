@@ -52,8 +52,10 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       # --- DEPRECATED: FAUCET_PRIVATE_KEY — now uses AGENT_PRIVATE_KEY ---
-      # Keep temporarily for one-shot CREDITS consolidation into agent wallet.
-      # Remove from Render after confirming old faucet wallet is empty.
+      # TODO(security-audit-2026-04): still referenced by routes/health.js
+      # and tests/faucet.test.js. Remove the env var from Render AND delete
+      # the remaining code references in the same PR, otherwise the runtime
+      # silently regresses to the legacy faucet wallet.
       - key: FAUCET_PRIVATE_KEY
         sync: false
       # --- ERC-8004 on-chain reputation ---
@@ -92,13 +94,24 @@ services:
     region: oregon
     schedule: "0 */6 * * *"
     buildCommand: npm install
+    # SECURITY: pass CRON_SECRET via Authorization header, NOT as a query
+    # string. URL query strings leak into access logs, browser history, and
+    # upstream proxies; a Bearer header does not. The backend route accepts
+    # both forms (query for back-compat), but we always issue the header.
     startCommand: >-
       node -e "
         const https = require('https');
-        const url = 'https://x402-api.onrender.com/api/cron/auto-payout?secret=' + process.env.CRON_SECRET + '&threshold=1';
-        https.get(url, res => {
+        const opts = {
+          hostname: 'x402-api.onrender.com',
+          path: '/api/cron/auto-payout?threshold=1',
+          method: 'GET',
+          headers: { 'Authorization': 'Bearer ' + process.env.CRON_SECRET }
+        };
+        const req = https.request(opts, res => {
           let d = '';
           res.on('data', c => d += c);
           res.on('end', () => { console.log(res.statusCode, d); process.exit(res.statusCode === 200 ? 0 : 1); });
-        }).on('error', e => { console.error(e); process.exit(1); });
+        });
+        req.on('error', e => { console.error(e); process.exit(1); });
+        req.end();
       "

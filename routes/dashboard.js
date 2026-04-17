@@ -105,19 +105,42 @@ function createDashboardRouter(
         logger.error("Stats", "Supabase count error:", err.message);
       }
 
-      // Paiements et revenus depuis Supabase
+      // Paiements et revenus — aggregate in Postgres via RPC (migration 031).
+      // Previously the handler pulled up to 10k rows and summed in JS.
+      // The RPC returns count+sum in a single query with no row payload.
       let totalPayments = 0;
       let totalRevenue = 0;
       try {
-        const { data: payments } = await supabase
-          .from("activity")
-          .select("amount")
-          .eq("type", "payment")
-          .gte("created_at", new Date(Date.now() - 30 * 86400000).toISOString())
-          .limit(10000);
-        if (payments) {
-          totalPayments = payments.length;
-          totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+        const sinceIso = new Date(Date.now() - 30 * 86400000).toISOString();
+        const { data, error } = await supabase.rpc("activity_payment_stats", {
+          p_since: sinceIso,
+        });
+        if (error) {
+          // Fallback to the old row-based path if the RPC isn't installed yet.
+          if (error.code === "42883" || /function/.test(error.message || "")) {
+            logger.warn(
+              "Dashboard",
+              "activity_payment_stats RPC missing — apply migration 031. Falling back to row scan.",
+            );
+            const { data: payments } = await supabase
+              .from("activity")
+              .select("amount")
+              .eq("type", "payment")
+              .gte("created_at", sinceIso)
+              .limit(10000);
+            if (payments) {
+              totalPayments = payments.length;
+              totalRevenue = payments.reduce(
+                (sum, p) => sum + Number(p.amount),
+                0,
+              );
+            }
+          } else {
+            throw error;
+          }
+        } else if (data && data[0]) {
+          totalPayments = Number(data[0].total_count) || 0;
+          totalRevenue = Number(data[0].total_amount) || 0;
         }
       } catch (err) {
         logger.warn(

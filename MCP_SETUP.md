@@ -72,19 +72,27 @@ All environment variables are **optional**:
 | Tool | Description |
 |------|-------------|
 | `discover_marketplace` | Browse the marketplace — endpoints, stats, protocol info |
+| `search_services` | Search APIs by keyword |
+| `list_services` | List all available API services |
+| `find_tool_for_task` | Describe a task in plain English → get the best API match |
+| `get_service_schema` | Fetch the input/output schema for a specific service |
 | `get_budget_status` | Check session spending and remaining budget |
 | `setup_wallet` | Initialize wallet, show address, balance, and funding instructions |
 | `get_wallet_balance` | Check USDC balance on all supported chains |
+| `export_private_key` | Locate your wallet file for backup (key never returned in chat) |
+| `import_openapi` | Import a provider's OpenAPI spec as Bazaar services |
+| `import_rapidapi` | Import a RapidAPI catalog into the marketplace |
+| `create_payment_link` | Create a shareable pay-per-call link for an off-catalog URL |
 
 ### Paid tools (require USDC)
 
 | Tool | Cost | Description |
 |------|------|-------------|
-| `search_services` | 0.05 USDC | Search APIs by keyword |
-| `list_services` | 0.05 USDC | List all available API services |
-| `find_tool_for_task` | 0.05 USDC | Describe a task in plain English → get the best API match |
-| `call_service` | varies | Call a Bazaar service via proxy (95/5 revenue split) |
-| `call_api` | varies | Call any external API URL with auto x402 payment |
+| `call_service` | varies (service price) | Call a Bazaar service via proxy (95/5 revenue split) |
+| `call_api` | varies (402 response) | Call any external API URL with auto x402 payment |
+| `access_payment_link` | varies | Pay a previously created payment link |
+
+Total: **15 tools** as of MCP v2.7.0.
 
 ## Supported Chains
 
@@ -92,8 +100,9 @@ All environment variables are **optional**:
 |-------|----------|----------|
 | **Base** (default) | ~$0.001 | Most users |
 | **SKALE on Base** | ~$0.0007 | High-volume, cost-sensitive |
+| **Polygon** | ~$0.001 | USDC holders on Polygon, EIP-3009 gas-free |
 
-Switch chains with the `chain` parameter on any paid tool, or set `NETWORK=skale` in config.
+Switch chains with the `chain` parameter on any paid tool, or set `NETWORK=base`, `skale`, or `polygon` in config.
 
 ## Revenue Split
 

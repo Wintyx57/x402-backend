@@ -12,7 +12,7 @@
   </p>
 </p>
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen) ![Tests](https://img.shields.io/badge/tests-2151%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-112%20native-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen) ![Tests](https://img.shields.io/badge/tests-2136%20passing-brightgreen) ![Render](https://img.shields.io/badge/deploy-Render-46E3B7) ![APIs](https://img.shields.io/badge/APIs-69%20native%20%2B%2043%20marketplace-blue)
 
 ---
 
@@ -20,7 +20,7 @@
 
 | Repository | Description |
 |------------|-------------|
-| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 112 native wrappers, MCP server |
+| **[x402-backend](https://github.com/Wintyx57/x402-backend)** (this repo) | Backend API — Express server, payment middleware, 69 native wrappers + 43 marketplace services, MCP server |
 | **[x402-frontend](https://github.com/Wintyx57/x402-frontend)** | React frontend — 15 pages, glassmorphism UI, wallet connect, i18n FR/EN |
 | **[x402-langchain](https://github.com/Wintyx57/x402-langchain)** | Python package — LangChain tools for x402 Bazaar (pip install) |
 | **[x402-fast-monetization-template](https://github.com/Wintyx57/x402-fast-monetization-template)** | FastAPI template — Monetize any Python function with x402 in 5 minutes |
@@ -40,17 +40,17 @@ x402 Bazaar is an autonomous API marketplace built on the [HTTP 402 Payment Requ
 ## Key Features
 
 - **HTTP 402 Protocol** -- Standard-compliant payment flow. Call an endpoint, get a `402` with payment details, pay USDC, retry with tx hash, done.
-- **112 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 100+ more -- all behind micropayments.
-- **112+ Registered Services** -- Growing marketplace of third-party APIs monetized through x402.
-- **LangChain Integration** -- Python package `x402-langchain` for agents built with LangChain/LangGraph.
-- **Multi-Chain** -- Base (mainnet) + SKALE on Base (ultra-low gas fees ~$0.0007/tx) + Polygon (mainnet, ~$0.001/tx via MATIC).
-- **MCP Server** -- Plug into Claude Desktop, Cursor, VS Code, or Claude Code as native AI tools.
+- **69 Native API Wrappers** -- Web search, URL scraper, Twitter/X, weather, crypto, jokes, DALL-E 3, translation, code execution, sentiment analysis, and 50+ more -- all behind micropayments.
+- **43+ Marketplace Services** -- Growing catalog of third-party APIs monetized through x402 (total: 112+ callable endpoints).
+- **LangChain + Python SDK** -- `pip install x402-bazaar` for agents built with LangChain/LangGraph/CrewAI.
+- **Multi-Chain** -- Base (mainnet) + SKALE on Base (ultra-low gas ~$0.0007/tx) + Polygon (EIP-3009 gas-free).
+- **MCP Server** (v2.7.0, 15 tools) -- Plug into Claude Desktop, Cursor, VS Code, or Claude Code.
 - **One-Line Setup** -- `npx x402-bazaar init` detects your IDE and configures everything.
 - **Anti-Replay Protection** -- Every transaction hash is stored in Supabase and can only be used once.
 - **Budget Control** -- Per-session spending caps for AI agents (configurable `MAX_BUDGET_USDC`).
-- **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection.
-- **2151 Tests** -- 14+ test suites, all passing (node:test, zero deps).
-- **Real-Time Monitoring** -- 112 endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
+- **Security Hardened** -- Helmet headers, CORS whitelist, rate limiting (3 tiers), input sanitization, SSRF protection, httpOnly admin sessions, HMAC'd IP hashing.
+- **2136 Tests** -- 398 suites, all passing (node:test, zero deps).
+- **Real-Time Monitoring** -- 69 native endpoints checked every 5min, Telegram alerts on transitions, public `/api/status` page.
 - **Telegram Bot** -- Interactive admin bot with 6 commands (/balance, /stats, /status, /recent, /services, /help).
 - **Auto-Test on Registration** -- New services are pinged automatically, with Telegram notification on result.
 - **Public Stats** -- `GET /api/public-stats` (no auth) for frontend homepage counters.
@@ -103,11 +103,11 @@ Agent                          x402 Bazaar                     Base / SKALE / Po
 |-------|--------|------|-------------|
 | `/` | GET | Free | Marketplace info + endpoint catalog |
 | `/health` | GET | Free | Health check + supported networks |
-| `/services` | GET | 0.05 USDC | List all registered services |
-| `/search?q=` | GET | 0.05 USDC | Search services by keyword |
+| `/services` | GET | **Free** | List all registered services (paginated) |
+| `/search?q=` | GET | **Free** | Search services by keyword |
 | `/register` | POST | 1.00 USDC | Register a new service |
 
-### Native API Wrappers (112 endpoints, x402-powered)
+### Native API Wrappers (69 endpoints, x402-powered)
 
 | Route | Cost | Source | Description |
 |-------|------|--------|-------------|
@@ -136,7 +136,7 @@ Agent                          x402 Bazaar                     Base / SKALE / Po
 
 | Route | Description |
 |-------|-------------|
-| `/api/status` | Live monitoring status for all 112 endpoints |
+| `/api/status` | Live monitoring status for all 69 native endpoints |
 | `/api/status/uptime` | Uptime percentages by endpoint |
 | `/api/status/history` | Check history (last 24h) |
 | `/api/public-stats` | Public stats (services, API calls, monitoring, integrations) |

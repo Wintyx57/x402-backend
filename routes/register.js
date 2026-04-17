@@ -1140,7 +1140,10 @@ function createRegisterRouter(
           const { data: allOwnerServices } = await supabase
             .from("services")
             .select("id, url")
-            .ilike("owner_address", validatedData.ownerAddress)
+            .eq(
+              "owner_address",
+              (validatedData.ownerAddress || "").toLowerCase(),
+            )
             .neq("status", "deprecated");
 
           const toDeprecate = (allOwnerServices || []).filter(
