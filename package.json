@@ -43,7 +43,7 @@
     "@hono/node-server": "^1.19.14",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@mozilla/readability": "^0.6.0",
-    "@supabase/supabase-js": "^2.99.0",
+    "@supabase/supabase-js": "^2.103.3",
     "@x402/extensions": "^2.5.0",
     "axios": "^1.15.0",
     "cheerio": "^1.2.0",
