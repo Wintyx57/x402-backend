@@ -6,6 +6,88 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-04-17
+
+### Security (from full audit — 4 P0 + 11 P1)
+- **[P0]** Hardened mathjs sandbox in `/api/math` — blocked RCE vector via import/createUnit/parse/simplify/derivative/resolve (GHSA-jvff-x2qm-6286 class). Strict character whitelist as defense-in-depth.
+- **[P0]** Fixed EIP-3009 header swap (`X-PAYMENT` vs `PAYMENT-SIGNATURE`) in proxy upstream retry. Previously burned USDC on every retry because upstream rejected the v2 payload under the v1 header.
+- **[P0]** Fixed refund rollback `replayKey` format drift between `proxy-split.js` (insert) and `proxy-execute.js` (rollback). `req._claimedReplayKeys` is now the single source of truth.
+- **[P0]** MCP wallet encryption: added `WALLET_PASSPHRASE` via PBKDF2-SHA256 (100k iterations, per-wallet random salt). Legacy machine-key fallback retained with warning on every decryption. `export_private_key` no longer returns a ready-to-run decryption command (prevented leak via LLM conversation logs).
+- RLS on `services` table now filters `quarantined` / `pending_validation` at the DB level, not only in the backend code (anon key can no longer bypass).
+- Free-tier IP hashing: migrated from plain SHA-256 (rainbow-table reversible) to HMAC-SHA256 with a required `IP_HASH_SECRET` env var.
+- Free-tier increment: migrated from SELECT-then-UPDATE (TOCTOU) to an atomic Postgres RPC (`increment_free_usage`) — concurrent requests from the same IP can no longer double-count free quota.
+- Admin session: new httpOnly cookie endpoint `POST/DELETE /api/admin/session`. Legacy `X-Admin-Token` header still supported for CI/server-to-server. Frontend migrated away from sessionStorage (XSS-proof).
+- CRON_SECRET no longer passed in the URL query string — migrated to `Authorization: Bearer` header.
+- Widened URL secret scrubbing in access logs (token, key, apikey, sig, auth, password, credential, access_token).
+- CSP + `X-Content-Type-Options: nosniff` now sent on every proxied response to neutralize malicious upstream HTML/JS.
+
+### Fixed
+- Eliminated double-charge of agent budget in legacy flow (`proxy.js` + `payment.js` were both calling `checkAndRecord`).
+- `upstreamPayer._getClients` now uses viem's `fallback()` transport over all `rpcUrls` instead of only the primary — relay survives primary RPC outage.
+- `monitor.fetchExternalServices` now skips `quarantined` / `pending_validation` services.
+- `owner_address` / `provider_wallet` normalized to lowercase at write-time via Zod `.transform()`. All reads now use indexed `eq()` instead of sequential-scan `ilike()`.
+- `getRelayBalance` catch block now logs the error instead of silently returning `null` (low-balance alert was invisibly disabled on RPC errors).
+- HeroScene: old `CanvasTexture` now disposed before font-ready replacement (GPU leak).
+- HeroScene: `requestAnimationFrame` paused on `document.hidden` (battery + CPU on hidden tabs).
+- Carousel3D: `onNavigate` captured via `useRef` to avoid stale closure when parent re-renders.
+- MyApis: 3 `address!` non-null assertions removed; `handleDelete` surfaces errors in the modal; chart data/options `useMemo`'d; shadowed `t` variable renamed; `deactivateError` reset before each attempt.
+- ConfirmModal: added `role="dialog"` + `aria-modal` + focus trap + ESC to close.
+- App.tsx: skip link + `<main>` landmark + `<h1 sr-only>` on homepage (WCAG 2.4.1 / 1.3.1).
+
+### Added
+- New package `lib/http-client.js` — single shared `fetchWithTimeout` implementation (AbortController-based, dedup MCP + backend).
+- 6 new migrations: `028` (RLS filter), `029` (atomic free-tier increment), `030` (wallet address normalization + indexes), `031` (aggregate RPCs: `activity_payment_stats`, `payouts_revenue_overview`), `032` (CHECK constraints on enums), `033` (`used_transactions.created_at` + index for retention).
+- `lib/retention.js` now purges `used_transactions` older than 180 days.
+- New doc: `docs/PROVIDER_GUIDE.md` — complete provider onboarding.
+- New doc: `SECURITY.md` — public security posture.
+- New cookbooks: LangGraph agent, OpenAI Assistants, Vercel AI SDK.
+- Dashboard aggregate stats now use Postgres RPC instead of loading 10k rows to sum in JS.
+- Dependabot config: weekly scans for npm + github-actions, grouped by ecosystem.
+
+### Changed
+- `mathjs` bumped to 15.2.0 (patched), `axios` to ≥1.15, `follow-redirects` to ≥1.15.11, `hono` + `@hono/node-server` to latest (closed 4 moderate npm audit findings).
+- README: corrected APIs count (69 native + 43 marketplace = 112), test count (2136), Node engine (≥20), MCP version (2.7.0).
+- MCP_SETUP.md: corrected tool pricing (search/list/find/schema are FREE), added Polygon chain, updated tool list to 15.
+
+### Deprecated
+- `FAUCET_PRIVATE_KEY` and `FEE_SPLITTER_OPERATOR_KEY` marked for removal from render.yaml pending code-path cleanup.
+
+### Migrations to apply manually (via Supabase SQL Editor)
+- Migrations 028 → 033 must be applied in order. All are idempotent and additive.
+
+### Required env vars (new)
+- `IP_HASH_SECRET` (required, 32+ hex chars) — HMAC salt for free-tier IP hashing
+- `WALLET_PASSPHRASE` (optional, recommended) — passphrase for MCP wallet PBKDF2 encryption
+
+## [2.6.0] - 2026-03-30
+
+### Added
+- Protocol Sniffer "Zero Surprise" — 3-layer protocol detection (register probe, runtime 402 detection, monitor re-sniff)
+- Universal Upstream Relay — platform pays upstream on behalf of agents (EIP-3009 off-chain signing on Base/Polygon, direct transfer elsewhere). Agent pays platform legacy, platform pays upstream, net payout to provider.
+- EIP-3009 signing: `transferWithAuthorization` for x402-standard facilitators. X-PAYMENT (v1) + PAYMENT-SIGNATURE (v2) dual headers for max compatibility.
+- Universal 402 Protocol Adapter — detects 10 formats (x402-v2, x402-standard, L402, MPP, stripe402, direct-wallet, etc.), normalizes into single shape.
+- Thirdweb Connect + Fiat Onramp (replaced RainbowKit).
+- Python SDK v1.3.0 on PyPI (`pip install x402-bazaar`) — async CrewAI, enriched LangChain, 147 tests.
+- ERC-8004 on-chain identity + reputation for 74 agents on SKALE.
+- Trails SDK bridge at /fund (Base → SKALE USDC bridge).
+
+## [2.5.0] - 2026-03-18
+
+### Added
+- Budget Guardian — per-wallet spending caps with 50/75/90% alerts.
+- Parameter Gatekeeper — validates required params BEFORE payment (returns 400 + `_payment_status: not_charged`).
+- Payment Links — shareable pay-per-call URLs for off-catalog endpoints.
+- Payouts system — 95/5 split, pending_payouts table, auto-payout cron every 6h, self-service withdrawal.
+- Provider analytics at `/my-apis` — revenue charts, by-service, by-chain, pending vs paid.
+- OpenAPI + RapidAPI one-click import.
+
+## [2.4.1] - 2026-03-13
+
+### Added
+- Polygon mainnet integration (Phase 1: direct on-chain RPC verification).
+- MCP v2.4.1 — 15 tools, multi-chain Base+SKALE+Polygon.
+- CLI v3.6 — `npx x402-bazaar call` with auto-payment, `--chain polygon` flag.
+
 ## [1.3.0] - 2026-02-26
 
 ### Added

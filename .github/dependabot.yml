@@ -1,0 +1,56 @@
+# Dependabot — weekly security + minor updates.
+#
+# Scope:
+#  - npm (production + dev deps)
+#  - github-actions (the workflows we pin, so we get SHA-pin refresh suggestions)
+#
+# Strategy:
+#  - Group semantically-equivalent updates so we don't get a firehose of PRs.
+#  - Security updates are always separate (highest priority).
+#  - Major bumps require manual triage — we don't auto-merge them.
+
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Paris"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Testing infra rarely breaks anything, group and merge fast
+      test-deps:
+        patterns:
+          - "supertest"
+          - "@types/supertest"
+      # Linting/formatting
+      lint-deps:
+        patterns:
+          - "eslint*"
+          - "prettier"
+      # Type definitions rarely conflict
+      types:
+        patterns:
+          - "@types/*"
+      # Express ecosystem — keep synchronized
+      express:
+        patterns:
+          - "express"
+          - "express-rate-limit"
+          - "helmet"
+          - "compression"
+          - "cors"
+          - "cookie-parser"
+    ignore:
+      # wagmi is pinned intentionally (see vite.config.js) — do not bump without a Thirdweb compat check
+      - dependency-name: "wagmi"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
