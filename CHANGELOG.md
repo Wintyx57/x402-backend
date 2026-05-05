@@ -6,6 +6,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-05-05
+
+### Added — Observability
+- **Sentry backend**: `instrument.js` initialised before any other require; `Sentry.setupExpressErrorHandler(app)` after routes; PII scrubbed in `beforeSend` (Authorization, Cookie, X-Admin-Token, X-Payment headers; query-string secrets). Activated by `SENTRY_DSN` env var.
+- **PostHog backend**: `lib/analytics.js` — best-effort capture, no-ops when `POSTHOG_PROJECT_API_KEY` unset. 3 critical events wired:
+  - `api_call_paid_succeeded` in `lib/payment.js` after successful on-chain verification (service, amount_usdc, chain, facilitator).
+  - `provider_registered` in `routes/register.js` after full registration (service_name, price, has_credentials).
+  - `service_quarantined` in `routes/admin-quarantine.js` after manual quarantine (service_name, reason).
+- Test endpoint `GET /__sentry-test` — forces a 500 + Sentry capture (only when SENTRY_DSN set). Remove after first verified event.
+- Graceful shutdown now flushes PostHog and closes Sentry with 2s timeout.
+
+### Added — Operations
+- `migrations/033_quarantine_no_x402_bulk.sql` — idempotent SQL bulk-quarantine of services with `verified_status='no_x402'` (catalog cleanup).
+- `scripts/cleanup-catalog.js` — Node script that calls `POST /api/admin/quarantine/:id` for each `no_x402` service. Reports JSON. Supports `--dry-run`.
+
+### Env vars to add
+- `SENTRY_DSN` (Render)
+- `POSTHOG_PROJECT_API_KEY` (Render)
+- `POSTHOG_HOST` (optional, defaults to `https://us.i.posthog.com`)
+- `SENTRY_TRACES_SAMPLE_RATE` (optional, defaults to `0.1`)
+
 ## [2.7.0] - 2026-04-17
 
 ### Security (from full audit — 4 P0 + 11 P1)

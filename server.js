@@ -1,3 +1,7 @@
+// Sentry MUST be required first to instrument all subsequent imports.
+require("./instrument.js");
+const Sentry = require("@sentry/node");
+
 require("dotenv").config();
 const crypto = require("crypto");
 const express = require("express");
@@ -11,6 +15,7 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const swaggerUi = require("swagger-ui-express");
 
 const logger = require("./lib/logger");
+const analytics = require("./lib/analytics");
 const correlationId = require("./lib/correlationId");
 const { scheduleRetention } = require("./lib/retention");
 const {
@@ -572,6 +577,18 @@ app.use(
   swaggerUi.setup(openApiSpec, { customSiteTitle: "x402 Bazaar API Docs" }),
 );
 
+// --- DEBUG: forced crash to test Sentry wiring ---
+// Hits return 500 + push event to Sentry (only enabled when SENTRY_DSN is set).
+// Remove after first verified Sentry event.
+app.get("/__sentry-test", (req, res, next) => {
+  if (!process.env.SENTRY_DSN) {
+    return res
+      .status(503)
+      .json({ error: "Sentry not configured", message: "SENTRY_DSN unset" });
+  }
+  next(new Error("Sentry test crash — safe to ignore"));
+});
+
 // --- 404 CATCH-ALL (JSON instead of Express default HTML) ---
 app.use((req, res) => {
   res.status(404).json({
@@ -579,6 +596,10 @@ app.use((req, res) => {
     message: `No endpoint at ${req.method} ${req.path}. Browse available APIs at /api/services or /api/catalog.`,
   });
 });
+
+// Sentry error handler — must come AFTER all routes/404 but BEFORE the custom error handler.
+// Captures unhandled exceptions thrown in routes and sends them to Sentry.
+Sentry.setupExpressErrorHandler(app);
 
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
@@ -718,6 +739,8 @@ async function gracefulShutdown(signal) {
       `Failed to stop community agent during shutdown: ${err.message}`,
     );
   });
+  await analytics.shutdown();
+  await Sentry.close(2000);
   serverInstance.close(() => {
     logger.info("server", "HTTP server closed");
     process.exit(0);

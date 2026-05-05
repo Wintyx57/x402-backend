@@ -10,6 +10,7 @@
 
 const express = require("express");
 const logger = require("../lib/logger");
+const analytics = require("../lib/analytics");
 
 function createAdminQuarantineRouter(supabase, adminAuth, logActivity) {
   const router = express.Router();
@@ -172,6 +173,15 @@ function createAdminQuarantineRouter(supabase, adminAuth, logActivity) {
         "AdminQuarantine",
         `Quarantined: "${service.name}" (${id})${reason ? ` — ${reason}` : ""}`,
       );
+
+      analytics.capture("service_quarantined", {
+        distinctId: "admin",
+        properties: {
+          service_id: id,
+          service_name: service.name,
+          reason: reason || "manual_quarantine",
+        },
+      });
 
       return res.json({
         success: true,

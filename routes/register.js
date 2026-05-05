@@ -12,6 +12,7 @@ const {
   OpenAPIImportSchema,
   ServiceCredentialsSchema,
 } = require("../schemas");
+const analytics = require("../lib/analytics");
 const { encryptCredentials } = require("../lib/credentials");
 const { validateCredentials } = require("../lib/credentialValidator");
 const { verifyService } = require("../lib/service-verifier");
@@ -679,6 +680,17 @@ function createRegisterRouter(
       };
       if (credentialValidation)
         response.credential_validation = credentialValidation;
+
+      analytics.capture("provider_registered", {
+        wallet: validatedData.wallet,
+        properties: {
+          service_name: validatedData.name,
+          price_usdc: validatedData.price,
+          flow: "full",
+          has_credentials: Boolean(req.body.credentials),
+        },
+      });
+
       res.status(201).json(response);
     },
   );
