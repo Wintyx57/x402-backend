@@ -45,7 +45,7 @@
     "@mozilla/readability": "^0.6.0",
     "@sentry/node": "^8.55.2",
     "@supabase/supabase-js": "^2.99.0",
-    "@x402/extensions": "^2.5.0",
+    "@x402/extensions": "^2.11.0",
     "axios": "^1.15.0",
     "cheerio": "^1.2.0",
     "compression": "^1.8.1",
